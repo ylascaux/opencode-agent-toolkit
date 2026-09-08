@@ -1,6 +1,15 @@
 # Usage
 
-Start with `just run`. Use `/auto` when routing should be decided automatically.
+For repository-local use, start with `just run`. For daily use from any workspace, install the reversible user command once with `just install-user`, then launch with `oc` from the project you want OpenCode to work on.
+
+```bash
+cd ~/Projects/my-api
+oc
+```
+
+The launcher preserves the current working directory. The toolkit repository supplies the generated OpenCode config and model mappings; the directory from which you run `oc` remains the OpenCode workspace.
+
+Use `/auto` when routing should be decided automatically.
 
 ## Delivery
 
@@ -46,3 +55,17 @@ just models
 ```
 
 Prefer independent model families for builder vs reviewer/security when your gateway exposes suitable choices.
+
+## User command lifecycle
+
+```bash
+just install-user      # creates ~/.local/bin/oc
+just user-status       # verifies the link
+just uninstall-user    # removes it only if owned by this toolkit
+```
+
+Choose another command name when needed:
+
+```bash
+just install-user opencode-agents
+```
