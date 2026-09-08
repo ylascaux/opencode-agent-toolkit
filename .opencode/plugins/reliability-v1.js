@@ -6,6 +6,7 @@ const intEnv = (name, fallback) => {
 }
 
 const now = () => Date.now()
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const normalizeError = (value) =>
   String(value ?? "")
@@ -30,13 +31,16 @@ const hookSessionID = (input) =>
 
 export const ReliabilityV1Plugin = async ({ client }) => {
   const maxParallel = intEnv("MAX_PARALLEL_SUBAGENTS", 3)
+  const queueTimeoutMs = intEnv("SUBAGENT_QUEUE_TIMEOUT_SECONDS", 600) * 1000
   const stalledMs = intEnv("SUBAGENT_STALLED_TIMEOUT_SECONDS", 180) * 1000
   const maxDurationMs = intEnv("SUBAGENT_MAX_DURATION_SECONDS", 900) * 1000
   const maxSameError = intEnv("MAX_SAME_ERROR", 2)
   const watchMs = intEnv("SUBAGENT_WATCH_INTERVAL_SECONDS", 15) * 1000
+  const queuePollMs = Math.min(1000, watchMs)
 
   const sessions = new Map()
   const childrenByParent = new Map()
+  const pendingByParent = new Map()
 
   const stateFor = (id) => {
     if (!id) return undefined
@@ -61,6 +65,28 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     return [...ids]
       .map((id) => sessions.get(id))
       .filter((s) => s && !["COMPLETED", "FAILED", "ABORTED"].includes(s.status))
+  }
+
+  const usedSlots = (parentID) =>
+    activeChildren(parentID).length + (pendingByParent.get(parentID) ?? 0)
+
+  const acquireSlot = async (parentID) => {
+    const startedAt = now()
+    while (usedSlots(parentID) >= maxParallel) {
+      if (now() - startedAt >= queueTimeoutMs) {
+        throw new Error(
+          `Reliability guard: subagent queue timed out after ${Math.floor(queueTimeoutMs / 1000)}s while waiting for one of ${maxParallel} slots.`,
+        )
+      }
+      await sleep(queuePollMs)
+    }
+    pendingByParent.set(parentID, (pendingByParent.get(parentID) ?? 0) + 1)
+  }
+
+  const releaseSlot = (parentID) => {
+    const pending = pendingByParent.get(parentID) ?? 0
+    if (pending <= 1) pendingByParent.delete(parentID)
+    else pendingByParent.set(parentID, pending - 1)
   }
 
   const abortChild = async (state, reason) => {
@@ -153,16 +179,13 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       if (!["task", "subagent"].includes(input?.tool)) return
       const parentID = hookSessionID(input)
       if (!parentID) return
-      const active = activeChildren(parentID)
-      if (active.length >= maxParallel) {
-        throw new Error(
-          `Reliability guard: max parallel subagents reached (${active.length}/${maxParallel}). Wait for an existing child to finish before delegating another task.`,
-        )
-      }
+      await acquireSlot(parentID)
     },
 
     "tool.execute.after": async (input, output) => {
       const id = hookSessionID(input)
+      if (["task", "subagent"].includes(input?.tool) && id) releaseSlot(id)
+
       const state = stateFor(id)
       if (!state) return
       state.lastActivityAt = now()
