@@ -7,6 +7,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = json.loads((ROOT / "reliability.json").read_text())
+LEADS = ("meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead")
+
+
+def profile() -> tuple[str, dict]:
+    name = os.getenv("RELIABILITY_PROFILE", POLICY.get("default_profile", "normal")).strip().lower()
+    profiles = POLICY.get("profiles", {})
+    if name not in profiles:
+        allowed = ", ".join(sorted(profiles))
+        raise SystemExit(f"RELIABILITY_PROFILE must be one of: {allowed} (got {name!r})")
+    return name, profiles[name]
 
 
 def env_int(name: str, default: int) -> int:
@@ -33,6 +43,8 @@ def patch_config(path: Path, *, v2: bool) -> None:
         env_name = "MAX_STEPS_" + name.upper().replace("-", "_")
         cap = env_int(env_name, int(caps.get(name, default_cap)))
         current = int(agent.get("steps", cap))
+        # Reliability values are ceilings, never a mechanism for increasing
+        # the generator's original safety boundary.
         agent["steps"] = min(current, cap)
 
     plugin = (
@@ -40,45 +52,51 @@ def patch_config(path: Path, *, v2: bool) -> None:
         if v2
         else "./.opencode/plugins/reliability-v1.js"
     )
-    if v2:
-        plugins = data.setdefault("plugins", [])
-    else:
-        plugins = data.setdefault("plugin", [])
+    plugins = data.setdefault("plugins" if v2 else "plugin", [])
     if plugin not in plugins:
         plugins.append(plugin)
 
     path.write_text(json.dumps(data, indent=2) + "\n")
 
 
-def append_prompt_policy() -> None:
-    max_parallel = env_int("MAX_PARALLEL_SUBAGENTS", int(POLICY["max_parallel_subagents"]))
-    max_same_error = env_int("MAX_SAME_ERROR", int(POLICY["max_same_error"]))
-    stalled = env_int("SUBAGENT_STALLED_TIMEOUT_SECONDS", int(POLICY["stalled_timeout_seconds"]))
-    block = f"""
+def lead_parallel(lead: str, default: int) -> int:
+    global_limit = env_int("MAX_PARALLEL_SUBAGENTS", default)
+    env_name = POLICY.get("lead_parallel_env", {}).get(lead)
+    return env_int(env_name, global_limit) if env_name else global_limit
 
-## Reliability and child supervision
-- Never have more than {max_parallel} delegated child agents RUNNING at the same time. Queue additional independent work until a slot is free.
-- Treat CONFIG/AUTH/PERMISSION/PROVIDER failures differently from code/test failures. Do not repeatedly reason around a deterministic environment failure.
-- If the same root cause is observed {max_same_error} times without new evidence, stop retrying that path and return BLOCKED or ESCALATION_REQUIRED.
-- A child that has activity but no material progress for about {stalled} seconds must be treated as STALLED: stop re-dispatching equivalent work, preserve its evidence, and choose a different specialist or return the blocker.
-- WAITING_PERMISSION is not STALLED. Do not duplicate a child merely because it is waiting for a human permission decision.
-- Before delegating, check whether an equivalent child task is already running or already returned COMPLETE. Reuse completed handoffs instead of paying for duplicate work.
-- Prefer checkpoints between discovery, implementation, tests and review so a later failure does not force successful phases to be repeated.
-- When a child is BLOCKED, consume the blocker and decide once: fix the prerequisite, route to a distinct specialist, or stop. Never create an unbounded retry chain.
-"""
+
+def append_prompt_policy() -> None:
+    profile_name, defaults = profile()
+    max_same_error = env_int("MAX_SAME_ERROR", int(defaults["max_same_error"]))
+    stalled = env_int("SUBAGENT_STALLED_TIMEOUT_SECONDS", int(defaults["stalled_timeout_seconds"]))
+
     prompt_dir = ROOT / "prompts"
-    for name in ("meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"):
+    marker = "## Reliability and child supervision"
+    for name in LEADS:
         path = prompt_dir / f"{name}.md"
         if not path.exists():
             continue
+        max_parallel = lead_parallel(name, int(defaults["max_parallel_subagents"]))
+        block = f"""
+
+## Reliability and child supervision
+- Reliability profile: `{profile_name}`. Never have more than {max_parallel} delegated child agents RUNNING for this lead at the same time. Queue additional independent work until a runtime slot is free.
+- Treat CONFIG/AUTH/PERMISSION/PROVIDER failures differently from code/test failures. Do not repeatedly reason around a deterministic environment failure.
+- If the same root cause is observed {max_same_error} times without new evidence, stop retrying that path and return BLOCKED or ESCALATION_REQUIRED.
+- A child that has activity but no material progress for about {stalled} seconds must be treated as STALLED: preserve its evidence/checkpoint and choose a different specialist or return the blocker.
+- WAITING_PERMISSION is not STALLED. Do not duplicate a child merely because it is waiting for a human permission decision.
+- Before delegating, check whether an equivalent child task is already running or already returned COMPLETE. Reuse completed handoffs instead of paying for duplicate work.
+- Prefer checkpoints between discovery, implementation, tests and review so a later failure does not force successful phases to be repeated.
+- When a child is BLOCKED or aborted by runtime cost/time/stall guards, consume its checkpoint and decide once: fix the prerequisite, route to a distinct specialist, or stop. Never create an unbounded retry chain.
+"""
         text = path.read_text()
-        marker = "## Reliability and child supervision"
         if marker in text:
             text = text[: text.index(marker)].rstrip() + "\n"
         path.write_text(text.rstrip() + block + "\n")
 
 
 def main() -> None:
+    profile()  # validate before mutating generated files
     patch_config(ROOT / "opencode.jsonc", v2=False)
     patch_config(ROOT / "opencode.v2.jsonc", v2=True)
     append_prompt_policy()
