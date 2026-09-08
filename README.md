@@ -1,77 +1,96 @@
 # OpenCode Agent Toolkit — Platform Engineering Edition
 
-A multi-agent engineering system for OpenCode focused on architecture, implementation, testing, AWS/platform engineering and defense-in-depth security review.
+A cost-aware, evidence-driven multi-agent engineering system for OpenCode, focused on software delivery, AWS/platform architecture, Terraform/Terragrunt, Python, Go, reliability and defense-in-depth security.
 
-## Highlights
+## What makes it different
 
-- 27 independently configurable agents.
-- OpenCode V2 `agents` / `permissions` / `subagent` syntax.
-- Architecture council: scanner + platform architect + AWS + Kubernetes + Terraform + SRE + observability + FinOps.
-- Engineering loop: brainstorm → plan → build → test → review.
-- Security pipeline: threat model → AppSec → IaC security → supply chain → secrets → authorized non-destructive pentest.
-- Per-agent model routing through `.env` + `{env:MODEL_*}`.
-- Reusable `/ship`, `/architecture`, `/security`, `/debug` commands.
-- Read-only multi-repository discovery under `~/Projects` plus a JSON inventory CLI/API.
+- **35 independently configurable agents**.
+- A **meta-router** chooses the minimum sufficient agent path instead of invoking everything.
+- An `orchestrator` handles complex multi-step work.
+- `arbiter`, `deep-reasoner` and `evidence-auditor` provide disagreement resolution, escalation and proof verification.
+- Architecture council: repository scanner + platform architect + AWS + Kubernetes + Terraform + networking + database + SRE + observability + FinOps.
+- Security pipeline: threat model + AppSec + IaC security + supply chain + secrets + authorized non-destructive pentest.
+- Every agent maps to its own `MODEL_*` environment variable.
+- Native configs for **OpenCode V1 stable** and **OpenCode 2 beta** generated from one source of truth.
+- Multi-repository discovery under `~/Projects` plus JSON CLI/API inventory.
 
-## Install
+## Quick start
 
 ```bash
+brew install just
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
-cp .env.example .env
-set -a && source .env && set +a
-./scripts/opencode-agents
+just install
+just doctor
+just run
 ```
 
-Customize every `MODEL_*` variable for your LiteLLM/provider model IDs.
+The installer creates `.env` from `.env.example` only when needed, preserves your existing model mapping, creates the Python environment, generates both OpenCode configs, validates them and runs tests.
 
-## Entry points
-
-```text
-/ship <feature or fix>
-/architecture <system or requirement>
-/security <change, branch or component>
-/debug <failure or incident>
-```
-
-## Architecture discovery
+## Daily command surface
 
 ```bash
-make setup
-./scripts/scan-projects
+just                 # list recipes
+just install         # first-time setup
+just doctor          # environment/config health check
+just run             # launch selected OpenCode runtime
+just v1              # force OpenCode V1 stable
+just v2              # force OpenCode 2 beta
+just check           # regenerate configs + validate + tests
+just test            # repository tests
+just scan            # create architecture-inventory.json
+just api             # run the local project inventory API
+just models          # show MODEL_* mappings
+just refresh         # rebuild Python environment
+just clean           # remove generated local state
 ```
 
-This creates `architecture-inventory.json` from `$PROJECTS_ROOT` (default `$HOME/Projects`). You can also expose the same scanner locally through `./scripts/inventory-api`, then POST to `http://127.0.0.1:8765/scan`.
+## OpenCode commands
 
-## Architecture council
+```text
+/auto <task>          adaptive general routing
+/ship <feature/fix>   implementation + verification gates
+/review <change>      independent adaptive review
+/architecture <need>  architecture council
+/security <scope>     defense-in-depth security review
+/debug <problem>      evidence-first debugging
+/incident <incident>  SRE/observability incident workflow
+/cost <scope>         FinOps + cost/performance analysis
+```
 
-`project-scanner → platform-architect → aws-platform / kubernetes / terraform-terragrunt / sre / observability / finops / threat-model / iac-security`
+## High-level architecture
 
-## Security pipeline
+```text
+                        +--> narrow specialist (simple work)
+                        |
+User -> meta-router ----+--> orchestrator -> plan/build/test/review/security
+        |               |
+        |               +--> architecture council
+        |
+        +--> arbiter             (material disagreement)
+        +--> deep-reasoner       (high risk / low confidence)
+        `--> evidence-auditor    (proof of completion)
+```
 
-- `threat-model`: assets, trust boundaries and abuse cases.
-- `appsec`: application vulnerabilities and business logic.
-- `iac-security`: Terraform/Terragrunt/Kubernetes/AWS security.
-- `supply-chain`: dependencies, CI, images and provenance.
-- `secrets`: credential leakage detection with redacted output.
-- `pentest`: scoped, authorized, non-destructive runtime validation.
+## Documentation
 
-The pentest agent does not persist access, exfiltrate data, perform DoS, credential spraying, lateral movement or stealth. Runtime commands require approval except harmless localhost curl checks.
+Full bilingual documentation is under [`docs/`](docs/README.md):
 
-## Terraform safety
+- English: [`docs/en/`](docs/en/README.md)
+- Français: [`docs/fr/`](docs/fr/README.md)
 
-Formatting and validation can run automatically; plans require approval; `apply` and `destroy` are denied.
+## Safety defaults
 
-## Model strategy
-
-Use your strongest reasoning model for orchestration/architecture/threat modeling, strong coding models for implementation specialists, and cheaper models for scanning/mocks/docs. Prefer a different model family for independent review/security when possible.
+- Terraform/OpenTofu/Terragrunt `apply` and `destroy` are denied.
+- Multi-repository project discovery is read-only.
+- Security agents do not read common secret/key files by default.
+- Pentesting is limited to explicitly authorized, scoped and non-destructive validation.
+- High-risk or low-confidence work escalates instead of being silently accepted.
 
 ## Validate
 
 ```bash
-make check
-make setup
-make test
+just check
 ```
 
 ## License
