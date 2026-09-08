@@ -29,8 +29,9 @@ fi
 [[ -d .venv ]] && echo "[ok]   .venv        present" || echo "[warn] .venv        missing (API dependencies are not installed)"
 
 python3 ./scripts/generate-config >/dev/null
+python3 ./scripts/apply-runtime-policy >/dev/null
 if python3 -m json.tool opencode.jsonc >/dev/null 2>&1 && python3 -m json.tool opencode.v2.jsonc >/dev/null 2>&1; then
-  echo "[ok]   configs      valid JSON"
+  echo "[ok]   configs      valid JSON + runtime policy"
 else
   echo "[fail] configs      invalid JSON"
   ok=0
@@ -53,6 +54,22 @@ if [[ -f .env ]]; then
   [[ -d "$projects_root" ]] && echo "[ok]   Projects     $projects_root" || echo "[warn] Projects     not found: $projects_root"
   echo "[info] runtime      OPENCODE_MAJOR=${OPENCODE_MAJOR:-1}"
   echo "[info] profile      ${MODEL_PROFILE:-custom}"
+  echo "[info] guardrails   profile=${OC_RUNTIME_PROFILE:-normal} enabled=${OC_RUNTIME_GUARDS:-1}"
+  echo "[info] parallel     max=${OC_MAX_PARALLEL_SUBAGENTS:-3} orchestrator=${OC_MAX_PARALLEL_ORCHESTRATOR:-inherit}"
+  echo "[info] watchdog     stall=${OC_STALLED_TIMEOUT_SECONDS:-180}s max-agent=${OC_MAX_AGENT_DURATION_SECONDS:-600}s repeated=${OC_MAX_SAME_FAILURE:-2}"
+  echo "[info] budgets      child=${OC_MAX_CHILD_COST:-0.50} run=${OC_MAX_RUN_COST:-2.00} (provider-reported cost unit)"
+
+  config_dir="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
+  plugin_link="$config_dir/plugins/opencode-agent-toolkit-runtime.js"
+  plugin_source="$ROOT/plugins/runtime-guardrails.js"
+  if [[ -L "$plugin_link" && "$(readlink "$plugin_link")" == "$plugin_source" ]]; then
+    echo "[ok]   watchdog     $plugin_link"
+  elif [[ "${OC_RUNTIME_GUARDS:-1}" =~ ^(0|false|no|off)$ ]]; then
+    echo "[warn] watchdog     disabled; managed plugin link not required"
+  else
+    echo "[fail] watchdog     not installed (run: just install-user)"
+    ok=0
+  fi
 
   if python3 ./scripts/resolve-models --show >/dev/null 2>&1; then
     echo "[ok]   model tiers  LOW/MEDIUM/HIGH resolved"
@@ -75,7 +92,8 @@ from pathlib import Path
 for filename, key in (("opencode.jsonc", "agent"), ("opencode.v2.jsonc", "agents")):
     data = json.loads(Path(filename).read_text())
     commands = data.get("command", data.get("commands", {}))
-    print(f"[info] {filename:<17} {len(data[key])} agents, {len(commands)} commands")
+    steps = [agent["steps"] for agent in data[key].values()]
+    print(f"[info] {filename:<17} {len(data[key])} agents, {len(commands)} commands, steps {min(steps)}..{max(steps)}")
 PY
 
 exit $((1-ok))
