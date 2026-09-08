@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+major="${OPENCODE_MAJOR:-1}"
+
+case "$major" in
+  1) bin="${OPENCODE_BIN:-opencode}"; config="$ROOT/opencode.jsonc" ;;
+  2) bin="${OPENCODE_BIN:-opencode2}"; config="$ROOT/opencode.v2.jsonc" ;;
+  auto)
+    if command -v opencode2 >/dev/null 2>&1; then
+      bin="${OPENCODE_BIN:-opencode2}"; config="$ROOT/opencode.v2.jsonc"
+    else
+      bin="${OPENCODE_BIN:-opencode}"; config="$ROOT/opencode.jsonc"
+    fi
+    ;;
+  *) echo "preflight: invalid OPENCODE_MAJOR=$major" >&2; exit 2 ;;
+esac
+
+fail=0
+warn=0
+ok() { printf '  [ok] %s\n' "$*"; }
+warning() { printf '  [warn] %s\n' "$*" >&2; warn=$((warn + 1)); }
+error() { printf '  [fail] %s\n' "$*" >&2; fail=$((fail + 1)); }
+
+printf 'OpenCode reliability preflight\n'
+
+command -v "$bin" >/dev/null 2>&1 && ok "binary: $bin" || error "binary not found: $bin"
+[[ -f "$config" ]] && ok "config: $config" || error "config missing: $config"
+[[ -f "$ROOT/reliability.json" ]] && ok "reliability policy present" || error "reliability.json missing"
+
+if [[ -f "$config" ]]; then
+  python3 -m json.tool "$config" >/dev/null 2>&1 && ok "config JSON valid" || error "invalid JSON: $config"
+fi
+
+for var in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
+  value="${!var:-}"
+  [[ -n "$value" ]] && ok "$var=$value" || error "$var is empty"
+done
+
+max_parallel="${MAX_PARALLEL_SUBAGENTS:-3}"
+[[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] && ok "max parallel subagents: $max_parallel" || error "MAX_PARALLEL_SUBAGENTS must be >= 1"
+
+stalled="${SUBAGENT_STALLED_TIMEOUT_SECONDS:-180}"
+[[ "$stalled" =~ ^[1-9][0-9]*$ ]] && ok "stalled timeout: ${stalled}s" || error "SUBAGENT_STALLED_TIMEOUT_SECONDS must be >= 1"
+
+if command -v git >/dev/null 2>&1; then
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    ok "git repository detected"
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+      warning "working tree is dirty; agents must preserve unrelated changes"
+    else
+      ok "working tree clean"
+    fi
+  else
+    warning "current directory is not a git repository"
+  fi
+fi
+
+if command -v "$bin" >/dev/null 2>&1 && "$bin" auth list >/dev/null 2>&1; then
+  ok "OpenCode auth command succeeds"
+else
+  warning "could not verify provider credentials with '$bin auth list'"
+fi
+
+if (( fail > 0 )); then
+  printf 'Preflight failed: %d error(s), %d warning(s)\n' "$fail" "$warn" >&2
+  exit 3
+fi
+
+if [[ "${OPENCODE_PREFLIGHT_STRICT:-0}" == "1" && "$warn" -gt 0 ]]; then
+  printf 'Preflight strict mode failed: %d warning(s)\n' "$warn" >&2
+  exit 4
+fi
+
+printf 'Preflight passed: %d warning(s)\n' "$warn"
