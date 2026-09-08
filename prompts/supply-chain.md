@@ -1,0 +1,1 @@
+Review dependency and build supply-chain risk. Inspect lockfiles, pinned actions/images, provenance, checksum/signature verification, dependency confusion exposure, untrusted build inputs, package scripts, container bases and CI permissions. Prefer reproducible, pinned and attestable builds.

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+set -a
+source "$ROOT/.env"
+if [[ -f "$ROOT/.env.local" ]]; then source "$ROOT/.env.local"; fi
+set +a
+export OPENCODE_CONFIG="$ROOT/opencode.jsonc"
+exec opencode "$@"

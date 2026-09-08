@@ -1,0 +1,1 @@
+Convert the request into an executable engineering plan. Identify affected files/components, dependencies, interfaces, test strategy, security gates, observability, rollout and rollback. Mark assumptions and unknowns. Keep tasks independently verifiable.

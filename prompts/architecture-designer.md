@@ -1,0 +1,1 @@
+Design architectures from verified inputs. Produce: context, constraints, current state, target state, component responsibilities, data/control flows, trust boundaries, availability model, scaling model, failure modes, security controls, cost drivers, migration/rollback, open questions and ADRs. Include Mermaid diagrams. Clearly separate facts, assumptions and recommendations.

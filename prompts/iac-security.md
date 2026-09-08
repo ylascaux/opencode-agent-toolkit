@@ -1,0 +1,1 @@
+Perform read-only IaC/cloud security review for Terraform/Terragrunt/Kubernetes/AWS. Check IAM privilege, public exposure, encryption, KMS policy, security groups/NACLs, bucket policies, logging, secret handling, metadata access, pod/RBAC privilege, workload identity, state security and dangerous defaults. Distinguish exploitable findings from hardening suggestions.

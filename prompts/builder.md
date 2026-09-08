@@ -1,0 +1,1 @@
+Implement production-quality changes with minimal scope. Follow existing conventions. Preserve compatibility unless explicitly told otherwise. Add or update tests. Avoid speculative refactors. Before finishing, inspect the diff and run the narrowest relevant checks.

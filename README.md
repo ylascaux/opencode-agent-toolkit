@@ -1,149 +1,77 @@
-# OpenCode Agent Toolkit
+# OpenCode Agent Toolkit — Platform Engineering Edition
 
-A configurable multi-agent toolkit for OpenCode, focused on software engineering, platform engineering, AWS, Terraform/Terragrunt, Python, Go, testing, architecture discovery and technical design.
+A multi-agent engineering system for OpenCode focused on architecture, implementation, testing, AWS/platform engineering and defense-in-depth security review.
 
-## What is included
+## Highlights
 
-- `orchestrator`: primary agent that delegates to specialists.
-- `brainstorm`: explores competing approaches and trade-offs.
-- `planner`: turns requirements into implementation plans.
-- `builder`: general multi-file implementation agent.
-- `reviewer`: read-only code review.
-- `tester`: unit, integration and end-to-end tests.
-- `mock-generator`: mocks, fakes, fixtures and test builders.
-- `debugger`: evidence-first root-cause investigation.
-- `project-scanner`: inspects repositories under `Projects/` or normalized inventory JSON.
-- `architecture-designer`: produces target architectures, ADR-style decisions and Mermaid diagrams.
-- `terraform-terragrunt`: Terraform/OpenTofu/Terragrunt specialist with destructive actions denied by default.
-- `python-specialist`: typed, testable Python services and automation.
-- `go-specialist`: Go services, CLIs, concurrency and AWS integrations.
-- `aws-platform`: AWS platform architecture specialist.
-- `security-reviewer`: application, IaC and cloud security review.
-- `docs-writer`: README, ADR and runbook authoring.
+- 27 independently configurable agents.
+- OpenCode V2 `agents` / `permissions` / `subagent` syntax.
+- Architecture council: scanner + platform architect + AWS + Kubernetes + Terraform + SRE + observability + FinOps.
+- Engineering loop: brainstorm → plan → build → test → review.
+- Security pipeline: threat model → AppSec → IaC security → supply chain → secrets → authorized non-destructive pentest.
+- Per-agent model routing through `.env` + `{env:MODEL_*}`.
+- Reusable `/ship`, `/architecture`, `/security`, `/debug` commands.
+- Read-only multi-repository discovery under `~/Projects` plus a JSON inventory CLI/API.
 
-Each agent has an independently configurable model through environment variables.
-
-## Model mapping
-
-Copy the example file and customize the models exposed by your OpenCode provider/LiteLLM gateway:
+## Install
 
 ```bash
+git clone https://github.com/ylascaux/opencode-agent-toolkit.git
+cd opencode-agent-toolkit
 cp .env.example .env
+set -a && source .env && set +a
+./scripts/opencode-agents
 ```
 
-Example:
+Customize every `MODEL_*` variable for your LiteLLM/provider model IDs.
 
-```dotenv
-MODEL_ORCHESTRATOR=litellm/gpt-5.6-sol
-MODEL_BRAINSTORM=litellm/gpt-5.6-luna
-MODEL_BUILDER=litellm/claude-sonnet-5
-MODEL_ARCHITECTURE=litellm/gpt-5.6-sol
-MODEL_TERRAFORM=litellm/claude-sonnet-5
-MODEL_PYTHON=litellm/claude-sonnet-5
-MODEL_GO=litellm/claude-sonnet-5
-MODEL_AWS=litellm/gpt-5.6-sol
-```
+## Entry points
 
-`opencode.jsonc` references them with OpenCode environment substitution, for example:
-
-```jsonc
-"terraform-terragrunt": {
-  "model": "{env:MODEL_TERRAFORM}"
-}
+```text
+/ship <feature or fix>
+/architecture <system or requirement>
+/security <change, branch or component>
+/debug <failure or incident>
 ```
 
 ## Architecture discovery
 
-### Direct agent mode
-
-Ask the scanner to inspect your local projects:
-
-```text
-@project-scanner Analyse les projets présents dans ~/Projects et génère un inventaire d'architecture.
-```
-
-External-directory access remains permission-gated by OpenCode.
-
-### JSON inventory mode
-
-The bundled Python scanner can normalize project metadata before passing it to the architecture agent:
-
-```bash
-./scripts/scan-projects > architecture-inventory.json
-```
-
-Then ask:
-
-```text
-@architecture-designer Analyse architecture-inventory.json et propose une architecture cible.
-```
-
-### Local inventory API
-
-Install dependencies:
-
 ```bash
 make setup
+./scripts/scan-projects
 ```
 
-Start the API:
+This creates `architecture-inventory.json` from `$PROJECTS_ROOT` (default `$HOME/Projects`). You can also expose the same scanner locally through `./scripts/inventory-api`, then POST to `http://127.0.0.1:8765/scan`.
 
-```bash
-./scripts/inventory-api
-```
+## Architecture council
 
-Then:
+`project-scanner → platform-architect → aws-platform / kubernetes / terraform-terragrunt / sre / observability / finops / threat-model / iac-security`
 
-```bash
-curl -sS -X POST http://127.0.0.1:8765/scan \
-  -H 'content-type: application/json' \
-  -d '{}' > architecture-inventory.json
-```
+## Security pipeline
 
-The API is constrained to `PROJECTS_ROOT` (default: `$HOME/Projects`).
+- `threat-model`: assets, trust boundaries and abuse cases.
+- `appsec`: application vulnerabilities and business logic.
+- `iac-security`: Terraform/Terragrunt/Kubernetes/AWS security.
+- `supply-chain`: dependencies, CI, images and provenance.
+- `secrets`: credential leakage detection with redacted output.
+- `pentest`: scoped, authorized, non-destructive runtime validation.
+
+The pentest agent does not persist access, exfiltrate data, perform DoS, credential spraying, lateral movement or stealth. Runtime commands require approval except harmless localhost curl checks.
 
 ## Terraform safety
 
-The Terraform/Terragrunt agent is intentionally conservative:
+Formatting and validation can run automatically; plans require approval; `apply` and `destroy` are denied.
 
-- formatting and validation can be allowed;
-- plans require approval;
-- `apply` and `destroy` are denied by default.
+## Model strategy
 
-This repository is a starting point: tune command permissions to your environment before using it against production infrastructure.
+Use your strongest reasoning model for orchestration/architecture/threat modeling, strong coding models for implementation specialists, and cheaper models for scanning/mocks/docs. Prefer a different model family for independent review/security when possible.
 
-## Typical workflow
-
-```text
-orchestrator
-├── brainstorm
-├── planner
-├── builder / python-specialist / go-specialist / terraform-terragrunt
-├── tester
-├── reviewer
-└── security-reviewer
-```
-
-Architecture workflow:
-
-```text
-Projects/*
-   ↓
-project-scanner
-   ↓
-architecture-inventory.json
-   ↓
-architecture-designer
-   ├── aws-platform
-   └── terraform-terragrunt
-```
-
-## Development
-
-Run scanner tests with:
+## Validate
 
 ```bash
-python -m unittest discover -s tests -v
+make check
+make setup
+make test
 ```
 
 ## License
