@@ -1,29 +1,77 @@
 # Model strategy
 
-Every agent keeps its own `MODEL_*` variable, but model selection should be managed by capability profiles rather than by manually choosing 37 unrelated values.
+The toolkit is provider-agnostic. Agent definitions do not hard-code GitHub Copilot, OpenAI, Codex, LiteLLM or any other provider.
+
+## Three capability tiers
+
+Every agent is assigned to one of three stable capability tiers in `profiles/agent-tiers.json`:
+
+| Tier | Default Copilot model | Typical use |
+|---|---|---|
+| `low` | `github-copilot/gpt-5.6-luna` | bounded, low-risk, low-cost tasks |
+| `medium` | `github-copilot/gpt-5.6-terra` | normal engineering work |
+| `high` | `github-copilot/gpt-5.6-sol` | architecture, security, arbitration, deep reasoning |
+
+The agent-to-tier mapping is independent from the concrete provider model. For example, `docs-writer` remains `low`, `builder` remains `medium`, and `platform-architect` remains `high` even when switching from Copilot to a personal Codex profile.
 
 ## Profiles
 
-| Profile | Typical roles | Goal |
-|---|---|---|
-| `fast` | brainstorm, scanner, mocks, secrets, docs | low latency/cost for bounded tasks |
-| `general` | meta-router, planner, observability, FinOps | strong everyday reasoning |
-| `coding` | builder, tester, Python, Go, Terraform, CI/CD | reliable implementation/tool use |
-| `reasoning` | orchestrator, debugger, AWS, Kubernetes, database, networking, threat-model | harder technical decisions |
-| `deep` | platform-architect, deep-reasoner | high-complexity/irreversible decisions |
-| `review` | review-lead, reviewer, evidence-auditor, API contract, supply-chain | independent critical review |
-| `security` | security-lead, AppSec, IaC security, pentest | security-focused analysis/validation |
+Concrete model choices live in `profiles/*.env.example`.
 
-Run `just configure` to discover `/v1/models`, get heuristic profile recommendations and map the selected profiles across all 37 agents.
+```bash
+just profiles
+just profile copilot
+just profile codex
+just models
+```
 
-## Independence
+The default work profile is `copilot`.
 
-When possible, use a different model family for implementation and independent review/security. This reduces correlated blind spots. Do not force diversity when the alternative model is materially less capable for the task.
+OpenCode's GitHub Copilot provider is `github-copilot`. Check the models available to your account before relying on a profile unchanged:
 
-## Escalation economics
+```bash
+opencode models github-copilot
+```
 
-The system is designed so expensive/deep models are not used by default. Low-risk bounded work should stay on fast/general/coding profiles. High risk, irreversible decisions, material disagreement or low confidence justify escalation to reasoning/deep profiles.
+If your subscription exposes different IDs, edit `profiles/copilot.env.example`; no agent or routing definition needs to change.
 
-## Gateway credentials
+## Personal / Codex usage
 
-`just configure` may read `LITELLM_API_KEY`, `CF_ACCESS_TOKEN` and `LITELLM_HEADERS_JSON` from the process environment for discovery. It writes model mappings only; credentials are not persisted by the configurator.
+`profiles/codex.env.example` is a ready-to-edit personal profile. It intentionally separates the provider choice from the toolkit architecture.
+
+```bash
+just profile codex
+```
+
+You may use one model for all three tiers or assign different Codex/OpenAI models to `MODEL_LOW`, `MODEL_MEDIUM` and `MODEL_HIGH`.
+
+## Per-agent overrides
+
+Persistent overrides belong in `.env.local`:
+
+```bash
+MODEL_BUILDER=openai/gpt-5.3-codex
+MODEL_REVIEWER=github-copilot/gpt-5.6-sol
+```
+
+`.env.local` is sourced after `.env` and profile switching never modifies it.
+
+Resolution order:
+
+```text
+MODEL_<AGENT> override
+        ↓
+agent tier from profiles/agent-tiers.json
+        ↓
+MODEL_LOW / MODEL_MEDIUM / MODEL_HIGH from active profile
+```
+
+## Why tiers instead of 37 fixed models?
+
+Tiers keep cost/quality policy stable while providers evolve. You can change three model values and immediately migrate all 37 agents without editing generated OpenCode configs or the agent manifest.
+
+`meta-router` routes ordinary work toward low/medium paths and uses high-tier control agents for high-risk, low-confidence, security-sensitive or architecture-heavy work.
+
+## LiteLLM
+
+LiteLLM is optional and not part of the default setup. `just configure` and `just configure-litellm` remain available for future gateway-based discovery. Credentials used for discovery are not persisted by the configurator.
