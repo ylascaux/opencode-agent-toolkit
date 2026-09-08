@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+ok=1
+check_cmd() {
+  local name="$1"
+  if command -v "$name" >/dev/null 2>&1; then
+    printf '[ok]   %-12s %s\n' "$name" "$(command -v "$name")"
+  else
+    printf '[warn] %-12s not found\n' "$name"
+  fi
+}
+
+printf 'OpenCode Agent Toolkit doctor\n\n'
+check_cmd python3
+check_cmd just
+check_cmd opencode
+check_cmd opencode2
+
+if [[ -f .env ]]; then
+  echo "[ok]   .env         present"
+else
+  echo "[fail] .env         missing (run: just install or ./scripts/bootstrap)"
+  ok=0
+fi
+
+if [[ -d .venv ]]; then
+  echo "[ok]   .venv        present"
+else
+  echo "[warn] .venv        missing (API dependencies are not installed)"
+fi
+
+./scripts/generate-config >/dev/null
+if python3 -m json.tool opencode.jsonc >/dev/null 2>&1 && python3 -m json.tool opencode.v2.jsonc >/dev/null 2>&1; then
+  echo "[ok]   configs      valid JSON"
+else
+  echo "[fail] configs      invalid JSON"
+  ok=0
+fi
+
+if python3 -m unittest discover -s tests >/dev/null 2>&1; then
+  echo "[ok]   tests        passing"
+else
+  echo "[fail] tests        failing"
+  ok=0
+fi
+
+if [[ -f .env ]]; then
+  set -a
+  source .env
+  [[ -f .env.local ]] && source .env.local
+  set +a
+  root="${PROJECTS_ROOT:-$HOME/Projects}"
+  if [[ -d "$root" ]]; then
+    echo "[ok]   Projects     $root"
+  else
+    echo "[warn] Projects     not found: $root"
+  fi
+  echo "[info] runtime      OPENCODE_MAJOR=${OPENCODE_MAJOR:-1}"
+fi
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+for filename,key in (("opencode.jsonc","agent"),("opencode.v2.jsonc","agents")):
+    d=json.loads(Path(filename).read_text())
+    print(f"[info] {filename:<17} {len(d[key])} agents, {len(d.get('command', d.get('commands', {})))} commands")
+PY
+
+exit $((1-ok))
