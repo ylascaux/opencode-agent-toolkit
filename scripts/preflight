@@ -164,14 +164,24 @@ if command -v "$bin" >/dev/null 2>&1; then
   while IFS= read -r value; do
     [[ -n "$value" ]] && configured_models+=("$value")
   done < <(python3 - "$config" <<'PY'
-import json, sys
+import json, os, re, sys
 from pathlib import Path
 p = Path(sys.argv[1])
 if not p.exists():
     raise SystemExit(0)
 data = json.loads(p.read_text())
 agents = data.get("agent", data.get("agents", {}))
-for value in sorted({spec.get("model") for spec in agents.values() if spec.get("model")}):
+models = set()
+for spec in agents.values():
+    value = spec.get("model")
+    if not value:
+        continue
+    match = re.fullmatch(r"\{env:([A-Za-z_][A-Za-z0-9_]*)\}", value)
+    if match:
+        value = os.getenv(match.group(1), "").strip()
+    if value:
+        models.add(value)
+for value in sorted(models):
     print(value)
 PY
   )
