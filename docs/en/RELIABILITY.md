@@ -1,91 +1,190 @@
 # Agent reliability and cost guardrails
 
-The toolkit applies deterministic safeguards before and during agent execution. The goal is to fail fast on configuration problems, bound expensive loops, and supervise child sessions instead of relying only on prompt discipline.
+The toolkit combines deterministic runtime safeguards with supervision rules injected into lead agents. The core principle is: **LLMs decide engineering work; deterministic code decides runtime safety boundaries**.
 
-## Defaults
+## Reliability profiles
 
-The default policy lives in `reliability.json`.
+`reliability.json` defines three profiles:
 
-- maximum parallel subagents: `3`
-- subagent queue timeout: `600s`
-- stalled child timeout: `180s`
-- maximum child duration: `900s`
-- repeated root error limit: `2`
-- provider retries: `2`
-- watchdog interval: `15s`
-- per-agent step caps are lower than the raw generator defaults; the orchestrator and builder are capped at `16` by default
+| Profile | Parallel | Queue | Stall | Child duration | Retries | Child cost* | Run cost* |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `cheap` | 2 | 300s | 120s | 600s | 1 | 0.25 | 1.00 |
+| `normal` | 3 | 600s | 180s | 900s | 2 | 0.50 | 2.00 |
+| `premium` | 4 | 900s | 240s | 1200s | 2 | 1.50 | 5.00 |
 
-Every value can be overridden from `.env.local` without changing tracked files.
+`normal` is the default profile. Cost values marked `*` use **the value reported by OpenCode/provider in its native unit**. The toolkit does not invent an EUR conversion.
 
 ```bash
-MAX_PARALLEL_SUBAGENTS=2
-SUBAGENT_QUEUE_TIMEOUT_SECONDS=600
-SUBAGENT_STALLED_TIMEOUT_SECONDS=240
-SUBAGENT_MAX_DURATION_SECONDS=1200
-MAX_PROVIDER_RETRIES=1
-MAX_STEPS_ORCHESTRATOR=12
-MAX_STEPS_BUILDER=14
+RELIABILITY_PROFILE=normal
 ```
 
-Use `just reliability` to inspect the effective policy.
+Any explicit value in `.env.local` overrides the selected profile.
 
-## Launch sequence
+## Global and per-lead parallelism
 
-`oc` / `just run` now performs the following sequence:
+The global limit remains:
 
-1. load `.env` and `.env.local`
-2. regenerate OpenCode configuration
-3. apply reliability step caps and watchdog plugin wiring
-4. resolve model tiers
-5. run deterministic preflight checks
-6. start OpenCode only when preflight passes
+```bash
+MAX_PARALLEL_SUBAGENTS=3
+```
 
-`just install` applies the same reliability post-processing to generated configs, so installation and runtime cannot silently drift.
+Per-lead overrides are also supported:
 
-Disable the preflight only for troubleshooting with `OPENCODE_PREFLIGHT=0`. `OPENCODE_PREFLIGHT_STRICT=1` turns warnings into failures.
+```bash
+MAX_PARALLEL_META_ROUTER=2
+MAX_PARALLEL_ORCHESTRATOR=3
+MAX_PARALLEL_REVIEW_LEAD=3
+MAX_PARALLEL_PLATFORM_ARCHITECT=3
+MAX_PARALLEL_SECURITY_LEAD=2
+```
 
-## Preflight
+If a lead-specific value is unset, the global limit is used.
 
-The preflight does not call an LLM. It verifies the selected OpenCode binary, generated config, reliability policy, watchdog plugin file and config wiring, model tier variables, concurrency configuration, git state, the OpenCode auth command, and the configured LOW/MEDIUM/HIGH models exposed by `opencode models`.
+The runtime tracks actual child sessions and launch reservations. A reservation is consumed as soon as the child appears through events or `session.children()`. This prevents both:
 
-An explicit `0 credentials` / unauthenticated result is treated as a failure. Configuration/auth/provider/model failures should therefore be discovered before an expensive coding loop starts whenever they can be detected locally.
+- bursts racing above the configured limit;
+- temporarily double-counting the same launch as both pending and active.
 
-## Subagent watchdog
+When all slots are busy, delegation waits in a deterministic queue **without another LLM call**. `SUBAGENT_QUEUE_TIMEOUT_SECONDS` bounds that wait.
 
-The V1 and V2 runtimes use version-specific watchdog plugins.
+## Preflight before the first expensive model call
 
-The watchdog tracks child sessions separately from their root orchestrator. It distinguishes activity from useful progress and does not classify a child waiting for a permission decision as stalled.
+`oc` / `just run` executes deterministic checks before starting OpenCode:
 
-A child may be interrupted when it exceeds its maximum duration or has no material progress beyond the configured stalled timeout. V1 also stops repeated identical runtime/tool errors. V2 additionally overrides provider retry decisions so HTTP `400`, `401`, `403`, and `404` failures are terminal, while `429` and server failures are retryable only within the configured retry budget.
+- selected binary exists;
+- generated config is valid JSON;
+- matching V1/V2 watchdog is present and wired;
+- reliability profile is valid;
+- runtime numeric values are valid;
+- all models actually configured on agents are exposed by `opencode models`;
+- auth is available for known providers that use OpenCode authentication;
+- Git workspace state is observable.
 
-## Maximum parallelism and queueing
+Controls:
 
-`MAX_PARALLEL_SUBAGENTS` controls the maximum number of active children per parent session. The default is `3`.
+```bash
+OPENCODE_PREFLIGHT=1
+OPENCODE_PREFLIGHT_AUTH=1
+OPENCODE_PREFLIGHT_MODELS=1
+# OPENCODE_PREFLIGHT_STRICT=1
+```
 
-When all slots are busy, another delegation waits in a deterministic runtime queue instead of consuming another LLM turn or immediately failing. Pending launches reserve capacity so simultaneous delegations cannot race past the configured limit. `SUBAGENT_QUEUE_TIMEOUT_SECONDS` bounds that wait (default `600s`); if no slot becomes available before the timeout, the tool fails clearly instead of waiting forever.
+The script remains compatible with the Bash 3 shipped by default on macOS.
 
-The orchestrator prompt is generated with the same maximum parallel value, so both the model and runtime guard agree on the concurrency budget.
+## V1 and V2 watchdog parity
 
-Recommended values:
+V1 and V2 keep the same functional safeguards:
 
-- `1`: expensive/premium model runs, debugging fragile environments
-- `2`: conservative default for paid API usage
-- `3`: toolkit default; good balance for normal development
-- `4+`: only when rate limits and cost are understood
+- individual child-session tracking;
+- `lastActivityAt` versus `lastProgressAt`;
+- `WAITING_PERMISSION` excluded from stall detection;
+- maximum duration;
+- no-progress timeout;
+- repeated-failure detection;
+- bounded queue and parallelism;
+- `session.children()` reconciliation when available;
+- metadata checkpoints;
+- provider-reported cost budgets when telemetry exists.
+
+V2 additionally keeps the provider retry hook:
+
+```text
+400 / 401 / 403 / 404 -> terminal
+429                  -> bounded retry
+5xx                  -> bounded retry
+```
+
+## Repeated tool-loop detection
+
+The watchdog stores a signature for a tool call and its result. If a child repeatedly executes **the same tool with the same arguments and receives the same result**, that activity stops counting as progress.
+
+Once `MAX_SAME_ERROR` is reached, the child may be interrupted.
+
+This covers loops such as:
+
+```text
+command A -> result X
+command A -> result X
+command A -> result X
+```
+
+that a simple step counter cannot diagnose well.
+
+## Provider-reported cost budgets
+
+```bash
+MAX_CHILD_COST=0.50
+MAX_RUN_COST=2.00
+```
+
+`0` disables the corresponding monetary boundary.
+
+The guard is enforced only when OpenCode/provider reports usable cost telemetry. If no cost is reported, **no estimate is fabricated**: steps, duration, stall detection, retries, depth, and parallelism remain the safe deterministic boundaries.
+
+`MAX_CHILD_COST` interrupts a child above its reported budget. `MAX_RUN_COST` interrupts the run session family when the reported total exceeds the configured limit.
+
+## Checkpoints
+
+The watchdog persists **metadata only**, never prompts or copies of source code:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit/runs/<session-id>.json
+```
+
+Optional override:
+
+```bash
+RELIABILITY_STATE_DIR=$HOME/.local/state/opencode-agent-toolkit/runs
+```
+
+A checkpoint records, among other fields:
+
+- session ID and parent;
+- agent;
+- status;
+- abort reason;
+- provider-reported cost;
+- start/activity/progress timestamps.
+
+The OpenCode session and structured handoffs remain the source of truth for detailed work content.
+
+## Step caps
+
+Step overrides are **ceilings**, not absolute values that can increase an agent's freedom.
+
+```bash
+MAX_STEPS_BUILDER=7    # can reduce
+MAX_STEPS_BUILDER=999  # cannot exceed the generator boundary
+```
+
+`scripts/apply-reliability` effectively applies:
+
+```text
+effective steps = min(generated steps, reliability cap)
+```
 
 ## Stop policy
 
-Lead agents are explicitly instructed to stop retry chains when the same root cause repeats, to reuse completed handoffs, and to treat `WAITING_PERMISSION` differently from `STALLED`.
+Expected behavior:
 
-The intended behavior is:
+- non-retryable auth/config/provider/model error -> stop quickly;
+- `429` / `5xx` -> bounded retry;
+- same root failure without new evidence -> stop;
+- same tool + same args + same result -> detectable loop;
+- child with no progress -> interrupt;
+- child over duration -> interrupt;
+- child over reported cost -> interrupt when telemetry exists;
+- `WAITING_PERMISSION` -> not a stall;
+- parallel limit reached -> wait in the runtime queue;
+- blocked/aborted child -> consume its handoff/checkpoint before deciding on a replacement.
 
-- auth/config/permission/provider/model error -> fail fast
-- temporary `429`/`5xx` -> bounded retry
-- repeatable code/test failure with new evidence -> continue within the step budget
-- same root cause without new evidence -> stop or route once to a distinct specialist
-- stalled child -> interrupt, preserve evidence, then reroute or report the blocker
-- concurrency full -> wait in the runtime queue without another LLM call
+## Useful commands
 
-## Remaining cost control
+```bash
+just reliability
+just preflight
+just doctor
+just check
+```
 
-Step caps, retry caps, duration limits and parallelism substantially bound cost, but a hard euro budget requires reliable per-request cost telemetry from the selected provider/gateway. The toolkit should only enforce a monetary hard stop when that telemetry is authoritative; otherwise token/call/step/time budgets are safer than pretending an estimated cost is exact.
+`just reliability` shows the effective policy after profile selection and local overrides.
