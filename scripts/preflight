@@ -5,13 +5,33 @@ ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 major="${OPENCODE_MAJOR:-1}"
 
 case "$major" in
-  1) bin="${OPENCODE_BIN:-opencode}"; config="$ROOT/opencode.jsonc" ;;
-  2) bin="${OPENCODE_BIN:-opencode2}"; config="$ROOT/opencode.v2.jsonc" ;;
+  1)
+    bin="${OPENCODE_BIN:-opencode}"
+    config="$ROOT/opencode.jsonc"
+    plugin_file="$ROOT/.opencode/plugins/reliability-v1.js"
+    plugin_entry="./.opencode/plugins/reliability-v1.js"
+    plugin_key="plugin"
+    ;;
+  2)
+    bin="${OPENCODE_BIN:-opencode2}"
+    config="$ROOT/opencode.v2.jsonc"
+    plugin_file="$ROOT/.opencode/plugins/reliability-v2.ts"
+    plugin_entry="./.opencode/plugins/reliability-v2.ts"
+    plugin_key="plugins"
+    ;;
   auto)
     if command -v opencode2 >/dev/null 2>&1; then
-      bin="${OPENCODE_BIN:-opencode2}"; config="$ROOT/opencode.v2.jsonc"
+      bin="${OPENCODE_BIN:-opencode2}"
+      config="$ROOT/opencode.v2.jsonc"
+      plugin_file="$ROOT/.opencode/plugins/reliability-v2.ts"
+      plugin_entry="./.opencode/plugins/reliability-v2.ts"
+      plugin_key="plugins"
     else
-      bin="${OPENCODE_BIN:-opencode}"; config="$ROOT/opencode.jsonc"
+      bin="${OPENCODE_BIN:-opencode}"
+      config="$ROOT/opencode.jsonc"
+      plugin_file="$ROOT/.opencode/plugins/reliability-v1.js"
+      plugin_entry="./.opencode/plugins/reliability-v1.js"
+      plugin_key="plugin"
     fi
     ;;
   *) echo "preflight: invalid OPENCODE_MAJOR=$major" >&2; exit 2 ;;
@@ -28,9 +48,29 @@ printf 'OpenCode reliability preflight\n'
 command -v "$bin" >/dev/null 2>&1 && ok "binary: $bin" || error "binary not found: $bin"
 [[ -f "$config" ]] && ok "config: $config" || error "config missing: $config"
 [[ -f "$ROOT/reliability.json" ]] && ok "reliability policy present" || error "reliability.json missing"
+[[ -f "$plugin_file" ]] && ok "watchdog plugin: $plugin_file" || error "watchdog plugin missing: $plugin_file"
 
 if [[ -f "$config" ]]; then
-  python3 -m json.tool "$config" >/dev/null 2>&1 && ok "config JSON valid" || error "invalid JSON: $config"
+  if python3 -m json.tool "$config" >/dev/null 2>&1; then
+    ok "config JSON valid"
+  else
+    error "invalid JSON: $config"
+  fi
+
+  if python3 - "$config" "$plugin_key" "$plugin_entry" <<'PY' >/dev/null 2>&1
+import json
+import sys
+from pathlib import Path
+
+config = json.loads(Path(sys.argv[1]).read_text())
+entries = config.get(sys.argv[2], [])
+raise SystemExit(0 if sys.argv[3] in entries else 1)
+PY
+  then
+    ok "watchdog plugin wired in selected config"
+  else
+    error "watchdog plugin is not wired in selected config"
+  fi
 fi
 
 for var in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
@@ -40,6 +80,9 @@ done
 
 max_parallel="${MAX_PARALLEL_SUBAGENTS:-3}"
 [[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] && ok "max parallel subagents: $max_parallel" || error "MAX_PARALLEL_SUBAGENTS must be >= 1"
+
+queue_timeout="${SUBAGENT_QUEUE_TIMEOUT_SECONDS:-600}"
+[[ "$queue_timeout" =~ ^[1-9][0-9]*$ ]] && ok "subagent queue timeout: ${queue_timeout}s" || error "SUBAGENT_QUEUE_TIMEOUT_SECONDS must be >= 1"
 
 stalled="${SUBAGENT_STALLED_TIMEOUT_SECONDS:-180}"
 [[ "$stalled" =~ ^[1-9][0-9]*$ ]] && ok "stalled timeout: ${stalled}s" || error "SUBAGENT_STALLED_TIMEOUT_SECONDS must be >= 1"
@@ -57,10 +100,30 @@ if command -v git >/dev/null 2>&1; then
   fi
 fi
 
-if command -v "$bin" >/dev/null 2>&1 && "$bin" auth list >/dev/null 2>&1; then
-  ok "OpenCode auth command succeeds"
-else
-  warning "could not verify provider credentials with '$bin auth list'"
+if command -v "$bin" >/dev/null 2>&1; then
+  if auth_output="$("$bin" auth list 2>&1)"; then
+    if printf '%s\n' "$auth_output" | grep -Eqi '(^|[^0-9])0[[:space:]]+credentials|no[[:space:]]+credentials|not[[:space:]]+authenticated'; then
+      error "OpenCode reports no configured credentials"
+    else
+      ok "OpenCode auth command succeeds"
+    fi
+  else
+    warning "could not verify provider credentials with '$bin auth list'"
+  fi
+
+  if model_output="$("$bin" models 2>&1)"; then
+    for var in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
+      value="${!var:-}"
+      [[ -z "$value" ]] && continue
+      if printf '%s\n' "$model_output" | grep -Fqx "$value"; then
+        ok "$var model is available"
+      else
+        error "$var model not exposed by '$bin models': $value"
+      fi
+    done
+  else
+    warning "could not verify configured models with '$bin models'"
+  fi
 fi
 
 if (( fail > 0 )); then
