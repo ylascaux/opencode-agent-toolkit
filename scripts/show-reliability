@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 policy = json.loads((ROOT / "reliability.json").read_text())
 
 print("max_parallel_subagents =", os.getenv("MAX_PARALLEL_SUBAGENTS", policy["max_parallel_subagents"]))
+print("queue_timeout_seconds =", os.getenv("SUBAGENT_QUEUE_TIMEOUT_SECONDS", policy["queue_timeout_seconds"]))
 print("stalled_timeout_seconds =", os.getenv("SUBAGENT_STALLED_TIMEOUT_SECONDS", policy["stalled_timeout_seconds"]))
 print("max_agent_duration_seconds =", os.getenv("SUBAGENT_MAX_DURATION_SECONDS", policy["max_agent_duration_seconds"]))
 print("max_same_error =", os.getenv("MAX_SAME_ERROR", policy["max_same_error"]))
