@@ -70,8 +70,9 @@ const eventSession = (event) => {
 const hookSessionID = (input) =>
   input?.sessionID ?? input?.sessionId ?? input?.context?.sessionID ?? input?.context?.sessionId
 
-const hookCallID = (input) =>
-  input?.callID ?? input?.callId ?? input?.toolCallID ?? `${hookSessionID(input) ?? "unknown"}:${input?.tool ?? "tool"}:${now()}`
+const hookCallID = (input, args = input?.args) =>
+  input?.callID ?? input?.callId ?? input?.toolCallID ??
+  `${hookSessionID(input) ?? "unknown"}:${input?.tool ?? "tool"}:${stableString(args ?? {})}`
 
 const statusName = (value) => {
   if (!value) return "RUNNING"
@@ -338,11 +339,6 @@ export const ReliabilityV1Plugin = async ({ client }) => {
   timer.unref?.()
 
   return {
-    dispose: async () => {
-      clearInterval(timer)
-      for (const state of sessions.values()) writeCheckpoint(state)
-    },
-
     "chat.message": async (input) => {
       const sessionID = hookSessionID(input)
       if (sessionID && input?.agent) sessionAgents.set(sessionID, input.agent)
@@ -405,11 +401,12 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       if (!sessionID) return
       const state = stateFor(sessionID)
       state.lastActivityAt = now()
-      if (["task", "subagent"].includes(input?.tool)) {
-        await acquireSlot(sessionID, hookCallID(input))
-      }
       const args = output?.args ?? input?.args
-      lastToolCall.set(hookCallID(input), {
+      const callID = hookCallID(input, args)
+      if (["task", "subagent"].includes(input?.tool)) {
+        await acquireSlot(sessionID, callID)
+      }
+      lastToolCall.set(callID, {
         sessionID,
         tool: input?.tool,
         args: stableString(args),
@@ -419,7 +416,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     "tool.execute.after": async (input, output) => {
       const sessionID = hookSessionID(input)
       if (!sessionID) return
-      const callID = hookCallID(input)
+      const callID = hookCallID(input, input?.args)
       if (["task", "subagent"].includes(input?.tool)) reservations.delete(callID)
 
       const state = stateFor(sessionID)
