@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+DESCRIPTIONS = {
+    "meta-router": "Classify work, choose the minimum sufficient route, and escalate on risk or uncertainty",
+    "orchestrator": "Execute multi-step engineering work under the routing and quality policy",
+    "brainstorm": "Generate materially different approaches and trade-offs",
+    "planner": "Convert requirements into an executable engineering plan",
+    "builder": "Implement production-quality changes with minimal scope",
+    "reviewer": "Perform an independent read-only correctness review",
+    "tester": "Design and implement behavior-focused tests",
+    "mock-generator": "Create minimal mocks, fakes, fixtures and test builders",
+    "debugger": "Debug evidence-first and fix the root cause",
+    "project-scanner": "Read repositories and emit architecture facts, not guesses",
+    "architecture-designer": "Design architectures from verified inputs",
+    "platform-architect": "Lead a multi-disciplinary platform architecture council",
+    "aws-platform": "Review AWS platform architecture and managed-service trade-offs",
+    "terraform-terragrunt": "Implement and review Terraform/OpenTofu/Terragrunt safely",
+    "kubernetes": "Review Kubernetes/EKS architecture and operations",
+    "python-specialist": "Implement and review Python services, CLIs and automation",
+    "go-specialist": "Implement and review Go services, CLIs and concurrency",
+    "cicd": "Implement and review CI/CD and GitHub Actions",
+    "sre": "Review reliability, SLOs, capacity, failure modes and disaster recovery",
+    "observability": "Review logs, metrics, traces, dashboards and alerting",
+    "finops": "Analyze AWS/platform cost drivers and cost-performance trade-offs",
+    "threat-model": "Model assets, actors, entry points, trust boundaries and abuse cases",
+    "appsec": "Perform read-only application security review",
+    "iac-security": "Perform read-only Terraform/Kubernetes/AWS security review",
+    "supply-chain": "Review dependency, build, image and CI supply-chain risk",
+    "pentest": "Perform authorized, scoped and non-destructive runtime security validation",
+    "secrets": "Audit secret and sensitive-data leakage without printing secret values",
+    "docs-writer": "Write documentation grounded in verified implementation",
+    "arbiter": "Resolve material agent disagreements using evidence instead of majority vote",
+    "deep-reasoner": "Escalation path for complex, risky, ambiguous or low-confidence decisions",
+    "evidence-auditor": "Audit whether completion claims are supported by reproducible evidence",
+    "api-contract": "Review API/event/schema compatibility, retries, idempotency and versioning",
+    "performance": "Review latency, concurrency, scaling, memory and cost-performance behavior",
+    "database": "Review PostgreSQL/Aurora schema, queries, migrations, HA and backups",
+    "networking": "Review VPC, DNS, CloudFront/WAF, TLS, ingress and private access",
+}
+
+MODEL_ENV_OVERRIDES = {
+    "architecture-designer": "MODEL_ARCHITECTURE",
+    "aws-platform": "MODEL_AWS",
+    "terraform-terragrunt": "MODEL_TERRAFORM",
+    "python-specialist": "MODEL_PYTHON",
+    "go-specialist": "MODEL_GO",
+    "docs-writer": "MODEL_DOCS",
+}
+
+WRITERS = {
+    "builder", "tester", "mock-generator", "debugger", "python-specialist",
+    "go-specialist", "cicd", "docs-writer",
+}
+SECURITY_READONLY = {"threat-model", "appsec", "iac-security", "supply-chain", "secrets"}
+STEPS = {
+    "meta-router": 28, "orchestrator": 36, "deep-reasoner": 24,
+    "platform-architect": 24, "terraform-terragrunt": 24, "debugger": 24,
+    "builder": 28, "python-specialist": 22, "go-specialist": 22,
+    "project-scanner": 20, "architecture-designer": 20, "aws-platform": 20,
+    "kubernetes": 20, "tester": 20, "pentest": 20,
+}
+
+COMMANDS = {
+    "auto": ("Automatically classify and route a task", "Route and execute $ARGUMENTS using the minimum sufficient agent set. Escalate only when complexity, risk, disagreement, or low confidence justifies it. Return routing rationale, evidence, residual risk, and confidence."),
+    "ship": ("Implement with adaptive routing, tests, review and security gates", "Ship $ARGUMENTS. Classify risk and complexity first. Use the narrowest implementation path, require relevant tests and independent review, apply security gates according to attack surface, audit evidence, and escalate disagreements or low confidence."),
+    "review": ("Run independent adaptive review", "Review $ARGUMENTS independently from the implementation path. Route to reviewer plus API-contract, performance, database, networking and security specialists only when the changed surface requires them. Audit evidence and rank findings by severity and confidence."),
+    "architecture": ("Run adaptive architecture council", "Design or review the architecture for $ARGUMENTS. Discover repository facts when needed, invoke only relevant architecture specialists, include threat modeling and IaC security for trust-boundary or infrastructure changes, use an arbiter for conflicting recommendations, and include confidence and residual risks."),
+    "security": ("Run adaptive defense-in-depth security review", "Security-review $ARGUMENTS. Select the relevant threat-model, AppSec, IaC/cloud, supply-chain, secrets and authorized non-destructive pentest gates. Deduplicate findings, arbitrate disagreements, verify remediation evidence, and report residual risk."),
+    "debug": ("Evidence-first adaptive debug workflow", "Debug $ARGUMENTS. Start with evidence, delegate to the relevant specialist, add or propose a regression test, review the fix independently, and invoke security gates when the fix touches a trust boundary. Escalate unresolved ambiguity."),
+    "incident": ("Investigate an incident with SRE and observability", "Investigate $ARGUMENTS using evidence-first debugging. Route to debugger, SRE, observability and the affected platform/language specialists. Separate facts from hypotheses, identify blast radius and rollback/mitigation, then propose a regression test and follow-up actions."),
+    "cost": ("Analyze platform cost and cost-performance trade-offs", "Analyze the cost profile of $ARGUMENTS. Use FinOps and the relevant AWS/Kubernetes/database/networking/performance specialists. State assumptions, cost drivers, savings opportunities, operational trade-offs, and confidence."),
+}
+
+
+def model_env(name: str) -> str:
+    return MODEL_ENV_OVERRIDES.get(name, "MODEL_" + name.upper().replace("-", "_"))
+
+
+def v1_permissions(name: str) -> dict:
+    if name == "meta-router":
+        return {
+            "task": {"*": "deny", **{a: "allow" for a in DESCRIPTIONS if a != name}},
+            "edit": "deny", "bash": "deny",
+            "read": {"*.env": "deny", "*.pem": "deny", "*id_rsa*": "deny"},
+        }
+    if name == "orchestrator":
+        return {
+            "task": {"*": "deny", **{a: "allow" for a in DESCRIPTIONS if a not in {"meta-router", name}}},
+            "edit": "ask", "bash": "ask",
+            "read": {"*.env": "deny", "*.pem": "deny"},
+        }
+    if name == "project-scanner":
+        return {"edit": {"*": "deny", "~/Projects/**": "deny"}, "bash": "deny", "external_directory": {"~/Projects/**": "allow"}, "read": {"~/Projects/**": "allow"}}
+    if name == "terraform-terragrunt":
+        return {"edit": "allow", "bash": {"*": "ask", "terraform fmt*": "allow", "tofu fmt*": "allow", "terragrunt hclfmt*": "allow", "terraform validate*": "allow", "tofu validate*": "allow", "terraform plan*": "ask", "tofu plan*": "ask", "terragrunt plan*": "ask", "* apply*": "deny", "* destroy*": "deny", "terraform apply*": "deny", "tofu apply*": "deny", "terragrunt apply*": "deny", "terraform destroy*": "deny", "tofu destroy*": "deny", "terragrunt destroy*": "deny"}}
+    if name == "pentest":
+        return {"edit": "deny", "bash": {"*": "ask", "curl http://127.0.0.1*": "allow", "curl http://localhost*": "allow", "curl https://127.0.0.1*": "allow", "curl https://localhost*": "allow"}, "read": {"*.env": "deny", "*.pem": "deny", "*id_rsa*": "deny"}}
+    if name in SECURITY_READONLY:
+        return {"edit": "deny", "bash": "deny", "read": {"*.env": "deny", "*.pem": "deny"}}
+    if name in WRITERS:
+        return {"edit": "allow", "bash": "ask"}
+    return {"edit": "deny", "bash": "deny"}
+
+
+def v2_permissions(name: str) -> list[dict]:
+    p = v1_permissions(name)
+    rules: list[dict] = []
+    action_map = {"bash": "shell", "task": "subagent", "edit": "edit", "read": "read", "external_directory": "external_directory"}
+    for key, value in p.items():
+        action = action_map[key]
+        if isinstance(value, str):
+            rules.append({"action": action, "resource": "*", "effect": value})
+        else:
+            for resource, effect in value.items():
+                rules.append({"action": action, "resource": resource, "effect": effect})
+    return rules
+
+
+def agent_entry(name: str, v2: bool) -> dict:
+    return {
+        "description": DESCRIPTIONS[name],
+        "mode": "primary" if name == "meta-router" else ("all" if name == "orchestrator" else "subagent"),
+        "model": f"{{env:{model_env(name)}}}",
+        ("system" if v2 else "prompt"): f"{{file:./prompts/{name}.md}}",
+        "steps": STEPS.get(name, 16),
+        ("permissions" if v2 else "permission"): v2_permissions(name) if v2 else v1_permissions(name),
+    }
+
+
+def build(v2: bool) -> dict:
+    agents = {name: agent_entry(name, v2) for name in DESCRIPTIONS}
+    commands = {name: {"description": desc, "template": template, "agent": "meta-router"} for name, (desc, template) in COMMANDS.items()}
+    if v2:
+        return {"$schema": "https://opencode.ai/config.json", "default_agent": "meta-router", "agents": agents, "commands": commands, "experimental": {"subagent_depth": 2}}
+    return {"$schema": "https://opencode.ai/config.json", "default_agent": "meta-router", "subagent_depth": 2, "agent": agents, "command": commands}
+
+
+def main() -> None:
+    outputs = ((ROOT / "opencode.jsonc", build(False)), (ROOT / "opencode.v2.jsonc", build(True)))
+    for path, data in outputs:
+        path.write_text(json.dumps(data, indent=2) + "\n")
+        print(f"generated {path.name}: {len(data.get('agent', data.get('agents', {})))} agents")
+
+
+if __name__ == "__main__":
+    main()
