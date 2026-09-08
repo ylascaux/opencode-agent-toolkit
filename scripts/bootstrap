@@ -40,7 +40,7 @@ if [[ -f requirements.txt ]]; then
   echo "Installed Python scanner/API dependencies"
 fi
 
-./scripts/generate-config >/dev/null
+python3 ./scripts/generate-config >/dev/null
 python3 -m json.tool opencode.jsonc >/dev/null
 python3 -m json.tool opencode.v2.jsonc >/dev/null
 python3 -m unittest discover -s tests -v
@@ -74,7 +74,7 @@ else
   else
     echo "See https://just.systems/man/en/packages.html"
   fi
-  echo "You can already launch with: ./scripts/opencode-agents"
+  echo "You can already launch with: bash ./scripts/opencode-agents"
 fi
 
 if ! command -v "$expected" >/dev/null 2>&1; then
