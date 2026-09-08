@@ -18,6 +18,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
     def test_policy_has_conservative_parallel_default(self):
         policy = json.loads((ROOT / "reliability.json").read_text())
         self.assertEqual(policy["max_parallel_subagents"], 3)
+        self.assertEqual(policy["queue_timeout_seconds"], 600)
         self.assertLessEqual(policy["step_caps"]["orchestrator"], 16)
         self.assertLessEqual(policy["step_caps"]["builder"], 16)
 
@@ -40,16 +41,22 @@ class ReliabilityPolicyTests(unittest.TestCase):
             self.assertIn("never have more than 3 delegated child agents", text, name)
             self.assertIn("waiting_permission is not stalled", text, name)
 
-    def test_v2_watchdog_has_terminal_retry_policy(self):
+    def test_v2_watchdog_has_terminal_retry_policy_and_queue(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-v2.ts").read_text()
         self.assertIn("[400, 401, 403, 404]", text)
         self.assertIn("MAX_PROVIDER_RETRIES", text)
         self.assertIn("MAX_PARALLEL_SUBAGENTS", text)
+        self.assertIn("SUBAGENT_QUEUE_TIMEOUT_SECONDS", text)
+        self.assertIn("acquireSlot", text)
+        self.assertIn("pending", text)
 
-    def test_v1_watchdog_can_abort_children(self):
+    def test_v1_watchdog_can_abort_children_and_queue(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-v1.js").read_text()
         self.assertIn("client.session.abort", text)
         self.assertIn("MAX_PARALLEL_SUBAGENTS", text)
+        self.assertIn("SUBAGENT_QUEUE_TIMEOUT_SECONDS", text)
+        self.assertIn("acquireSlot", text)
+        self.assertIn("pendingByParent", text)
         self.assertIn("WAITING_PERMISSION", text)
 
 
