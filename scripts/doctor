@@ -21,6 +21,10 @@ check_cmd opencode2
 
 if [[ -f .env ]]; then
   echo "[ok]   .env         present"
+  set -a
+  source .env
+  [[ -f .env.local ]] && source .env.local
+  set +a
 else
   echo "[fail] .env         missing (run: just install)"
   ok=0
@@ -29,8 +33,9 @@ fi
 [[ -d .venv ]] && echo "[ok]   .venv        present" || echo "[warn] .venv        missing (API dependencies are not installed)"
 
 python3 ./scripts/generate-config >/dev/null
+python3 ./scripts/apply-reliability >/dev/null
 if python3 -m json.tool opencode.jsonc >/dev/null 2>&1 && python3 -m json.tool opencode.v2.jsonc >/dev/null 2>&1; then
-  echo "[ok]   configs      valid JSON"
+  echo "[ok]   configs      valid JSON + reliability policy applied"
 else
   echo "[fail] configs      invalid JSON"
   ok=0
@@ -44,15 +49,13 @@ else
 fi
 
 if [[ -f .env ]]; then
-  set -a
-  source .env
-  [[ -f .env.local ]] && source .env.local
-  set +a
-
   projects_root="${PROJECTS_ROOT:-$HOME/Projects}"
   [[ -d "$projects_root" ]] && echo "[ok]   Projects     $projects_root" || echo "[warn] Projects     not found: $projects_root"
   echo "[info] runtime      OPENCODE_MAJOR=${OPENCODE_MAJOR:-1}"
   echo "[info] profile      ${MODEL_PROFILE:-custom}"
+  echo "[info] parallel     ${MAX_PARALLEL_SUBAGENTS:-3}"
+  echo "[info] queue        ${SUBAGENT_QUEUE_TIMEOUT_SECONDS:-600}s"
+  echo "[info] stalled      ${SUBAGENT_STALLED_TIMEOUT_SECONDS:-180}s"
 
   if python3 ./scripts/resolve-models --show >/dev/null 2>&1; then
     echo "[ok]   model tiers  LOW/MEDIUM/HIGH resolved"
