@@ -1,5 +1,6 @@
 .env
 .env.local
+.env.model-overrides.backup
 .venv/
 __pycache__/
 *.pyc
