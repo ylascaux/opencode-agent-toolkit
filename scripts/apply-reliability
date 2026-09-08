@@ -37,14 +37,19 @@ def patch_config(path: Path, *, v2: bool) -> None:
     agents_key = "agents" if v2 else "agent"
     agents = data.get(agents_key, {})
     caps = POLICY["step_caps"]
-    default_cap = env_int("MAX_STEPS_DEFAULT", int(caps["default"]))
+
+    policy_default = int(caps["default"])
+    default_override = env_int("MAX_STEPS_DEFAULT", policy_default)
+    default_cap = min(policy_default, default_override)
 
     for name, agent in agents.items():
+        policy_cap = int(caps.get(name, default_cap))
         env_name = "MAX_STEPS_" + name.upper().replace("-", "_")
-        cap = env_int(env_name, int(caps.get(name, default_cap)))
+        requested_cap = env_int(env_name, policy_cap)
+        cap = min(policy_cap, requested_cap)
         current = int(agent.get("steps", cap))
-        # Reliability values are ceilings, never a mechanism for increasing
-        # the generator's original safety boundary.
+        # Both reliability.json and env overrides are ceilings only. Neither
+        # may increase the generator's original safety boundary.
         agent["steps"] = min(current, cap)
 
     plugin = (
