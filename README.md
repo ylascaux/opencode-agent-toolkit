@@ -4,7 +4,10 @@ A cost-aware, evidence-driven multi-agent engineering system for OpenCode, focus
 
 ## Highlights
 
-- **37 independently configurable agents** with a deliberately shallow hierarchy.
+- **37 agents** with a deliberately shallow hierarchy and per-agent model overrides.
+- Provider-agnostic **LOW / MEDIUM / HIGH** model tiers.
+- Default work profile: GitHub Copilot with Luna / Terra / Sol.
+- Easy profile switching for personal use (for example Codex) without changing agent definitions.
 - `meta-router` sees only the control/lead entry points, not every specialist.
 - `review-lead` and `security-lead` select independent review/security gates.
 - Leaf agents **cannot delegate** to other agents.
@@ -14,7 +17,6 @@ A cost-aware, evidence-driven multi-agent engineering system for OpenCode, focus
 - Reviewers may collect safe Git evidence without edit permissions.
 - Enriched multi-repository architecture inventory with evidence and confidence.
 - Native OpenCode V1 stable and OpenCode 2 configs generated from one source.
-- `just configure` discovers LiteLLM models and maps profiles to all agents.
 - Optional reversible `oc` user command lets you use the toolkit from any working directory.
 
 ## Quick start
@@ -24,19 +26,24 @@ brew install just
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
 just install
-
-# Optional but recommended: discover your LiteLLM models and specialize agent routing.
-export LITELLM_BASE_URL="https://gateway.example.com"
-export LITELLM_API_KEY="..."
-just configure
-
+just models
 just doctor
 
 # Optional: install ~/.local/bin/oc as a symlink to the toolkit launcher.
 just install-user
 ```
 
-After `just install-user`, you can launch the toolkit from any project while preserving that project as the OpenCode workspace:
+The default model profile is:
+
+```text
+LOW    -> github-copilot/gpt-5.6-luna
+MEDIUM -> github-copilot/gpt-5.6-terra
+HIGH   -> github-copilot/gpt-5.6-sol
+```
+
+Verify the models exposed by your GitHub Copilot account with `opencode models github-copilot`. Profile files are intentionally easy to edit when provider model IDs differ.
+
+After `just install-user`, launch from any project while preserving that project as the OpenCode workspace:
 
 ```bash
 cd ~/Projects/my-api
@@ -45,7 +52,37 @@ oc
 
 The user install is intentionally minimal: it does not modify shell startup files or `~/.config`. It only creates `~/.local/bin/oc` (or another name you choose). Remove it with `just uninstall-user`.
 
-Cloudflare Access is supported for model discovery via `CF_ACCESS_TOKEN` or `LITELLM_HEADERS_JSON`; credentials are never written by the configurator.
+## Model profiles
+
+Switch the three model tiers without touching agent definitions:
+
+```bash
+just profiles
+just profile copilot
+just profile codex
+just models
+```
+
+The mapping from agents to tiers is stored in `profiles/agent-tiers.json`. Concrete provider models live in `profiles/*.env.example`.
+
+Persistent per-agent overrides belong in `.env.local`, which profile switching never modifies:
+
+```bash
+MODEL_BUILDER=openai/gpt-5.3-codex
+MODEL_REVIEWER=github-copilot/gpt-5.6-sol
+```
+
+Resolution order is:
+
+```text
+MODEL_<AGENT> override
+        ↓
+agent LOW / MEDIUM / HIGH tier
+        ↓
+active provider profile
+```
+
+`just configure` / `just configure-litellm` remain available only as optional future LiteLLM discovery helpers; LiteLLM is not required for the default setup.
 
 ## Control plane
 
@@ -82,10 +119,12 @@ Maximum intended delegation depth stays at **2**. Leads cannot invoke other lead
 
 ```bash
 just install
+just profile copilot
+just profiles
+just models
 just install-user
 just user-status
 just uninstall-user
-just configure
 just doctor
 just run
 just v1
@@ -94,7 +133,6 @@ just check
 just test
 just scan
 just api
-just models
 just refresh
 just clean
 ```
