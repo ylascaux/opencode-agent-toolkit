@@ -23,6 +23,9 @@ source "$ROOT/.env"
 [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
 set +a
 
+# Resolve unset per-agent MODEL_* variables from the active LOW/MEDIUM/HIGH tiers.
+eval "$(python3 "$ROOT/scripts/resolve-models")"
+
 major="${OPENCODE_MAJOR:-1}"
 case "$major" in
   1)
