@@ -1,6 +1,9 @@
 .env
+.env.local
 .venv/
 __pycache__/
 *.pyc
 architecture-inventory.json
 security-findings.json
+opencode.jsonc
+opencode.v2.jsonc
