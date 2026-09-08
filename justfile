@@ -43,18 +43,7 @@ preflight:
 
 # Show the effective reliability policy after environment overrides.
 reliability:
-    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 - <<'PY'
-    import json, os
-    from pathlib import Path
-    p=json.loads(Path('reliability.json').read_text())
-    print('max_parallel_subagents =', os.getenv('MAX_PARALLEL_SUBAGENTS', p['max_parallel_subagents']))
-    print('stalled_timeout_seconds =', os.getenv('SUBAGENT_STALLED_TIMEOUT_SECONDS', p['stalled_timeout_seconds']))
-    print('max_agent_duration_seconds =', os.getenv('SUBAGENT_MAX_DURATION_SECONDS', p['max_agent_duration_seconds']))
-    print('max_same_error =', os.getenv('MAX_SAME_ERROR', p['max_same_error']))
-    print('max_provider_retries =', os.getenv('MAX_PROVIDER_RETRIES', p['max_retries']))
-    print('step_caps =')
-    for k, v in sorted(p['step_caps'].items()): print(f'  {k}: {v}')
-    PY
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/show-reliability
 
 check: config test
 
