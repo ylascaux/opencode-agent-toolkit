@@ -7,13 +7,30 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 policy = json.loads((ROOT / "reliability.json").read_text())
+profile_name = os.getenv("RELIABILITY_PROFILE", policy.get("default_profile", "normal")).strip().lower()
+profiles = policy.get("profiles", {})
+if profile_name not in profiles:
+    raise SystemExit(f"Unknown RELIABILITY_PROFILE={profile_name!r}; expected one of: {', '.join(sorted(profiles))}")
+profile = profiles[profile_name]
 
-print("max_parallel_subagents =", os.getenv("MAX_PARALLEL_SUBAGENTS", policy["max_parallel_subagents"]))
-print("queue_timeout_seconds =", os.getenv("SUBAGENT_QUEUE_TIMEOUT_SECONDS", policy["queue_timeout_seconds"]))
-print("stalled_timeout_seconds =", os.getenv("SUBAGENT_STALLED_TIMEOUT_SECONDS", policy["stalled_timeout_seconds"]))
-print("max_agent_duration_seconds =", os.getenv("SUBAGENT_MAX_DURATION_SECONDS", policy["max_agent_duration_seconds"]))
-print("max_same_error =", os.getenv("MAX_SAME_ERROR", policy["max_same_error"]))
-print("max_provider_retries =", os.getenv("MAX_PROVIDER_RETRIES", policy["max_retries"]))
+
+def effective(env: str, key: str):
+    return os.getenv(env, profile[key])
+
+
+print("profile =", profile_name)
+print("max_parallel_subagents =", effective("MAX_PARALLEL_SUBAGENTS", "max_parallel_subagents"))
+for lead, env_name in policy.get("lead_parallel_env", {}).items():
+    print(f"max_parallel_{lead} =", os.getenv(env_name, os.getenv("MAX_PARALLEL_SUBAGENTS", profile["max_parallel_subagents"])))
+print("queue_timeout_seconds =", effective("SUBAGENT_QUEUE_TIMEOUT_SECONDS", "queue_timeout_seconds"))
+print("stalled_timeout_seconds =", effective("SUBAGENT_STALLED_TIMEOUT_SECONDS", "stalled_timeout_seconds"))
+print("max_agent_duration_seconds =", effective("SUBAGENT_MAX_DURATION_SECONDS", "max_agent_duration_seconds"))
+print("max_same_error =", effective("MAX_SAME_ERROR", "max_same_error"))
+print("max_provider_retries =", effective("MAX_PROVIDER_RETRIES", "max_retries"))
+print("watch_interval_seconds =", effective("SUBAGENT_WATCH_INTERVAL_SECONDS", "watch_interval_seconds"))
+print("max_child_cost =", effective("MAX_CHILD_COST", "max_child_cost"))
+print("max_run_cost =", effective("MAX_RUN_COST", "max_run_cost"))
+print("state_dir =", os.getenv("RELIABILITY_STATE_DIR", "${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit/runs"))
 print("step_caps =")
 for name, value in sorted(policy["step_caps"].items()):
     env_name = "MAX_STEPS_" + name.upper().replace("-", "_")
