@@ -1,5 +1,6 @@
 {
   "max_parallel_subagents": 3,
+  "queue_timeout_seconds": 600,
   "heartbeat_timeout_seconds": 60,
   "stalled_timeout_seconds": 180,
   "max_agent_duration_seconds": 900,
