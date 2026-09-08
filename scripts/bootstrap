@@ -21,6 +21,31 @@ if [[ ! -f .env ]]; then
   echo "Created .env from .env.example (Copilot LOW/MEDIUM/HIGH profile)"
 else
   echo "Keeping existing .env"
+
+  # Backward-compatible migration from the previous 37 explicit MODEL_* layout.
+  # Missing tier keys are appended without changing any existing per-agent mapping.
+  legacy_model_overrides=0
+  if grep -Eq '^MODEL_(META_ROUTER|ORCHESTRATOR|BUILDER|REVIEWER|PLATFORM_ARCHITECT|APPSEC)=' .env; then
+    legacy_model_overrides=1
+  fi
+
+  for key in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
+    if ! grep -q "^${key}=" .env; then
+      grep "^${key}=" .env.example >> .env
+      echo "Added missing ${key} to existing .env"
+    fi
+  done
+
+  if ! grep -q '^MODEL_PROFILE=' .env; then
+    if [[ $legacy_model_overrides -eq 1 ]]; then
+      echo 'MODEL_PROFILE=legacy-overrides' >> .env
+      echo "Detected legacy per-agent model mappings; preserving them as overrides"
+      echo "Run 'just profile copilot' or 'just profile codex' when you want to adopt tier-only mappings"
+    else
+      grep '^MODEL_PROFILE=' .env.example >> .env
+      echo "Added missing MODEL_PROFILE to existing .env"
+    fi
+  fi
 fi
 
 if [[ ! -d .venv || $refresh -eq 1 ]]; then
