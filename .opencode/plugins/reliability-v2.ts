@@ -8,15 +8,18 @@ const intEnv = (name: string, fallback: number) => {
 }
 
 const terminalStatuses = new Set(["COMPLETED", "FAILED", "ABORTED"])
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export default Plugin.define({
   id: "agent-reliability",
   async setup(ctx) {
     const maxParallel = intEnv("MAX_PARALLEL_SUBAGENTS", 3)
+    const queueTimeoutMs = intEnv("SUBAGENT_QUEUE_TIMEOUT_SECONDS", 600) * 1000
     const stalledMs = intEnv("SUBAGENT_STALLED_TIMEOUT_SECONDS", 180) * 1000
     const maxDurationMs = intEnv("SUBAGENT_MAX_DURATION_SECONDS", 900) * 1000
     const watchMs = intEnv("SUBAGENT_WATCH_INTERVAL_SECONDS", 15) * 1000
     const maxRetries = intEnv("MAX_PROVIDER_RETRIES", 2)
+    const queuePollMs = Math.min(1000, watchMs)
 
     type State = {
       id: string
@@ -31,6 +34,7 @@ export default Plugin.define({
 
     const states = new Map<string, State>()
     const children = new Map<string, Set<string>>()
+    const pending = new Map<string, number>()
     const now = () => Date.now()
 
     const ensure = (id?: string) => {
@@ -69,6 +73,27 @@ export default Plugin.define({
         if (state && !terminalStatuses.has(state.status)) count += 1
       }
       return count
+    }
+
+    const usedSlots = (parentID: string) => activeCount(parentID) + (pending.get(parentID) ?? 0)
+
+    const acquireSlot = async (parentID: string) => {
+      const startedAt = now()
+      while (usedSlots(parentID) >= maxParallel) {
+        if (now() - startedAt >= queueTimeoutMs) {
+          throw new Error(
+            `Reliability guard: subagent queue timed out after ${Math.floor(queueTimeoutMs / 1000)}s while waiting for one of ${maxParallel} slots.`,
+          )
+        }
+        await sleep(queuePollMs)
+      }
+      pending.set(parentID, (pending.get(parentID) ?? 0) + 1)
+    }
+
+    const releaseSlot = (parentID: string) => {
+      const count = pending.get(parentID) ?? 0
+      if (count <= 1) pending.delete(parentID)
+      else pending.set(parentID, count - 1)
     }
 
     const abort = async (state: State, reason: string) => {
@@ -135,20 +160,18 @@ export default Plugin.define({
     }, watchMs)
     timer.unref?.()
 
-    await ctx.tool.hook("execute.before", (event: any) => {
+    await ctx.tool.hook("execute.before", async (event: any) => {
       if (!["subagent", "task"].includes(event.tool)) return
       const parentID = event.sessionID ?? event.sessionId
       if (!parentID) return
-      const active = activeCount(parentID)
-      if (active >= maxParallel) {
-        throw new Error(
-          `Reliability guard: max parallel subagents reached (${active}/${maxParallel}). Wait for a child to finish before delegating another task.`,
-        )
-      }
+      await acquireSlot(parentID)
     })
 
     await ctx.tool.hook("execute.after", (event: any) => {
-      const state = ensure(event.sessionID ?? event.sessionId)
+      const parentID = event.sessionID ?? event.sessionId
+      if (["subagent", "task"].includes(event.tool) && parentID) releaseSlot(parentID)
+
+      const state = ensure(parentID)
       if (!state) return
       state.lastActivityAt = now()
       if (event.status === "completed") state.lastProgressAt = now()
