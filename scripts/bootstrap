@@ -18,7 +18,7 @@ fi
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "Created .env from .env.example"
+  echo "Created .env from .env.example (Copilot LOW/MEDIUM/HIGH profile)"
 else
   echo "Keeping existing .env"
 fi
@@ -43,6 +43,7 @@ set -a
 source .env
 [[ -f .env.local ]] && source .env.local
 set +a
+python3 ./scripts/resolve-models --show >/dev/null
 
 major="${OPENCODE_MAJOR:-1}"
 case "$major" in
@@ -56,10 +57,11 @@ esac
 
 printf '\nSetup complete.\n'
 echo "Recommended next steps:"
-echo "  just configure      # optional: discover LiteLLM models and specialize agent profiles"
+echo "  just models         # inspect LOW/MEDIUM/HIGH and effective agent mappings"
 echo "  just doctor"
 echo "  just install-user   # optional: create ~/.local/bin/oc for use from any workspace"
 echo "  just run            # alternatively run directly from this repository"
+echo "  just profile codex  # optional: switch to the personal Codex profile"
 
 if ! command -v just >/dev/null 2>&1; then
   echo "Note: 'just' is recommended for the friendly command interface."
