@@ -7,6 +7,10 @@ COMMAND_NAME="${2:-oc}"
 BIN_DIR="${OPENCODE_TOOLKIT_BIN_DIR:-$HOME/.local/bin}"
 TARGET="$ROOT/scripts/opencode-agents"
 LINK="$BIN_DIR/$COMMAND_NAME"
+CONFIG_DIR="${OPENCODE_CONFIG_DIR:-$HOME/.config/opencode}"
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+PLUGIN_SOURCE="$ROOT/plugins/runtime-guardrails.js"
+PLUGIN_LINK="$PLUGIN_DIR/opencode-agent-toolkit-runtime.js"
 
 if [[ ! "$COMMAND_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "Invalid command name: $COMMAND_NAME" >&2
@@ -23,74 +27,104 @@ show_path_warning() {
   esac
 }
 
-status() {
-  if [[ -L "$LINK" ]]; then
-    current="$(readlink "$LINK")"
-    if [[ "$current" == "$TARGET" ]]; then
-      echo "$COMMAND_NAME is installed: $LINK -> $TARGET"
+install_managed_link() {
+  local source="$1"
+  local link="$2"
+  local label="$3"
+  mkdir -p "$(dirname "$link")"
+
+  if [[ -L "$link" ]]; then
+    local current
+    current="$(readlink "$link")"
+    if [[ "$current" == "$source" ]]; then
+      echo "$label is already installed: $link -> $source"
       return 0
     fi
-    echo "$COMMAND_NAME exists as a symlink to another target: $LINK -> $current" >&2
+    echo "Refusing to replace existing symlink: $link -> $current" >&2
     return 1
   fi
 
-  if [[ -e "$LINK" ]]; then
-    echo "$COMMAND_NAME exists but is not managed by this toolkit: $LINK" >&2
+  if [[ -e "$link" ]]; then
+    echo "Refusing to replace existing file: $link" >&2
     return 1
   fi
 
-  echo "$COMMAND_NAME is not installed in $BIN_DIR"
+  ln -s "$source" "$link"
+  echo "Installed $label: $link -> $source"
+}
+
+remove_managed_link() {
+  local source="$1"
+  local link="$2"
+  local label="$3"
+
+  if [[ ! -L "$link" ]]; then
+    if [[ -e "$link" ]]; then
+      echo "Refusing to remove non-symlink path not managed by this toolkit: $link" >&2
+      return 1
+    fi
+    echo "$label is already absent: $link"
+    return 0
+  fi
+
+  local current
+  current="$(readlink "$link")"
+  if [[ "$current" != "$source" ]]; then
+    echo "Refusing to remove symlink owned by something else: $link -> $current" >&2
+    return 1
+  fi
+
+  rm "$link"
+  echo "Removed $label: $link"
+}
+
+status_link() {
+  local source="$1"
+  local link="$2"
+  local label="$3"
+
+  if [[ -L "$link" ]]; then
+    local current
+    current="$(readlink "$link")"
+    if [[ "$current" == "$source" ]]; then
+      echo "$label is installed: $link -> $source"
+      return 0
+    fi
+    echo "$label points to another target: $link -> $current" >&2
+    return 1
+  fi
+
+  if [[ -e "$link" ]]; then
+    echo "$label exists but is not managed by this toolkit: $link" >&2
+    return 1
+  fi
+
+  echo "$label is not installed: $link"
   return 1
 }
 
 case "$ACTION" in
   install)
-    mkdir -p "$BIN_DIR"
-
-    if [[ -L "$LINK" ]]; then
-      current="$(readlink "$LINK")"
-      if [[ "$current" == "$TARGET" ]]; then
-        echo "$COMMAND_NAME is already installed: $LINK -> $TARGET"
-        show_path_warning
-        exit 0
-      fi
-      echo "Refusing to replace existing symlink: $LINK -> $current" >&2
-      exit 1
-    fi
-
-    if [[ -e "$LINK" ]]; then
-      echo "Refusing to replace existing file: $LINK" >&2
-      exit 1
-    fi
-
-    ln -s "$TARGET" "$LINK"
-    echo "Installed $COMMAND_NAME: $LINK -> $TARGET"
+    install_managed_link "$TARGET" "$LINK" "$COMMAND_NAME"
+    install_managed_link "$PLUGIN_SOURCE" "$PLUGIN_LINK" "runtime watchdog"
     echo "The current working directory is preserved when $COMMAND_NAME launches OpenCode."
+    echo "The watchdog is global but inert unless the toolkit launcher sets OPENCODE_TOOLKIT_RUNTIME_GUARDS=1."
     show_path_warning
     ;;
 
   uninstall)
-    if [[ ! -L "$LINK" ]]; then
-      if [[ -e "$LINK" ]]; then
-        echo "Refusing to remove non-symlink path not managed by this toolkit: $LINK" >&2
-        exit 1
-      fi
-      echo "$COMMAND_NAME is already absent from $BIN_DIR"
-      exit 0
-    fi
-
-    current="$(readlink "$LINK")"
-    if [[ "$current" != "$TARGET" ]]; then
-      echo "Refusing to remove symlink owned by something else: $LINK -> $current" >&2
-      exit 1
-    fi
-
-    rm "$LINK"
-    echo "Removed $COMMAND_NAME: $LINK"
+    remove_managed_link "$TARGET" "$LINK" "$COMMAND_NAME"
+    remove_managed_link "$PLUGIN_SOURCE" "$PLUGIN_LINK" "runtime watchdog"
     ;;
 
   status)
-    status
+    command_status=0
+    plugin_status=0
+    status_link "$TARGET" "$LINK" "$COMMAND_NAME" || command_status=$?
+    status_link "$PLUGIN_SOURCE" "$PLUGIN_LINK" "runtime watchdog" || plugin_status=$?
+    if (( command_status != 0 || plugin_status != 0 )); then
+      exit 1
+    fi
     ;;
 
   *)
