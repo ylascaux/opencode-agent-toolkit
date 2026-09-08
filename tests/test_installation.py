@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -49,6 +50,56 @@ class InstallationSurfaceTests(unittest.TestCase):
             subprocess.run(["bash", str(script), "uninstall", "oc-test"], check=True, env=env, capture_output=True, text=True)
             self.assertFalse(link.exists())
             self.assertFalse(link.is_symlink())
+
+    def test_user_link_launcher_resolves_toolkit_root_through_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            toolkit = tmp_path / "toolkit"
+            scripts = toolkit / "scripts"
+            agents = toolkit / "agents"
+            scripts.mkdir(parents=True)
+            agents.mkdir()
+
+            for name in ["opencode-agents", "generate-config", "user-link"]:
+                shutil.copy2(ROOT / "scripts" / name, scripts / name)
+            shutil.copy2(ROOT / "agents" / "manifest.json", agents / "manifest.json")
+            (toolkit / ".env").write_text("OPENCODE_MAJOR=1\n")
+
+            fake_opencode = tmp_path / "fake-opencode"
+            fake_opencode.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf 'cwd=%s\\nconfig=%s\\nargs=%s\\n' \"$PWD\" \"${OPENCODE_CONFIG:-}\" \"$*\"\n"
+            )
+            fake_opencode.chmod(0o755)
+
+            bin_dir = tmp_path / "bin"
+            env = os.environ.copy()
+            env["OPENCODE_TOOLKIT_BIN_DIR"] = str(bin_dir)
+            env["OPENCODE_BIN"] = str(fake_opencode)
+            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+
+            subprocess.run(
+                ["bash", str(scripts / "user-link"), "install", "oc-test"],
+                check=True,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            project = tmp_path / "project"
+            project.mkdir()
+            result = subprocess.run(
+                [str(bin_dir / "oc-test"), "run", "hello"],
+                cwd=project,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"cwd={project}", result.stdout)
+            self.assertIn(f"config={toolkit / 'opencode.jsonc'}", result.stdout)
+            self.assertIn("args=run hello", result.stdout)
 
     def test_user_link_refuses_to_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as tmp:
