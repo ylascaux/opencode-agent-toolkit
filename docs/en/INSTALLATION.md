@@ -14,6 +14,61 @@ just doctor
 
 `just install` creates `.env` only when absent, creates `.venv`, installs the scanner/API dependencies, generates both OpenCode configs, validates them and runs the tests.
 
+It does **not** install global packages, use `sudo`, edit your shell startup files or modify `~/.config`.
+
+## Optional user command: run from anywhere
+
+`just run` works from inside the toolkit repository. For day-to-day use across many repositories, install the reversible `oc` command:
+
+```bash
+just install-user
+```
+
+This creates only:
+
+```text
+~/.local/bin/oc -> <toolkit>/scripts/opencode-agents
+```
+
+The launcher does not `cd` into the toolkit. It preserves your current working directory, so this works as expected:
+
+```bash
+cd ~/Projects/my-api
+oc
+```
+
+OpenCode uses `~/Projects/my-api` as the workspace while loading the toolkit configuration and model mappings from the toolkit repository.
+
+Check the link:
+
+```bash
+just user-status
+```
+
+Remove it safely:
+
+```bash
+just uninstall-user
+```
+
+The uninstall command removes the path only when it is a symlink pointing to this toolkit. It refuses to delete unrelated files or symlinks.
+
+If `oc` is already used on your machine, choose another name:
+
+```bash
+just install-user opencode-agents
+```
+
+The default destination is `~/.local/bin`. Override it without modifying your shell configuration:
+
+```bash
+OPENCODE_TOOLKIT_BIN_DIR="$HOME/bin" just install-user
+```
+
+If the chosen bin directory is not in `PATH`, the installer only prints a warning; it never edits your shell automatically.
+
+If you move the toolkit repository later, run `just uninstall-user` before the move and `just install-user` after it so the symlink points to the new path.
+
 ## Configure models automatically
 
 The toolkit can discover the models exposed by an OpenAI-compatible LiteLLM gateway:
@@ -52,6 +107,9 @@ just configure
 
 ```bash
 just install
+just install-user
+just user-status
+just uninstall-user
 just configure
 just doctor
 just run
