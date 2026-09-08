@@ -47,14 +47,23 @@ Le travail passe par `security-lead`. Le pentest runtime n’est utilisé que lo
 
 Les agents délégués terminent avec STATUS, SUMMARY, FACTS, ASSUMPTIONS, EVIDENCE, FINDINGS, RESIDUAL RISKS, RECOMMENDED NEXT AGENTS et CONFIDENCE. HIGH signifie directement vérifié/reproduit, MEDIUM une preuve statique ou indirecte forte, LOW une hypothèse non résolue ou une preuve manquante.
 
-## Configuration des modèles
+## Profils de modèles
+
+Le profil de travail par défaut est GitHub Copilot avec Luna/Terra/Sol mappés vers LOW/MEDIUM/HIGH.
 
 ```bash
-just configure
 just models
+just profile copilot
+just profile codex
 ```
 
-Quand le gateway le permet, utiliser des familles de modèles différentes entre builder et reviewer/sécurité réduit les angles morts corrélés.
+Utilise `.env.local` pour les overrides persistants par agent :
+
+```bash
+MODEL_BUILDER=openai/gpt-5.3-codex
+```
+
+Le profil actif choisit uniquement les modèles concrets des tiers ; le routage, les permissions et les politiques de sécurité des agents restent identiques.
 
 ## Cycle de vie de la commande utilisateur
 
