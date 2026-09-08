@@ -119,11 +119,28 @@ SECRET_READ_PATTERNS = [
     "**/.ssh/**", "**/.aws/credentials", "*id_rsa*", "*id_ed25519*",
 ]
 
-COMMON_PROMPT = """## Evidence discipline
+CONTRACT_PATHS = {
+    "contracts/agent-handoff.schema.json": ROOT / "contracts" / "agent-handoff.schema.json",
+    "contracts/routing-decision.schema.json": ROOT / "contracts" / "routing-decision.schema.json",
+}
+
+
+def resolve_toolkit_paths(text: str) -> str:
+    """Resolve toolkit-owned support files without changing the target workspace."""
+    for relative, absolute in CONTRACT_PATHS.items():
+        text = text.replace(f"`{relative}`", f"`{absolute}`")
+    return text
+
+
+COMMON_PROMPT = resolve_toolkit_paths("""## Evidence discipline
 - Separate FACTS, ASSUMPTIONS, and RECOMMENDATIONS.
 - Prefer direct repository/tool evidence over another agent's summary.
 - Never claim a test, plan, command, runtime check, or source lookup succeeded unless evidence is available.
 - Use HIGH confidence only for directly verified/reproduced claims; MEDIUM for strong static/indirect evidence; LOW for unresolved hypotheses.
+
+## Toolkit support files
+- Toolkit-owned contracts live outside the target repository workspace.
+- When a toolkit contract is needed, use the absolute path given in this prompt; never resolve `contracts/...` against the target repository.
 
 ## Stop conditions
 - Stop and mark BLOCKED when required scope, authorization, dependency, or evidence is missing and proceeding would be unsafe or misleading.
@@ -143,14 +160,14 @@ Finish delegated work with these sections:
 - CONFIDENCE: HIGH | MEDIUM | LOW with a short reason
 
 The machine-readable equivalent is documented in `contracts/agent-handoff.schema.json`.
-"""
+""")
 
 
 def generate_prompts() -> None:
     prompt_dir = ROOT / "prompts"
     prompt_dir.mkdir(exist_ok=True)
     for name, spec in MANIFEST.items():
-        special = spec.get("special", "").strip()
+        special = resolve_toolkit_paths(spec.get("special", "").strip())
         special_block = f"\n{special}\n" if special else ""
         text = (
             f"# Role\n{spec['description']}\n\n"
