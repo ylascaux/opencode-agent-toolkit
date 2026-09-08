@@ -7,6 +7,18 @@ default:
 install:
     bash ./scripts/bootstrap
 
+# Install a reversible per-user command (default: oc) in ~/.local/bin.
+install-user command="oc":
+    bash ./scripts/user-link install "{{command}}"
+
+# Remove the per-user command only when it points to this toolkit.
+uninstall-user command="oc":
+    bash ./scripts/user-link uninstall "{{command}}"
+
+# Show whether the per-user command points to this toolkit.
+user-status command="oc":
+    bash ./scripts/user-link status "{{command}}"
+
 # Discover LiteLLM models and interactively map agent profiles into .env.
 configure *args:
     python3 ./scripts/configure-models {{args}}
