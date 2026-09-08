@@ -35,7 +35,11 @@ def patch_config(path: Path, *, v2: bool) -> None:
         current = int(agent.get("steps", cap))
         agent["steps"] = min(current, cap)
 
-    plugin = "./.opencode/plugins/reliability.js"
+    plugin = (
+        "./.opencode/plugins/reliability-v2.ts"
+        if v2
+        else "./.opencode/plugins/reliability-v1.js"
+    )
     if v2:
         plugins = data.setdefault("plugins", [])
     else:
