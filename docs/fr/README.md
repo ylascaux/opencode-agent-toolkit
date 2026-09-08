@@ -9,10 +9,11 @@ Le toolkit est un système d’ingénierie à 37 agents avec un plan de contrôl
 3. [Routage](ROUTING.md)
 4. [Stratégie des modèles](MODEL_STRATEGY.md)
 5. [Utilisation](USAGE.md)
-6. [Sécurité](SECURITY.md)
-7. [Architecture](ARCHITECTURE.md)
-8. [Découverte des projets](PROJECT_DISCOVERY.md)
-9. [Compatibilité OpenCode](OPENCODE_COMPATIBILITY.md)
+6. [Fiabilité du runtime](RELIABILITY.md)
+7. [Sécurité](SECURITY.md)
+8. [Architecture](ARCHITECTURE.md)
+9. [Découverte des projets](PROJECT_DISCOVERY.md)
+10. [Compatibilité OpenCode](OPENCODE_COMPATIBILITY.md)
 
 Les deux contrats lisibles par machine sont dans `contracts/` :
 - `agent-handoff.schema.json`
