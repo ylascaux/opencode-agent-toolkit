@@ -48,13 +48,24 @@ if [[ -f .env ]]; then
   source .env
   [[ -f .env.local ]] && source .env.local
   set +a
+
   projects_root="${PROJECTS_ROOT:-$HOME/Projects}"
   [[ -d "$projects_root" ]] && echo "[ok]   Projects     $projects_root" || echo "[warn] Projects     not found: $projects_root"
   echo "[info] runtime      OPENCODE_MAJOR=${OPENCODE_MAJOR:-1}"
-  if [[ -n "${LITELLM_BASE_URL:-}" ]]; then
-    echo "[info] LiteLLM      discovery URL configured"
+  echo "[info] profile      ${MODEL_PROFILE:-custom}"
+
+  if python3 ./scripts/resolve-models --show >/dev/null 2>&1; then
+    echo "[ok]   model tiers  LOW/MEDIUM/HIGH resolved"
+    echo "[info] LOW          ${MODEL_LOW:-}"
+    echo "[info] MEDIUM       ${MODEL_MEDIUM:-}"
+    echo "[info] HIGH         ${MODEL_HIGH:-}"
   else
-    echo "[info] LiteLLM      set LITELLM_BASE_URL before 'just configure'"
+    echo "[fail] model tiers  invalid or incomplete"
+    ok=0
+  fi
+
+  if [[ -n "${LITELLM_BASE_URL:-}" ]]; then
+    echo "[info] LiteLLM      optional discovery URL configured"
   fi
 fi
 
