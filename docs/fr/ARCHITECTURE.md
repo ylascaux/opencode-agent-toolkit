@@ -23,6 +23,16 @@ meta-router
 
 Le lead ne sélectionne que les domaines utiles. Lorsqu’une documentation durable est demandée, `platform-architect` stabilise d’abord le design puis délègue l’écriture du fichier à `docs-writer` ; le lead architecture reste non-editing.
 
+## Économie de délégation
+
+Les agents leads commencent par les preuves qu’ils peuvent inspecter directement et utilisent le plus petit ensemble suffisant de sous-agents. La simple présence d’une technologie dans le repository ne suffit pas à justifier le lancement d’un spécialiste.
+
+Par exemple, détecter des fichiers `.tf`, `.hcl` ou Terragrunt ne déclenche pas automatiquement `terraform-terragrunt`. Ce spécialiste devient pertinent lorsque les frontières de modules, le state, le comportement des providers, le lifecycle/remplacement, les dépendances Terragrunt ou un risque de migration influencent réellement l’architecture ou nécessitent une vérification spécialisée.
+
+La même règle s’applique à AWS, Kubernetes, networking, base de données, SRE, observabilité et FinOps. Les questions de découverte proches doivent être regroupées au lieu d’envoyer plusieurs sous-agents sur les mêmes preuves. Lorsqu’un sous-agent renvoie un handoff complet, le parent doit le consommer et poursuivre au lieu de relancer la même tâche, sauf si les preuves sont incomplètes, obsolètes ou contradictoires.
+
+La vérification indépendante reste volontairement une exception : un reviewer peut relire les mêmes preuves primaires, car l’indépendance impose de ne pas considérer le handoff du producteur comme une preuve suffisante.
+
 ## Review d’architecture indépendante
 
 La production d’architecture est volontairement découpée en étapes :
