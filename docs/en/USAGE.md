@@ -47,14 +47,23 @@ This goes to `security-lead`. Runtime pentesting is used only when an authorized
 
 Delegated agents end with STATUS, SUMMARY, FACTS, ASSUMPTIONS, EVIDENCE, FINDINGS, RESIDUAL RISKS, RECOMMENDED NEXT AGENTS and categorical CONFIDENCE. HIGH means directly verified/reproduced; MEDIUM means strong static/indirect evidence; LOW means unresolved hypothesis or missing proof.
 
-## Model setup
+## Model profiles
+
+The default work profile is GitHub Copilot with Luna/Terra/Sol mapped to LOW/MEDIUM/HIGH tiers.
 
 ```bash
-just configure
 just models
+just profile copilot
+just profile codex
 ```
 
-Prefer independent model families for builder vs reviewer/security when your gateway exposes suitable choices.
+Use `.env.local` for persistent per-agent overrides:
+
+```bash
+MODEL_BUILDER=openai/gpt-5.3-codex
+```
+
+The active profile decides only the concrete tier models; agent routing, permissions and safety policies remain unchanged.
 
 ## User command lifecycle
 
