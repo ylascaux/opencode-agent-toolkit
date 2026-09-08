@@ -17,10 +17,31 @@ class ModelProfileTests(unittest.TestCase):
             "MODEL_HIGH": "test/sol",
         })
         self.assertEqual(len(result), 37)
-        self.assertEqual(result["MODEL_DOCS"], "test/luna")
+        self.assertEqual(result["MODEL_MOCK_GENERATOR"], "test/luna")
+        self.assertEqual(result["MODEL_SECRETS"], "test/luna")
+        self.assertEqual(result["MODEL_DOCS"], "test/terra")
+        self.assertEqual(result["MODEL_PROJECT_SCANNER"], "test/terra")
+        self.assertEqual(result["MODEL_EVIDENCE_AUDITOR"], "test/terra")
         self.assertEqual(result["MODEL_BUILDER"], "test/terra")
         self.assertEqual(result["MODEL_PLATFORM_ARCHITECT"], "test/sol")
         self.assertEqual(result["MODEL_APPSEC"], "test/sol")
+
+    def test_default_quality_policy_keeps_only_bounded_agents_low(self):
+        tiers = RESOLVER["load_tiers"]()
+        low_agents = {name for name, tier in tiers.items() if tier == "low"}
+        self.assertEqual(low_agents, {"MODEL_MOCK_GENERATOR", "MODEL_SECRETS"})
+
+    def test_architecture_evidence_sources_are_not_low(self):
+        tiers = RESOLVER["load_tiers"]()
+        for variable in [
+            "MODEL_PROJECT_SCANNER",
+            "MODEL_DOCS",
+            "MODEL_OBSERVABILITY",
+            "MODEL_FINOPS",
+            "MODEL_EVIDENCE_AUDITOR",
+            "MODEL_BRAINSTORM",
+        ]:
+            self.assertIn(tiers[variable], {"medium", "high"}, variable)
 
     def test_per_agent_override_wins_over_tier(self):
         resolve = RESOLVER["resolve"]
