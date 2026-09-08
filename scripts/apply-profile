@@ -9,7 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ROOT / "profiles"
 ENV_FILE = ROOT / ".env"
+BACKUP_FILE = ROOT / ".env.model-overrides.backup"
 PROFILE_KEYS = ("MODEL_PROFILE", "MODEL_LOW", "MODEL_MEDIUM", "MODEL_HIGH")
+AGENT_OVERRIDE = re.compile(r"^MODEL_(?!PROFILE$|LOW$|MEDIUM$|HIGH$)[A-Z0-9_]+=")
 
 
 def load_profile(name: str) -> dict[str, str]:
@@ -38,9 +40,18 @@ def apply_profile(name: str) -> None:
         shutil.copyfile(ROOT / ".env.example", ENV_FILE)
 
     lines = ENV_FILE.read_text().splitlines()
+    explicit_agent_mappings = [line for line in lines if AGENT_OVERRIDE.match(line)]
+    if explicit_agent_mappings:
+        BACKUP_FILE.write_text(
+            "# Saved automatically before switching model profiles.\n"
+            "# Move only the overrides you still want into .env.local.\n"
+            + "\n".join(explicit_agent_mappings)
+            + "\n"
+        )
+        print(f"Backed up {len(explicit_agent_mappings)} explicit agent mappings to {BACKUP_FILE.name}")
+
     out: list[str] = []
     seen: set[str] = set()
-    agent_override = re.compile(r"^MODEL_(?!PROFILE$|LOW$|MEDIUM$|HIGH$)[A-Z0-9_]+=")
 
     for line in lines:
         match = re.match(r"^([A-Z0-9_]+)=(.*)$", line)
@@ -50,7 +61,7 @@ def apply_profile(name: str) -> None:
             seen.add(key)
             continue
         # Profiles own .env's generated agent mappings. Persistent per-agent overrides belong in .env.local.
-        if agent_override.match(line):
+        if AGENT_OVERRIDE.match(line):
             continue
         out.append(line)
 
