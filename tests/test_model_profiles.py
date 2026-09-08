@@ -39,9 +39,11 @@ class ModelProfileTests(unittest.TestCase):
         self.assertEqual(values["MODEL_MEDIUM"], "github-copilot/gpt-5.6-terra")
         self.assertEqual(values["MODEL_HIGH"], "github-copilot/gpt-5.6-sol")
 
-    def test_profile_switch_removes_generated_agent_mappings_from_env(self):
+    def test_profile_switch_backs_up_and_removes_generated_agent_mappings(self):
         with tempfile.TemporaryDirectory() as tmp:
-            env_file = Path(tmp) / ".env"
+            tmp_path = Path(tmp)
+            env_file = tmp_path / ".env"
+            backup_file = tmp_path / ".env.model-overrides.backup"
             env_file.write_text(
                 "OPENCODE_MAJOR=1\n"
                 "MODEL_PROFILE=old\n"
@@ -52,18 +54,23 @@ class ModelProfileTests(unittest.TestCase):
                 "PROJECTS_ROOT=$HOME/Projects\n"
             )
             globals_dict = PROFILE["apply_profile"].__globals__
-            original = globals_dict["ENV_FILE"]
+            original_env = globals_dict["ENV_FILE"]
+            original_backup = globals_dict["BACKUP_FILE"]
             try:
                 globals_dict["ENV_FILE"] = env_file
+                globals_dict["BACKUP_FILE"] = backup_file
                 PROFILE["apply_profile"]("copilot")
             finally:
-                globals_dict["ENV_FILE"] = original
+                globals_dict["ENV_FILE"] = original_env
+                globals_dict["BACKUP_FILE"] = original_backup
 
             text = env_file.read_text()
             self.assertIn("MODEL_PROFILE=copilot", text)
             self.assertIn("MODEL_LOW=github-copilot/gpt-5.6-luna", text)
             self.assertNotIn("MODEL_BUILDER=", text)
             self.assertIn("PROJECTS_ROOT=$HOME/Projects", text)
+            self.assertTrue(backup_file.exists())
+            self.assertIn("MODEL_BUILDER=old/generated", backup_file.read_text())
 
 
 if __name__ == "__main__":
