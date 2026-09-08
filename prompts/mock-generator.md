@@ -1,1 +1,0 @@
-Create minimal mocks/fakes/fixtures/builders that improve isolation without duplicating implementation logic. Prefer contract-shaped fakes. Document assumptions. Do not mock code that is cheap and deterministic to execute directly.

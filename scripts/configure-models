@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import os
+import re
+import shutil
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+PROFILE_BY_ENV = {
+    "MODEL_META_ROUTER": "general",
+    "MODEL_ORCHESTRATOR": "reasoning",
+    "MODEL_REVIEW_LEAD": "review",
+    "MODEL_SECURITY_LEAD": "security",
+    "MODEL_ARBITER": "reasoning",
+    "MODEL_DEEP_REASONER": "deep",
+    "MODEL_EVIDENCE_AUDITOR": "review",
+    "MODEL_BRAINSTORM": "fast",
+    "MODEL_PLANNER": "general",
+    "MODEL_BUILDER": "coding",
+    "MODEL_REVIEWER": "review",
+    "MODEL_TESTER": "coding",
+    "MODEL_MOCK_GENERATOR": "fast",
+    "MODEL_DEBUGGER": "reasoning",
+    "MODEL_API_CONTRACT": "review",
+    "MODEL_PERFORMANCE": "reasoning",
+    "MODEL_PYTHON": "coding",
+    "MODEL_GO": "coding",
+    "MODEL_TERRAFORM": "coding",
+    "MODEL_CICD": "coding",
+    "MODEL_PROJECT_SCANNER": "fast",
+    "MODEL_ARCHITECTURE": "reasoning",
+    "MODEL_PLATFORM_ARCHITECT": "deep",
+    "MODEL_AWS": "reasoning",
+    "MODEL_KUBERNETES": "reasoning",
+    "MODEL_SRE": "reasoning",
+    "MODEL_OBSERVABILITY": "general",
+    "MODEL_FINOPS": "general",
+    "MODEL_DATABASE": "reasoning",
+    "MODEL_NETWORKING": "reasoning",
+    "MODEL_THREAT_MODEL": "reasoning",
+    "MODEL_APPSEC": "security",
+    "MODEL_IAC_SECURITY": "security",
+    "MODEL_SUPPLY_CHAIN": "review",
+    "MODEL_PENTEST": "security",
+    "MODEL_SECRETS": "fast",
+    "MODEL_DOCS": "fast",
+}
+
+PROFILE_ORDER = ["fast", "general", "coding", "reasoning", "deep", "review", "security"]
+
+TOKENS = {
+    "fast": {"positive": ["mini", "nano", "small", "haiku", "flash", "luna", "lite", "fast"], "negative": ["pro", "opus", "deep", "reasoning"]},
+    "general": {"positive": ["smart-router", "general", "sonnet", "gpt", "claude", "gemini", "mistral"], "negative": []},
+    "coding": {"positive": ["code", "coder", "codex", "sonnet", "gpt", "claude", "qwen", "deepseek"], "negative": ["vision", "image", "embedding"]},
+    "reasoning": {"positive": ["reason", "thinking", "sol", "sonnet", "opus", "pro", "gpt", "o3", "o4"], "negative": ["nano", "small"]},
+    "deep": {"positive": ["deep", "opus", "pro", "sol", "reason", "thinking", "o3", "o4"], "negative": ["mini", "nano", "small", "fast"]},
+    "review": {"positive": ["reason", "sonnet", "opus", "sol", "gpt", "claude"], "negative": ["nano", "small"]},
+    "security": {"positive": ["reason", "sonnet", "opus", "sol", "gpt", "claude"], "negative": ["nano", "small", "fast"]},
+}
+
+
+def normalize_model_id(model_id: str, provider_prefix: str = "litellm") -> str:
+    model_id = model_id.strip()
+    if not model_id:
+        raise ValueError("empty model id")
+    if "/" in model_id:
+        return model_id
+    return f"{provider_prefix}/{model_id}"
+
+
+def score_model(model_id: str, profile: str) -> int:
+    low = model_id.lower()
+    score = 0
+    for token in TOKENS[profile]["positive"]:
+        if token in low:
+            score += 4 if token in {"smart-router", "code", "coder", "codex", "reason", "thinking", "deep"} else 2
+    for token in TOKENS[profile]["negative"]:
+        if token in low:
+            score -= 3
+    if "router" in low:
+        score += 5 if profile == "general" else 0
+    return score
+
+
+def recommend_profiles(models: list[str]) -> dict[str, str]:
+    if not models:
+        raise ValueError("no models available")
+    ordered = sorted(set(models))
+    return {profile: max(ordered, key=lambda m: (score_model(m, profile), m)) for profile in PROFILE_ORDER}
+
+
+def parse_models_payload(payload: object) -> list[str]:
+    if isinstance(payload, dict):
+        data = payload.get("data", payload.get("models", []))
+    elif isinstance(payload, list):
+        data = payload
+    else:
+        data = []
+    models: list[str] = []
+    for item in data:
+        if isinstance(item, str):
+            models.append(item)
+        elif isinstance(item, dict):
+            value = item.get("id") or item.get("model_name") or item.get("model")
+            if isinstance(value, str):
+                models.append(value)
+    return sorted(set(models))
+
+
+def load_models_from_endpoint(base_url: str, api_key: str | None, extra_headers: dict[str, str]) -> list[str]:
+    url = base_url.rstrip("/") + "/v1/models"
+    headers = {"Accept": "application/json", **extra_headers}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as exc:
+        body = exc.read(1000).decode("utf-8", errors="replace")
+        raise RuntimeError(f"model discovery failed: HTTP {exc.code}: {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"model discovery failed: {exc.reason}") from exc
+    models = parse_models_payload(payload)
+    if not models:
+        raise RuntimeError("model discovery returned no model ids")
+    return models
+
+
+def load_dotenv(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def update_dotenv(path: Path, mapping: dict[str, str]) -> None:
+    if not path.exists():
+        shutil.copyfile(ROOT / ".env.example", path)
+    lines = path.read_text().splitlines()
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        match = re.match(r"^([A-Z0-9_]+)=(.*)$", line)
+        if match and match.group(1) in mapping:
+            key = match.group(1)
+            out.append(f"{key}={mapping[key]}")
+            seen.add(key)
+        else:
+            out.append(line)
+    missing = [key for key in mapping if key not in seen]
+    if missing:
+        out.extend(["", "# Added by just configure"])
+        out.extend(f"{key}={mapping[key]}" for key in missing)
+    path.write_text("\n".join(out).rstrip() + "\n")
+
+
+def choose_model(profile: str, default: str, models: list[str]) -> str:
+    print(f"\nProfile: {profile.upper()}  recommended: {default}")
+    for idx, model in enumerate(models, 1):
+        marker = "*" if model == default else " "
+        print(f" {marker} {idx:>2}. {model}")
+    answer = input("Select number/model id or press Enter for recommendation: ").strip()
+    if not answer:
+        return default
+    if answer.isdigit() and 1 <= int(answer) <= len(models):
+        return models[int(answer) - 1]
+    return answer
+
+
+def headers_from_env() -> dict[str, str]:
+    result: dict[str, str] = {}
+    raw = os.getenv("LITELLM_HEADERS_JSON", "").strip()
+    if raw:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
+            raise ValueError("LITELLM_HEADERS_JSON must be a JSON object of string headers")
+        result.update(parsed)
+    cf_token = os.getenv("CF_ACCESS_TOKEN", "").strip()
+    if cf_token:
+        result.setdefault("cf-access-token", cf_token)
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Discover LiteLLM models and map agent profiles into .env")
+    parser.add_argument("--base-url", default=os.getenv("LITELLM_BASE_URL"))
+    parser.add_argument("--models-file", help="Read a saved /v1/models JSON response instead of calling the gateway")
+    parser.add_argument("--auto", action="store_true", help="Accept heuristic profile recommendations without prompts")
+    parser.add_argument("--dry-run", action="store_true", help="Print the mapping without writing .env")
+    parser.add_argument("--provider-prefix", default=os.getenv("LITELLM_PROVIDER_PREFIX", "litellm"))
+    args = parser.parse_args()
+
+    if args.models_file:
+        payload = json.loads(Path(args.models_file).read_text())
+        models = parse_models_payload(payload)
+    else:
+        base_url = args.base_url
+        if not base_url and sys.stdin.isatty():
+            base_url = input("LiteLLM base URL (for example https://gateway.example.com): ").strip()
+        if not base_url:
+            parser.error("--base-url or LITELLM_BASE_URL is required unless --models-file is used")
+        api_key = os.getenv("LITELLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key and sys.stdin.isatty():
+            entered = getpass.getpass("API key (optional; press Enter if your gateway uses other auth): ").strip()
+            api_key = entered or None
+        models = load_models_from_endpoint(base_url, api_key, headers_from_env())
+
+    if not models:
+        raise SystemExit("No models discovered")
+    print(f"Discovered {len(models)} models.")
+    recommendations = recommend_profiles(models)
+    chosen = recommendations.copy()
+    if not args.auto:
+        for profile in PROFILE_ORDER:
+            chosen[profile] = choose_model(profile, recommendations[profile], models)
+
+    mapping = {env_name: normalize_model_id(chosen[profile], args.provider_prefix) for env_name, profile in PROFILE_BY_ENV.items()}
+
+    print("\nAgent model profiles:")
+    for profile in PROFILE_ORDER:
+        print(f"  {profile:<10} -> {normalize_model_id(chosen[profile], args.provider_prefix)}")
+    print(f"\nMapped {len(mapping)} MODEL_* variables.")
+
+    if args.dry_run:
+        for key in sorted(mapping):
+            print(f"{key}={mapping[key]}")
+        return 0
+
+    update_dotenv(ROOT / ".env", mapping)
+    print("Updated .env (gateway credentials/Cloudflare tokens were not persisted).")
+    print("Run: just models && just check")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

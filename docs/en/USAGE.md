@@ -1,93 +1,48 @@
 # Usage
 
-The main entry points are high-level commands routed through `meta-router`.
+Start with `just run`. Use `/auto` when routing should be decided automatically.
 
-## `/auto`
-
-General adaptive routing:
+## Delivery
 
 ```text
-/auto Review this service and tell me what should be improved before production.
+/ship Add idempotency to this event consumer.
 ```
 
-Use when you do not want to choose the workflow yourself.
+The meta-router delegates to `orchestrator`; the orchestrator selects implementation/test/review/security leaves. The implementation agent never self-approves.
 
-## `/ship`
-
-Implementation workflow:
+## Review
 
 ```text
-/ship Add idempotency to this webhook handler and include tests.
+/review Review the current branch before merge.
 ```
 
-Typical route: classify -> plan if needed -> narrow implementation specialist -> tests -> independent review -> relevant security gates -> evidence audit.
+This goes through `review-lead`, which selects only relevant review dimensions.
 
-## `/review`
-
-Independent review of a branch/change/component:
+## Architecture
 
 ```text
-/review Review the current diff for correctness, compatibility, security and performance regressions.
+/architecture Discover the systems under ~/Projects and propose a target AWS platform architecture.
 ```
 
-Specialists such as API-contract, database, networking or performance are added only when relevant.
+This goes directly to `platform-architect`, preserving the two-level delegation depth.
 
-## `/architecture`
-
-Architecture council:
+## Security
 
 ```text
-/architecture Analyze the services under ~/Projects and propose a target AWS architecture with migration and rollback.
+/security Review the authentication and Terraform changes on this branch.
 ```
 
-The workflow can combine project discovery, platform architect, AWS, Kubernetes, Terraform, database, networking, SRE, observability, FinOps and security specialists.
+This goes to `security-lead`. Runtime pentesting is used only when an authorized target is explicit.
 
-## `/security`
+## Evidence handoff
 
-Adaptive defense-in-depth review:
+Delegated agents end with STATUS, SUMMARY, FACTS, ASSUMPTIONS, EVIDENCE, FINDINGS, RESIDUAL RISKS, RECOMMENDED NEXT AGENTS and categorical CONFIDENCE. HIGH means directly verified/reproduced; MEDIUM means strong static/indirect evidence; LOW means unresolved hypothesis or missing proof.
 
-```text
-/security Review this Terraform + API change and validate exploitable issues against localhost when appropriate.
+## Model setup
+
+```bash
+just configure
+just models
 ```
 
-Pentest validation remains explicitly scoped and non-destructive.
-
-## `/debug`
-
-Evidence-first debugging:
-
-```text
-/debug Find the root cause of this timeout and add a regression test.
-```
-
-The debugger ranks/falsifies hypotheses before applying a minimal fix.
-
-## `/incident`
-
-Incident workflow:
-
-```text
-/incident Investigate elevated 5xx on the API since the last deployment.
-```
-
-Routes to debugger, SRE, observability and affected domain specialists. Separate facts from hypotheses, define blast radius, mitigation/rollback and follow-up verification.
-
-## `/cost`
-
-FinOps and performance workflow:
-
-```text
-/cost Analyze this EKS platform and identify the largest savings opportunities without weakening reliability.
-```
-
-## Direct agent calls
-
-You can still call a specialist directly when you know what you need:
-
-```text
-@terraform-terragrunt Review this module.
-@appsec Review this authentication flow.
-@project-scanner Inventory ~/Projects.
-```
-
-Use direct calls for narrow work; use high-level commands when coordination, independence or escalation matters.
+Prefer independent model families for builder vs reviewer/security when your gateway exposes suitable choices.

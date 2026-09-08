@@ -2,17 +2,19 @@
 
 A cost-aware, evidence-driven multi-agent engineering system for OpenCode, focused on software delivery, AWS/platform architecture, Terraform/Terragrunt, Python, Go, reliability and defense-in-depth security.
 
-## What makes it different
+## Highlights
 
-- **35 independently configurable agents**.
-- A **meta-router** chooses the minimum sufficient agent path instead of invoking everything.
-- An `orchestrator` handles complex multi-step work.
-- `arbiter`, `deep-reasoner` and `evidence-auditor` provide disagreement resolution, escalation and proof verification.
-- Architecture council: repository scanner + platform architect + AWS + Kubernetes + Terraform + networking + database + SRE + observability + FinOps.
-- Security pipeline: threat model + AppSec + IaC security + supply chain + secrets + authorized non-destructive pentest.
-- Every agent maps to its own `MODEL_*` environment variable.
-- Native configs for **OpenCode V1 stable** and **OpenCode 2 beta** generated from one source of truth.
-- Multi-repository discovery under `~/Projects` plus JSON CLI/API inventory.
+- **37 independently configurable agents** with a deliberately shallow hierarchy.
+- `meta-router` sees only the control/lead entry points, not every specialist.
+- `review-lead` and `security-lead` select independent review/security gates.
+- Leaf agents **cannot delegate** to other agents.
+- Structured handoff and routing contracts under `contracts/`.
+- Strong evidence gates: `arbiter`, `deep-reasoner`, `evidence-auditor`.
+- Explicit web/skill policies and sensitive-file read denial for every agent.
+- Reviewers may collect safe Git evidence without edit permissions.
+- Enriched multi-repository architecture inventory with evidence and confidence.
+- Native OpenCode V1 stable and OpenCode 2 configs generated from one source.
+- `just configure` discovers LiteLLM models and maps profiles to all agents.
 
 ## Quick start
 
@@ -21,60 +23,68 @@ brew install just
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
 just install
+
+# Optional but recommended: discover your LiteLLM models and specialize agent routing.
+export LITELLM_BASE_URL="https://gateway.example.com"
+export LITELLM_API_KEY="..."
+just configure
+
 just doctor
 just run
 ```
 
-The installer creates `.env` from `.env.example` only when needed, preserves your existing model mapping, creates the Python environment, generates both OpenCode configs, validates them and runs tests.
+Cloudflare Access is supported for model discovery via `CF_ACCESS_TOKEN` or `LITELLM_HEADERS_JSON`; credentials are never written by the configurator.
 
-## Daily command surface
+## Control plane
+
+```text
+User
+ |
+ v
+meta-router
+ |-- orchestrator --------> delivery/domain leaves
+ |-- review-lead ---------> independent review leaves
+ |-- platform-architect --> architecture/platform leaves
+ |-- security-lead -------> security leaves
+ |-- arbiter
+ |-- deep-reasoner
+ `-- evidence-auditor
+```
+
+Maximum intended delegation depth stays at **2**. Leads cannot invoke other leads.
+
+## Commands
+
+```text
+/auto <task>
+/ship <feature/fix>
+/review <change>
+/architecture <need>
+/security <scope>
+/debug <problem>
+/incident <incident>
+/cost <scope>
+```
+
+## Just recipes
 
 ```bash
-just                 # list recipes
-just install         # first-time setup
-just doctor          # environment/config health check
-just run             # launch selected OpenCode runtime
-just v1              # force OpenCode V1 stable
-just v2              # force OpenCode 2 beta
-just check           # regenerate configs + validate + tests
-just test            # repository tests
-just scan            # create architecture-inventory.json
-just api             # run the local project inventory API
-just models          # show MODEL_* mappings
-just refresh         # rebuild Python environment
-just clean           # remove generated local state
-```
-
-## OpenCode commands
-
-```text
-/auto <task>          adaptive general routing
-/ship <feature/fix>   implementation + verification gates
-/review <change>      independent adaptive review
-/architecture <need>  architecture council
-/security <scope>     defense-in-depth security review
-/debug <problem>      evidence-first debugging
-/incident <incident>  SRE/observability incident workflow
-/cost <scope>         FinOps + cost/performance analysis
-```
-
-## High-level architecture
-
-```text
-                        +--> narrow specialist (simple work)
-                        |
-User -> meta-router ----+--> orchestrator -> plan/build/test/review/security
-        |               |
-        |               +--> architecture council
-        |
-        +--> arbiter             (material disagreement)
-        +--> deep-reasoner       (high risk / low confidence)
-        `--> evidence-auditor    (proof of completion)
+just install
+just configure
+just doctor
+just run
+just v1
+just v2
+just check
+just test
+just scan
+just api
+just models
+just refresh
+just clean
 ```
 
 ## Documentation
-
-Full bilingual documentation is under [`docs/`](docs/README.md):
 
 - English: [`docs/en/`](docs/en/README.md)
 - Français: [`docs/fr/`](docs/fr/README.md)
@@ -82,9 +92,10 @@ Full bilingual documentation is under [`docs/`](docs/README.md):
 ## Safety defaults
 
 - Terraform/OpenTofu/Terragrunt `apply` and `destroy` are denied.
-- Multi-repository project discovery is read-only.
-- Security agents do not read common secret/key files by default.
-- Pentesting is limited to explicitly authorized, scoped and non-destructive validation.
+- Leaf agents cannot launch subagents.
+- Common `.env`, key, SSH and AWS credential paths are denied to all agent file readers.
+- Pentesting is explicitly authorized, scoped and non-destructive only.
+- Review/security agents do not modify code.
 - High-risk or low-confidence work escalates instead of being silently accepted.
 
 ## Validate

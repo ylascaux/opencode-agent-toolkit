@@ -1,1 +1,47 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"Architecture Inventory","type":"object","required":["projects"],"properties":{"generated_at":{"type":"string"},"roots":{"type":"array","items":{"type":"string"}},"projects":{"type":"array","items":{"type":"object","required":["name","path"],"properties":{"name":{"type":"string"},"path":{"type":"string"},"git":{"type":"object"},"languages":{"type":"object"},"manifests":{"type":"array"},"signals":{"type":"object"}}}}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Architecture Inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "generated_at", "roots", "projects", "relationships"],
+  "properties": {
+    "version": {"type": "string"},
+    "generated_at": {"type": "string"},
+    "roots": {"type": "array", "items": {"type": "string"}},
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "path", "git", "languages", "manifests", "components", "interfaces", "resources", "data_stores", "signals", "evidence"],
+        "properties": {
+          "name": {"type": "string"},
+          "path": {"type": "string"},
+          "git": {"type": "object"},
+          "languages": {"type": "object", "additionalProperties": {"type": "integer"}},
+          "manifests": {"type": "array", "items": {"type": "string"}},
+          "components": {"type": "array", "items": {"type": "object", "required": ["id", "type", "confidence"], "properties": {"id": {"type": "string"}, "type": {"type": "string"}, "confidence": {"enum": ["high", "medium", "low"]}, "evidence": {"type": "array", "items": {"type": "string"}}}}},
+          "interfaces": {"type": "array", "items": {"type": "object", "required": ["type", "confidence", "evidence"], "properties": {"type": {"type": "string"}, "name": {"type": "string"}, "confidence": {"enum": ["high", "medium", "low"]}, "evidence": {"type": "array", "items": {"type": "string"}}}}},
+          "resources": {"type": "array", "items": {"type": "object", "required": ["kind", "name", "confidence", "evidence"], "properties": {"kind": {"type": "string"}, "name": {"type": "string"}, "confidence": {"enum": ["high", "medium", "low"]}, "evidence": {"type": "array", "items": {"type": "string"}}}}},
+          "data_stores": {"type": "array", "items": {"type": "object", "required": ["kind", "confidence", "evidence"], "properties": {"kind": {"type": "string"}, "confidence": {"enum": ["high", "medium", "low"]}, "evidence": {"type": "array", "items": {"type": "string"}}}}},
+          "signals": {"type": "object"},
+          "evidence": {"type": "array", "items": {"type": "object", "required": ["kind", "value", "file", "confidence"], "properties": {"kind": {"type": "string"}, "value": {"type": "string"}, "file": {"type": "string"}, "line": {"type": ["integer", "null"]}, "confidence": {"enum": ["high", "medium", "low"]}}}}
+        }
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target", "type", "confidence", "evidence"],
+        "properties": {
+          "source": {"type": "string"},
+          "target": {"type": "string"},
+          "type": {"type": "string"},
+          "protocol": {"type": ["string", "null"]},
+          "confidence": {"enum": ["high", "medium", "low"]},
+          "evidence": {"type": "array", "items": {"type": "object"}}
+        }
+      }
+    }
+  }
+}

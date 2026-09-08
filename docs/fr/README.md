@@ -1,44 +1,19 @@
-# OpenCode Agent Toolkit — Guide français
+# Documentation
 
-Ce toolkit transforme OpenCode en système d’ingénierie multi-agent orienté coût, preuves et sécurité, pour le développement logiciel, le Platform Engineering, AWS, Terraform/Terragrunt, Python, Go, la fiabilité et la sécurité.
+Le toolkit est un système d’ingénierie à 37 agents avec un plan de contrôle peu profond et auditable.
 
-## Principe
-
-Le point d’entrée par défaut est `meta-router`. Il classe chaque demande selon le domaine, la complexité, le risque, l’incertitude et le blast radius, puis choisit le chemin minimal suffisant. Les tâches simples restent économiques ; les tâches complexes ou risquées sont escaladées.
-
-```text
-Utilisateur
-   |
-   v
-meta-router
-   |-- tâche simple ------------------> spécialiste ciblé
-   |-- implémentation ----------------> orchestrator -> build/test/review/security
-   |-- architecture ------------------> conseil d’architecture
-   |-- désaccord ---------------------> arbiter
-   |-- risque élevé / confiance basse -> deep-reasoner
-   `-- preuve de complétion ----------> evidence-auditor
-```
-
-## Capacités principales
-
-- 35 agents configurables indépendamment.
-- Mapping `MODEL_*` par agent pour LiteLLM/Smart Router ou un autre provider compatible.
-- Routage adaptatif plutôt que lancement systématique de tous les agents.
-- Review indépendante de la correction, de la sécurité et des preuves.
-- Conseil d’architecture AWS/Platform.
-- Garde-fous Terraform/Terragrunt.
-- Pentest autorisé, limité et non destructif.
-- Découverte multi-repositories en lecture seule via `PROJECTS_ROOT`.
-- Compatibilité OpenCode V1 stable et OpenCode 2 beta.
-- Installation en une commande via `just install`.
-
-## Parcours recommandé
+## Ordre de lecture conseillé
 
 1. [Installation](INSTALLATION.md)
-2. [Utilisation](USAGE.md)
-3. [Routage et stratégie de modèles](ROUTING.md)
-4. [Architecture](ARCHITECTURE.md)
-5. [Agents](AGENTS.md)
+2. [Architecture des agents](AGENTS.md)
+3. [Routage](ROUTING.md)
+4. [Stratégie des modèles](MODEL_STRATEGY.md)
+5. [Utilisation](USAGE.md)
 6. [Sécurité](SECURITY.md)
-7. [Découverte des projets](PROJECT_DISCOVERY.md)
-8. [Compatibilité OpenCode](OPENCODE_COMPATIBILITY.md)
+7. [Architecture](ARCHITECTURE.md)
+8. [Découverte des projets](PROJECT_DISCOVERY.md)
+9. [Compatibilité OpenCode](OPENCODE_COMPATIBILITY.md)
+
+Les deux contrats lisibles par machine sont dans `contracts/` :
+- `agent-handoff.schema.json`
+- `routing-decision.schema.json`

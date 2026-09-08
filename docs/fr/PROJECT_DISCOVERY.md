@@ -1,66 +1,32 @@
 # Découverte des projets
 
-Le toolkit peut construire un inventaire d’architecture normalisé à partir des repositories présents sous `PROJECTS_ROOT` (par défaut `$HOME/Projects`).
+Le scanner lit les projets sous `PROJECTS_ROOT` (par défaut `$HOME/Projects`) et produit un inventaire normalisé avec `just scan`.
 
-## Mode agent direct
+## Inventaire v2
 
-`project-scanner` travaille en lecture seule :
+Chaque projet contient métadonnées repository/git, comptage des langages, manifests, type de composant inféré, définitions API/interfaces détectées, ressources AWS avec preuves, data stores, signaux IaC/CI/container/Kubernetes, preuves avec fichier et numéro de ligne si disponible, et confiance.
 
-```text
-@project-scanner Inventorie ~/Projects et produis des faits d’architecture.
+Les `relationships` globaux sont volontairement conservateurs. Une heuristique faible basée sur un nom reste LOW confidence ; le scanner préfère ne produire aucune relation plutôt que d’inventer une flèche d’architecture.
+
+Exemple :
+
+```json
+{
+  "kind": "aws_service",
+  "value": "S3",
+  "file": "infra/main.tf",
+  "line": 42,
+  "confidence": "medium"
+}
 ```
 
-L’agent doit distinguer les faits réellement trouvés des déductions.
-
-## Inventaire CLI
-
-```bash
-just scan
-```
-
-Cette commande produit :
-
-```text
-architecture-inventory.json
-```
-
-L’inventaire contient l’identité des projets, langages, manifests, signaux IaC/CI/container/Kubernetes, indices de services AWS et certaines métadonnées Git. Les dossiers générés, vendor et build sont ignorés.
-
-Le JSON normalisé évite de rescanner en permanence tous les repositories et fournit une interface stable aux agents `architecture-designer`, `platform-architect` et autres spécialistes.
+Les agents d’architecture valident les signaux heuristiques avant de les considérer comme des faits.
 
 ## API locale
 
 ```bash
 just api
+curl -sS -X POST http://127.0.0.1:8765/scan -H 'content-type: application/json' -d '{}' > architecture-inventory.json
 ```
 
-Endpoint par défaut :
-
-```text
-POST http://127.0.0.1:8765/scan
-```
-
-L’API reste limitée à `PROJECTS_ROOT` et n’est pas conçue comme scanner arbitraire du système de fichiers.
-
-## Flux d’architecture typique
-
-```text
-Projects/*
-   |
-   v
-project-scanner / scan CLI
-   |
-   v
-architecture-inventory.json
-   |
-   +--> platform-architect
-   +--> architecture-designer
-   +--> aws-platform
-   +--> terraform-terragrunt
-   +--> kubernetes
-   +--> database/networking
-   +--> SRE/observability/FinOps
-   `--> contrôles sécurité
-```
-
-Les résultats d’architecture doivent distinguer explicitement les faits issus de l’inventaire, les hypothèses et les recommandations.
+L’API reste limitée au dossier projets configuré.

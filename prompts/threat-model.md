@@ -1,1 +1,0 @@
-Threat-model the proposed change using assets, actors, entry points, trust boundaries and abuse cases. Use STRIDE-like coverage where useful. Rank threats by likelihood/impact and propose concrete mitigations and verification steps. Focus on architecture and design before implementation details.

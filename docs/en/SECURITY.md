@@ -1,47 +1,33 @@
 # Security pipeline
 
-Security is a separate review plane so that the agent producing a change is not the only agent judging its security.
+Security is a separate review pipeline, not a flag on the builder.
 
-## Gates
+```text
+meta-router
+  -> security-lead
+       -> threat-model
+       -> appsec
+       -> iac-security
+       -> supply-chain
+       -> secrets
+       -> pentest
+```
 
-1. `threat-model`: assets, actors, entry points, trust boundaries, abuse cases and mitigations.
-2. `appsec`: authentication/authorization, injection, SSRF, path traversal, deserialization, XSS/CSRF, uploads, redirects, sensitive data, crypto and business logic.
-3. `iac-security`: IAM, public exposure, encryption, KMS, security groups, bucket policies, logging, workload identity, Kubernetes RBAC/pod privilege and Terraform state security.
-4. `supply-chain`: dependency risk, lockfiles, CI permissions, image provenance, action pinning and build integrity.
-5. `secrets`: accidental credentials or sensitive material; values must be redacted.
-6. `pentest`: authorized runtime validation of plausible findings using the least invasive proof necessary.
+`security-lead` selects only gates relevant to the actual attack surface.
 
-## Adaptive selection
+- `threat-model`: assets, actors, entry points, trust boundaries and abuse cases.
+- `appsec`: authn/authz, injection, SSRF, traversal, deserialization, XSS/CSRF, uploads, crypto, rate limits and business logic.
+- `iac-security`: IAM, public exposure, encryption/KMS, policies, workload identity/RBAC, state and logging.
+- `supply-chain`: dependencies, lockfiles, CI actions, images, provenance and version-specific vulnerability evidence.
+- `secrets`: credential/sensitive-value exposure with redacted output.
+- `pentest`: runtime validation only for explicitly authorized, scoped targets.
 
-Not every change runs every gate. The router selects the relevant controls based on attack surface. Examples:
+Pentest never performs persistence, exfiltration, DoS, credential spraying, lateral movement, stealth or destructive changes.
 
-- new API/auth flow: threat-model + AppSec;
-- Terraform/EKS change: threat-model when trust changes + IaC security;
-- dependency or CI change: supply-chain;
-- suspected credential leak: secrets;
-- runtime exploitability question: pentest only when the target is explicitly authorized.
+## Tool policy
 
-## Pentest safety
+Security review agents do not edit code. Security tools and web access require explicit policy/approval; secrets and pentest have web disabled by default. All agents deny common `.env`, key, SSH and AWS credential paths.
 
-The pentest agent must have explicit scope. Prefer localhost, test environments or provided fixtures. It must not persist access, exfiltrate data, perform denial of service, credential spraying, lateral movement, stealth or destructive actions. Stop once minimum proof is sufficient.
+## Finding contract
 
-The default permissions allow harmless localhost `curl` checks; other shell commands require approval.
-
-## Finding quality
-
-Security findings should contain:
-
-- affected component/location;
-- evidence;
-- exploitability conditions;
-- impact;
-- severity and confidence;
-- remediation;
-- verification steps;
-- residual risk.
-
-Hardening suggestions should be separated from exploitable vulnerabilities.
-
-## Terraform safety
-
-Terraform/OpenTofu/Terragrunt formatting and validation can be allowed automatically; plans require approval; `apply` and `destroy` are denied by default.
+Each finding carries severity, confidence, direct evidence, exploitability/preconditions, impact, remediation and verification. Exploitable vulnerabilities are distinguished from hardening guidance.

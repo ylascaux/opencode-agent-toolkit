@@ -1,93 +1,48 @@
 # Utilisation
 
-Les principaux points d’entrée sont des commandes haut niveau routées par `meta-router`.
+Lancer le toolkit avec `just run`. Utiliser `/auto` pour laisser le routage choisir automatiquement.
 
-## `/auto`
-
-Routage adaptatif général :
+## Delivery
 
 ```text
-/auto Review ce service et indique ce qui doit être amélioré avant la production.
+/ship Ajoute l’idempotence à ce consumer d’événements.
 ```
 
-À utiliser lorsque tu ne veux pas choisir toi-même le workflow.
+Le meta-router délègue à `orchestrator`, qui choisit les leaf agents d’implémentation/tests/review/sécurité. L’agent qui code ne valide jamais seul son propre travail.
 
-## `/ship`
-
-Workflow d’implémentation :
+## Review
 
 ```text
-/ship Ajoute l’idempotence à ce webhook et les tests associés.
+/review Review la branche courante avant merge.
 ```
 
-Parcours typique : classification -> plan si nécessaire -> spécialiste d’implémentation -> tests -> review indépendante -> contrôles sécurité pertinents -> audit des preuves.
+Le travail passe par `review-lead`, qui ne sélectionne que les dimensions pertinentes.
 
-## `/review`
-
-Review indépendante d’une branche, d’un changement ou d’un composant :
+## Architecture
 
 ```text
-/review Review le diff courant pour la correction, la compatibilité, la sécurité et les régressions de performance.
+/architecture Analyse les systèmes sous ~/Projects et propose une architecture Platform AWS cible.
 ```
 
-Les spécialistes API-contract, database, networking ou performance ne sont ajoutés que si nécessaire.
+Le travail part directement vers `platform-architect`, ce qui conserve une profondeur de délégation de deux niveaux.
 
-## `/architecture`
-
-Conseil d’architecture :
+## Sécurité
 
 ```text
-/architecture Analyse les services dans ~/Projects et propose une architecture AWS cible avec migration et rollback.
+/security Review les changements d’authentification et Terraform de cette branche.
 ```
 
-Le workflow peut combiner découverte des projets, platform architect, AWS, Kubernetes, Terraform, database, networking, SRE, observability, FinOps et sécurité.
+Le travail passe par `security-lead`. Le pentest runtime n’est utilisé que lorsqu’une cible autorisée est explicite.
 
-## `/security`
+## Handoff des preuves
 
-Review sécurité adaptative :
+Les agents délégués terminent avec STATUS, SUMMARY, FACTS, ASSUMPTIONS, EVIDENCE, FINDINGS, RESIDUAL RISKS, RECOMMENDED NEXT AGENTS et CONFIDENCE. HIGH signifie directement vérifié/reproduit, MEDIUM une preuve statique ou indirecte forte, LOW une hypothèse non résolue ou une preuve manquante.
 
-```text
-/security Review ce changement Terraform + API et valide les problèmes exploitables sur localhost lorsque pertinent.
+## Configuration des modèles
+
+```bash
+just configure
+just models
 ```
 
-Le pentest reste explicitement autorisé, limité et non destructif.
-
-## `/debug`
-
-Debug basé sur les preuves :
-
-```text
-/debug Trouve la root cause de ce timeout et ajoute un test de régression.
-```
-
-Le debugger classe puis falsifie les hypothèses avant d’appliquer une correction minimale.
-
-## `/incident`
-
-Workflow incident :
-
-```text
-/incident Analyse l’augmentation des 5xx API depuis le dernier déploiement.
-```
-
-Le routeur utilise debugger, SRE, observability et les spécialistes concernés. Il sépare faits et hypothèses, définit le blast radius, la mitigation/rollback et les actions de suivi.
-
-## `/cost`
-
-Workflow FinOps/performance :
-
-```text
-/cost Analyse cette plateforme EKS et identifie les économies principales sans réduire la fiabilité.
-```
-
-## Appels directs
-
-Tu peux toujours appeler un spécialiste directement :
-
-```text
-@terraform-terragrunt Review ce module.
-@appsec Review ce flux d’authentification.
-@project-scanner Inventorie ~/Projects.
-```
-
-Utilise les appels directs pour les tâches ciblées et les commandes haut niveau lorsque coordination, indépendance ou escalade sont importantes.
+Quand le gateway le permet, utiliser des familles de modèles différentes entre builder et reviewer/sécurité réduit les angles morts corrélés.

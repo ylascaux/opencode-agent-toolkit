@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Routing Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["domains","complexity","risk","uncertainty","blast_radius","change_type","route","gates","escalation_triggers"],
+  "properties": {
+    "domains": {"type": "array","items": {"type": "string"}},
+    "complexity": {"enum": ["low","medium","high"]},
+    "risk": {"enum": ["low","medium","high","critical"]},
+    "uncertainty": {"enum": ["low","medium","high"]},
+    "blast_radius": {"enum": ["local","service","multi-service","platform","production-critical"]},
+    "change_type": {"enum": ["analysis","implementation","review","incident","migration","architecture","documentation","cost"]},
+    "route": {"type": "array","items": {"type": "string"}},
+    "gates": {"type": "array","items": {"type": "string"}},
+    "parallelizable": {"type": "array","items": {"type": "string"}},
+    "escalation_triggers": {"type": "array","items": {"type": "string"}}
+  }
+}

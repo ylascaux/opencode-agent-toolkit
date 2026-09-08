@@ -22,15 +22,11 @@ check_cmd opencode2
 if [[ -f .env ]]; then
   echo "[ok]   .env         present"
 else
-  echo "[fail] .env         missing (run: just install or bash ./scripts/bootstrap)"
+  echo "[fail] .env         missing (run: just install)"
   ok=0
 fi
 
-if [[ -d .venv ]]; then
-  echo "[ok]   .venv        present"
-else
-  echo "[warn] .venv        missing (API dependencies are not installed)"
-fi
+[[ -d .venv ]] && echo "[ok]   .venv        present" || echo "[warn] .venv        missing (API dependencies are not installed)"
 
 python3 ./scripts/generate-config >/dev/null
 if python3 -m json.tool opencode.jsonc >/dev/null 2>&1 && python3 -m json.tool opencode.v2.jsonc >/dev/null 2>&1; then
@@ -52,21 +48,23 @@ if [[ -f .env ]]; then
   source .env
   [[ -f .env.local ]] && source .env.local
   set +a
-  root="${PROJECTS_ROOT:-$HOME/Projects}"
-  if [[ -d "$root" ]]; then
-    echo "[ok]   Projects     $root"
-  else
-    echo "[warn] Projects     not found: $root"
-  fi
+  projects_root="${PROJECTS_ROOT:-$HOME/Projects}"
+  [[ -d "$projects_root" ]] && echo "[ok]   Projects     $projects_root" || echo "[warn] Projects     not found: $projects_root"
   echo "[info] runtime      OPENCODE_MAJOR=${OPENCODE_MAJOR:-1}"
+  if [[ -n "${LITELLM_BASE_URL:-}" ]]; then
+    echo "[info] LiteLLM      discovery URL configured"
+  else
+    echo "[info] LiteLLM      set LITELLM_BASE_URL before 'just configure'"
+  fi
 fi
 
 python3 - <<'PY'
 import json
 from pathlib import Path
-for filename,key in (("opencode.jsonc","agent"),("opencode.v2.jsonc","agents")):
-    d=json.loads(Path(filename).read_text())
-    print(f"[info] {filename:<17} {len(d[key])} agents, {len(d.get('command', d.get('commands', {})))} commands")
+for filename, key in (("opencode.jsonc", "agent"), ("opencode.v2.jsonc", "agents")):
+    data = json.loads(Path(filename).read_text())
+    commands = data.get("command", data.get("commands", {}))
+    print(f"[info] {filename:<17} {len(data[key])} agents, {len(commands)} commands")
 PY
 
 exit $((1-ok))

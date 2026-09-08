@@ -1,102 +1,65 @@
 # Installation
 
-The toolkit is designed around `just` as its primary command surface.
+`just` is the primary command surface.
 
-## Recommended macOS setup
+## macOS quick start
 
 ```bash
 brew install just
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
 just install
-```
-
-`just install` performs the full bootstrap:
-
-1. creates `.env` from `.env.example` if needed;
-2. preserves an existing `.env`;
-3. creates `.venv`;
-4. installs the project-inventory CLI/API dependencies;
-5. generates native OpenCode V1 and V2 configs;
-6. validates both configs;
-7. runs the repository test suite;
-8. checks the selected OpenCode runtime.
-
-It does not overwrite an existing model mapping.
-
-## Without `just`
-
-The bootstrap script itself does not depend on `just`:
-
-```bash
-./scripts/bootstrap
-./scripts/opencode-agents
-```
-
-## Configure models
-
-By default every agent maps to `litellm/smart-router`. Customize only the roles for which you want explicit model selection:
-
-```dotenv
-MODEL_META_ROUTER=litellm/fast-router
-MODEL_ORCHESTRATOR=litellm/smart-router
-MODEL_BUILDER=litellm/coding-model
-MODEL_REVIEWER=litellm/reasoning-model
-MODEL_DEEP_REASONER=litellm/deep-reasoning-model
-MODEL_APPSEC=litellm/security-review-model
-```
-
-Inspect the current mapping with:
-
-```bash
-just models
-```
-
-## Runtime selection
-
-`.env` supports:
-
-```dotenv
-OPENCODE_MAJOR=1
-```
-
-Values:
-
-- `1`: stable `opencode` with `opencode.jsonc`;
-- `2`: OpenCode 2 beta `opencode2` with `opencode.v2.jsonc`;
-- `auto`: prefer `opencode2` when installed, otherwise `opencode`.
-
-One-off overrides:
-
-```bash
-just v1
-just v2
-```
-
-## Daily commands
-
-```bash
-just                 # list recipes
-just install         # first-time setup
-just doctor          # environment/config health check
-just run             # launch selected runtime
-just v1              # force OpenCode V1
-just v2              # force OpenCode V2
-just check           # generate configs + validate + tests
-just test            # repository tests
-just scan            # create architecture-inventory.json
-just api             # start local inventory API
-just models          # show MODEL_* mappings
-just refresh         # rebuild venv/dependencies
-just clean           # remove generated local state
-```
-
-## Health check
-
-```bash
 just doctor
 ```
 
-The doctor reports Python, `just`, OpenCode binaries, `.env`, `.venv`, V1/V2 config validity, tests, `PROJECTS_ROOT`, runtime selection, agent count and command count.
+`just install` creates `.env` only when absent, creates `.venv`, installs the scanner/API dependencies, generates both OpenCode configs, validates them and runs the tests.
 
-Warnings are non-fatal for optional components such as OpenCode 2 or a missing `~/Projects` directory.
+## Configure models automatically
+
+The toolkit can discover the models exposed by an OpenAI-compatible LiteLLM gateway:
+
+```bash
+export LITELLM_BASE_URL="https://gateway.example.com"
+export LITELLM_API_KEY="..."
+just configure
+```
+
+The configurator discovers `/v1/models`, recommends models for `fast`, `general`, `coding`, `reasoning`, `deep`, `review` and `security`, then maps those profiles to all 37 `MODEL_*` variables. Interactive overrides are supported.
+
+Non-interactive: `just configure --auto`
+
+Dry-run: `just configure --auto --dry-run`
+
+Offline/saved response: `just configure --models-file ./models.json`
+
+### Cloudflare Access / custom headers
+
+Model discovery reads, but never persists, these process variables:
+
+```bash
+export CF_ACCESS_TOKEN="..."
+export LITELLM_HEADERS_JSON='{"x-custom-header":"value"}'
+just configure
+```
+
+`CF_ACCESS_TOKEN` is sent as `cf-access-token`. API keys and access tokens are not written to `.env` by the configurator.
+
+## Runtime selection
+
+`.env` supports `OPENCODE_MAJOR=1`, `2`, or `auto`. One-off selection is available through `just v1` and `just v2`.
+
+## Daily recipes
+
+```bash
+just install
+just configure
+just doctor
+just run
+just check
+just test
+just scan
+just api
+just models
+just refresh
+just clean
+```

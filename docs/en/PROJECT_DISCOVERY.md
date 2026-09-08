@@ -1,68 +1,32 @@
 # Project discovery
 
-The toolkit can build a normalized architecture inventory from repositories under `PROJECTS_ROOT` (default `$HOME/Projects`).
+The scanner reads projects under `PROJECTS_ROOT` (default `$HOME/Projects`) and writes a normalized inventory with `just scan`.
 
-## Direct agent mode
+## Inventory v2
 
-`project-scanner` is read-only and can inspect project files without modifying them:
+Each project contains repository/git metadata, language counts, manifests, inferred component type, detected API/interface definitions, AWS resources with evidence, data stores, IaC/CI/container/Kubernetes signals, evidence entries with file and line when available, and confidence.
 
-```text
-@project-scanner Inventory ~/Projects and produce architecture facts.
+Top-level `relationships` are intentionally conservative. Weak name-based heuristics stay LOW confidence; the scanner prefers an empty relationship set to a fabricated architecture edge.
+
+Example evidence:
+
+```json
+{
+  "kind": "aws_service",
+  "value": "S3",
+  "file": "infra/main.tf",
+  "line": 42,
+  "confidence": "medium"
+}
 ```
 
-It should report facts, not inferred architecture presented as fact.
-
-## CLI inventory
-
-```bash
-just scan
-```
-
-This writes:
-
-```text
-architecture-inventory.json
-```
-
-The inventory contains project identity, languages, manifests, infrastructure/CI/container/Kubernetes signals, detected AWS service hints and selected Git metadata. Generated/vendor/build directories are ignored.
-
-The normalized JSON reduces repeated repository crawling and provides a stable handoff to `architecture-designer`, `platform-architect` and other specialists.
+Architecture agents validate heuristic signals before treating them as facts.
 
 ## Local API
 
-Start the FastAPI wrapper:
-
 ```bash
 just api
+curl -sS -X POST http://127.0.0.1:8765/scan -H 'content-type: application/json' -d '{}' > architecture-inventory.json
 ```
 
-Default endpoint:
-
-```text
-POST http://127.0.0.1:8765/scan
-```
-
-The API is constrained to `PROJECTS_ROOT`; it is not intended as an arbitrary filesystem scanner.
-
-## Typical architecture flow
-
-```text
-Projects/*
-   |
-   v
-project-scanner / scan CLI
-   |
-   v
-architecture-inventory.json
-   |
-   +--> platform-architect
-   +--> architecture-designer
-   +--> aws-platform
-   +--> terraform-terragrunt
-   +--> kubernetes
-   +--> database/networking
-   +--> SRE/observability/FinOps
-   `--> security gates
-```
-
-Architecture outputs should explicitly distinguish facts found in the inventory from assumptions and recommendations.
+The API remains constrained to the configured projects root.

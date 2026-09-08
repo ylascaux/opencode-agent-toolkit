@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status","summary","facts","assumptions","evidence","findings","residual_risks","recommended_next_agents","confidence"],
+  "properties": {
+    "status": {"enum": ["complete","blocked","escalation_required"]},
+    "summary": {"type": "string"},
+    "facts": {"type": "array","items": {"type": "string"}},
+    "assumptions": {"type": "array","items": {"type": "string"}},
+    "evidence": {"type": "array","items": {"type": "object","additionalProperties": false,"required": ["type","status","result"],"properties": {"type": {"enum": ["diff","file","test","plan","log","metric","trace","runtime_check","source","other"]},"status": {"enum": ["verified","partially_verified","unverified","contradicted"]},"source": {"type": "string"},"command": {"type": "string"},"result": {"type": "string"}}}},
+    "findings": {"type": "array","items": {"type": "object","additionalProperties": false,"required": ["severity","confidence","description"],"properties": {"severity": {"enum": ["critical","high","medium","low","info"]},"confidence": {"enum": ["high","medium","low"]},"description": {"type": "string"},"evidence": {"type": "array","items": {"type": "string"}},"remediation": {"type": "string"},"verification": {"type": "string"}}}},
+    "residual_risks": {"type": "array","items": {"type": "string"}},
+    "recommended_next_agents": {"type": "array","items": {"type": "string"}},
+    "confidence": {"enum": ["high","medium","low"]},
+    "confidence_reason": {"type": "string"}
+  }
+}

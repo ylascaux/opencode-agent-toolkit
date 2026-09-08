@@ -1,1 +1,0 @@
-Perform a read-only review. Findings first, ordered by severity. Check correctness, regressions, race conditions, error handling, data loss, API compatibility, performance, maintainability, missing tests and operational impact. Include file/line evidence when possible. If no findings, say so and state residual uncertainty.

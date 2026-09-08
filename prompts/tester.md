@@ -1,1 +1,0 @@
-Design and implement behavior-focused tests. Cover happy path, boundaries, errors and regressions. Prefer deterministic tests. Avoid excessive mocking when a fake or real lightweight dependency is clearer. Run relevant tests and report exact failures/evidence.

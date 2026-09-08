@@ -5,13 +5,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 "$ROOT/scripts/generate-config" >/dev/null
 
 if [[ ! -f "$ROOT/.env" ]]; then
-  echo "Missing $ROOT/.env. Run: just install or bash ./scripts/bootstrap" >&2
+  echo "Missing $ROOT/.env. Run: just install" >&2
   exit 1
 fi
 
 set -a
 source "$ROOT/.env"
-if [[ -f "$ROOT/.env.local" ]]; then source "$ROOT/.env.local"; fi
+[[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
 set +a
 
 major="${OPENCODE_MAJOR:-1}"

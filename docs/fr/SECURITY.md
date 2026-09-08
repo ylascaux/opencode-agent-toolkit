@@ -1,47 +1,33 @@
-# Pipeline sécurité
+# Pipeline de sécurité
 
-La sécurité est un plan de review indépendant afin que l’agent qui produit un changement ne soit pas le seul à juger sa sécurité.
+La sécurité est une pipeline de review indépendante, pas une option du builder.
 
-## Contrôles
+```text
+meta-router
+  -> security-lead
+       -> threat-model
+       -> appsec
+       -> iac-security
+       -> supply-chain
+       -> secrets
+       -> pentest
+```
 
-1. `threat-model` : actifs, acteurs, points d’entrée, trust boundaries, abuse cases et mitigations.
-2. `appsec` : authentification/autorisation, injections, SSRF, path traversal, désérialisation, XSS/CSRF, uploads, redirects, données sensibles, crypto et logique métier.
-3. `iac-security` : IAM, exposition publique, chiffrement, KMS, security groups, bucket policies, logging, workload identity, RBAC Kubernetes, privilèges pods et sécurité du state Terraform.
-4. `supply-chain` : dépendances, lockfiles, permissions CI, provenance des images, pinning des actions et intégrité du build.
-5. `secrets` : credentials et données sensibles accidentellement exposés ; les valeurs doivent rester masquées.
-6. `pentest` : validation runtime autorisée d’une vulnérabilité plausible avec la preuve minimale nécessaire.
+`security-lead` sélectionne uniquement les gates liés à la surface d’attaque réellement modifiée.
 
-## Sélection adaptative
+- `threat-model` : assets, acteurs, points d’entrée, trust boundaries et scénarios d’abus.
+- `appsec` : authn/authz, injections, SSRF, traversal, désérialisation, XSS/CSRF, uploads, crypto, rate limits et logique métier.
+- `iac-security` : IAM, exposition publique, chiffrement/KMS, policies, workload identity/RBAC, state et logs.
+- `supply-chain` : dépendances, lockfiles, actions CI, images, provenance et preuve de vulnérabilité liée aux versions réellement utilisées.
+- `secrets` : credentials/valeurs sensibles avec contenu masqué.
+- `pentest` : validation runtime uniquement sur une cible explicitement autorisée et dans le scope.
 
-Tous les changements ne déclenchent pas tous les contrôles. Le routeur choisit selon la surface d’attaque :
+Le pentest interdit persistance, exfiltration, DoS, credential spraying, mouvement latéral, furtivité et modifications destructives.
 
-- nouveau flux API/auth : threat-model + AppSec ;
-- Terraform/EKS : threat-model si les trust boundaries changent + IaC security ;
-- dépendance ou CI : supply-chain ;
-- suspicion de fuite de credential : secrets ;
-- question d’exploitabilité runtime : pentest uniquement sur une cible explicitement autorisée.
+## Politique des outils
 
-## Sécurité du pentest
+Les agents de review sécurité ne modifient pas le code. Les outils de sécurité et l’accès Web sont soumis à une politique explicite/validation ; secrets et pentest ont le Web désactivé par défaut. Tous les agents refusent les chemins classiques `.env`, clés, SSH et credentials AWS.
 
-Le scope doit être explicite. Les cibles privilégiées sont localhost, les environnements de test ou les fixtures fournies. L’agent ne doit pas maintenir un accès, exfiltrer des données, effectuer de DoS, credential spraying, mouvement latéral, furtivité ou action destructive. Il s’arrête dès que la preuve minimale est obtenue.
+## Contrat d’un finding
 
-Les permissions par défaut autorisent seulement quelques `curl` localhost sans confirmation ; les autres commandes shell demandent une approbation.
-
-## Qualité des findings
-
-Chaque finding doit contenir :
-
-- composant/localisation ;
-- preuve ;
-- conditions d’exploitation ;
-- impact ;
-- sévérité et confiance ;
-- remédiation ;
-- étapes de vérification ;
-- risque résiduel.
-
-Les recommandations de hardening doivent être séparées des vulnérabilités réellement exploitables.
-
-## Sécurité Terraform
-
-Le formatage et la validation Terraform/OpenTofu/Terragrunt peuvent être autorisés automatiquement ; les plans demandent confirmation ; `apply` et `destroy` sont refusés par défaut.
+Un finding contient sévérité, confiance, preuve directe, conditions d’exploitation, impact, remédiation et étape de vérification. Une vulnérabilité exploitable doit être distinguée d’une recommandation de hardening.

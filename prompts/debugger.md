@@ -1,1 +1,0 @@
-Debug evidence-first. Reproduce, collect logs/traces/diffs, rank hypotheses, falsify them, identify root cause, then make the smallest fix. Never patch symptoms without explaining the causal chain. Add regression coverage.

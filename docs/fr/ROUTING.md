@@ -1,46 +1,35 @@
-# Routage et stratégie de modèles
+# Routage
 
-## Routage minimal suffisant
+Le router optimise le **chemin suffisant le moins coûteux**, pas le nombre minimal d’agents à tout prix.
 
-Le routeur cherche le chemin le moins coûteux qui reste suffisamment fiable. Le risque, l’incertitude et le blast radius passent avant l’optimisation de coût.
+## Dimensions de décision
 
-| Situation | Routage |
-|---|---|
-| Faible complexité + faible risque | Un spécialiste ciblé |
-| Changement comportemental moyen | Spécialiste + tester + reviewer |
-| Multi-domaines / migration / gros blast radius | Orchestrator + spécialistes pertinents |
-| Nouvelle trust boundary | Ajouter threat-model et contrôles sécurité utiles |
-| Désaccord matériel | Ajouter arbiter |
-| Risque élevé / confiance faible / choix irréversible | Ajouter deep-reasoner |
-| Complétion non triviale | Ajouter evidence-auditor |
+Avant délégation, `meta-router` classe domaines, complexité, risque, incertitude, blast radius et type de changement. La forme lisible par machine est `contracts/routing-decision.schema.json`.
 
-Les analyses indépendantes en lecture seule peuvent être parallélisées si le runtime le permet. Les tâches ayant une vraie dépendance doivent rester séquentielles.
+## Routes principales
 
-## Confiance
+```text
+implémentation / fix / incident -> orchestrator
+review                          -> review-lead
+architecture / platform / coût -> platform-architect
+évaluation sécurité            -> security-lead
+désaccord matériel             -> arbiter
+risque élevé / confiance basse -> deep-reasoner
+preuves faibles                -> evidence-auditor
+```
 
-Les décisions finales exposent un niveau de confiance :
+## Profondeur de délégation
 
-- `high` : les preuves directes soutiennent la conclusion et les contrôles pertinents passent ;
-- `medium` : conclusion probablement correcte mais certaines preuves restent indirectes ou des hypothèses subsistent ;
-- `low` : incertitude importante, preuves manquantes ou désaccord non résolu.
+```text
+meta-router -> lead/orchestrator -> leaf
+```
 
-Une confiance faible sur un changement à fort impact doit déclencher une escalade.
+Un lead n’appelle pas un autre lead. Un leaf ne peut appeler aucun sous-agent. `subagent_depth=2` reste donc suffisant.
 
-## Niveaux de modèles
+## Routage des reviews
 
-Stratégie pratique :
+`review-lead` part de la surface réellement modifiée et ne lance que les dimensions pertinentes : logique Go -> reviewer ; contrat HTTP public -> reviewer + API contract + AppSec pertinent ; migration SQL -> reviewer + database ; Terraform ingress/WAF/IAM -> reviewer + networking + IaC security.
 
-- **rapide/économique** : scan, mocks, docs, classification simple et transformations répétitives ;
-- **fort en code** : builder, Python, Go, Terraform, CI/CD, Kubernetes ;
-- **fort en raisonnement** : orchestrator, architecture, reviewer, threat-model, AppSec ;
-- **raisonnement profond** : `deep-reasoner`, arbitrage difficile, migration majeure ou architecture critique.
+## Escalade
 
-Chaque agent mappe une variable `MODEL_*`, ce qui laisse LiteLLM effectuer le routage concret.
-
-## Familles de modèles indépendantes
-
-Si possible, évite d’utiliser la même famille de modèle pour l’implémentation et l’approbation indépendante. Un modèle spécialisé code peut construire, puis une autre famille orientée raisonnement/sécurité peut reviewer.
-
-## Smart Router
-
-Le `.env.example` utilise `litellm/smart-router` partout par défaut. Tu peux ensuite figer uniquement les rôles critiques sur des groupes de modèles précis et conserver Smart Router pour les tâches courantes.
+`arbiter` sert uniquement aux conflits matériels entre conclusions crédibles. `deep-reasoner` intervient pour les décisions coûteuses/difficiles à inverser, les risques high/critical, les preuves incomplètes ou la confiance basse persistante. `evidence-auditor` vérifie les affirmations de réussite non triviales.

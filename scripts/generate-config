@@ -5,44 +5,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-
-DESCRIPTIONS = {
-    "meta-router": "Classify work, choose the minimum sufficient route, and escalate on risk or uncertainty",
-    "orchestrator": "Execute multi-step engineering work under the routing and quality policy",
-    "brainstorm": "Generate materially different approaches and trade-offs",
-    "planner": "Convert requirements into an executable engineering plan",
-    "builder": "Implement production-quality changes with minimal scope",
-    "reviewer": "Perform an independent read-only correctness review",
-    "tester": "Design and implement behavior-focused tests",
-    "mock-generator": "Create minimal mocks, fakes, fixtures and test builders",
-    "debugger": "Debug evidence-first and fix the root cause",
-    "project-scanner": "Read repositories and emit architecture facts, not guesses",
-    "architecture-designer": "Design architectures from verified inputs",
-    "platform-architect": "Lead a multi-disciplinary platform architecture council",
-    "aws-platform": "Review AWS platform architecture and managed-service trade-offs",
-    "terraform-terragrunt": "Implement and review Terraform/OpenTofu/Terragrunt safely",
-    "kubernetes": "Review Kubernetes/EKS architecture and operations",
-    "python-specialist": "Implement and review Python services, CLIs and automation",
-    "go-specialist": "Implement and review Go services, CLIs and concurrency",
-    "cicd": "Implement and review CI/CD and GitHub Actions",
-    "sre": "Review reliability, SLOs, capacity, failure modes and disaster recovery",
-    "observability": "Review logs, metrics, traces, dashboards and alerting",
-    "finops": "Analyze AWS/platform cost drivers and cost-performance trade-offs",
-    "threat-model": "Model assets, actors, entry points, trust boundaries and abuse cases",
-    "appsec": "Perform read-only application security review",
-    "iac-security": "Perform read-only Terraform/Kubernetes/AWS security review",
-    "supply-chain": "Review dependency, build, image and CI supply-chain risk",
-    "pentest": "Perform authorized, scoped and non-destructive runtime security validation",
-    "secrets": "Audit secret and sensitive-data leakage without printing secret values",
-    "docs-writer": "Write documentation grounded in verified implementation",
-    "arbiter": "Resolve material agent disagreements using evidence instead of majority vote",
-    "deep-reasoner": "Escalation path for complex, risky, ambiguous or low-confidence decisions",
-    "evidence-auditor": "Audit whether completion claims are supported by reproducible evidence",
-    "api-contract": "Review API/event/schema compatibility, retries, idempotency and versioning",
-    "performance": "Review latency, concurrency, scaling, memory and cost-performance behavior",
-    "database": "Review PostgreSQL/Aurora schema, queries, migrations, HA and backups",
-    "networking": "Review VPC, DNS, CloudFront/WAF, TLS, ingress and private access",
-}
+MANIFEST = json.loads((ROOT / "agents" / "manifest.json").read_text())
+DESCRIPTIONS = {name: spec["description"] for name, spec in MANIFEST.items()}
 
 MODEL_ENV_OVERRIDES = {
     "architecture-designer": "MODEL_ARCHITECTURE",
@@ -53,67 +17,218 @@ MODEL_ENV_OVERRIDES = {
     "docs-writer": "MODEL_DOCS",
 }
 
+LEAD_CHILDREN = {
+    "meta-router": [
+        "orchestrator", "review-lead", "platform-architect", "security-lead",
+        "arbiter", "deep-reasoner", "evidence-auditor",
+    ],
+    "orchestrator": [
+        "brainstorm", "planner", "builder", "reviewer", "tester", "mock-generator",
+        "debugger", "project-scanner", "architecture-designer", "aws-platform",
+        "terraform-terragrunt", "kubernetes", "python-specialist", "go-specialist",
+        "cicd", "sre", "observability", "finops", "threat-model", "appsec",
+        "iac-security", "supply-chain", "pentest", "secrets", "docs-writer",
+        "arbiter", "deep-reasoner", "evidence-auditor", "api-contract",
+        "performance", "database", "networking",
+    ],
+    "review-lead": [
+        "reviewer", "api-contract", "performance", "database", "networking",
+        "appsec", "iac-security", "supply-chain", "evidence-auditor",
+        "arbiter", "deep-reasoner",
+    ],
+    "platform-architect": [
+        "project-scanner", "architecture-designer", "aws-platform",
+        "terraform-terragrunt", "kubernetes", "cicd", "sre", "observability",
+        "finops", "database", "networking", "threat-model", "iac-security",
+        "arbiter", "deep-reasoner", "evidence-auditor",
+    ],
+    "security-lead": [
+        "threat-model", "appsec", "iac-security", "supply-chain", "pentest",
+        "secrets", "arbiter", "deep-reasoner", "evidence-auditor",
+    ],
+}
+
 WRITERS = {
     "builder", "tester", "mock-generator", "debugger", "python-specialist",
     "go-specialist", "cicd", "docs-writer",
 }
-SECURITY_READONLY = {"threat-model", "appsec", "iac-security", "supply-chain", "secrets"}
+SECURITY_TOOL_AGENTS = {"appsec", "iac-security", "supply-chain", "secrets"}
+SAFE_EVIDENCE_SHELL = {
+    "*": "ask",
+    "git status*": "allow",
+    "git diff*": "allow",
+    "git show*": "allow",
+    "git log*": "allow",
+    "git rev-parse*": "allow",
+}
+WEB_DENY = {
+    "meta-router", "orchestrator", "review-lead", "reviewer", "tester",
+    "mock-generator", "planner", "project-scanner", "arbiter",
+    "evidence-auditor", "secrets", "pentest",
+}
+SKILL_DENY = {
+    "meta-router", "review-lead", "reviewer", "tester", "mock-generator",
+    "project-scanner", "arbiter", "evidence-auditor", "secrets", "pentest",
+}
 STEPS = {
-    "meta-router": 28, "orchestrator": 36, "deep-reasoner": 24,
-    "platform-architect": 24, "terraform-terragrunt": 24, "debugger": 24,
-    "builder": 28, "python-specialist": 22, "go-specialist": 22,
+    "meta-router": 20, "orchestrator": 32, "review-lead": 20, "security-lead": 20,
+    "platform-architect": 24, "deep-reasoner": 24, "arbiter": 14,
+    "evidence-auditor": 16, "terraform-terragrunt": 24, "debugger": 24,
+    "builder": 26, "python-specialist": 22, "go-specialist": 22,
     "project-scanner": 20, "architecture-designer": 20, "aws-platform": 20,
     "kubernetes": 20, "tester": 20, "pentest": 20,
 }
 
 COMMANDS = {
-    "auto": ("Automatically classify and route a task", "Route and execute $ARGUMENTS using the minimum sufficient agent set. Escalate only when complexity, risk, disagreement, or low confidence justifies it. Return routing rationale, evidence, residual risk, and confidence."),
-    "ship": ("Implement with adaptive routing, tests, review and security gates", "Ship $ARGUMENTS. Classify risk and complexity first. Use the narrowest implementation path, require relevant tests and independent review, apply security gates according to attack surface, audit evidence, and escalate disagreements or low confidence."),
-    "review": ("Run independent adaptive review", "Review $ARGUMENTS independently from the implementation path. Route to reviewer plus API-contract, performance, database, networking and security specialists only when the changed surface requires them. Audit evidence and rank findings by severity and confidence."),
-    "architecture": ("Run adaptive architecture council", "Design or review the architecture for $ARGUMENTS. Discover repository facts when needed, invoke only relevant architecture specialists, include threat modeling and IaC security for trust-boundary or infrastructure changes, use an arbiter for conflicting recommendations, and include confidence and residual risks."),
-    "security": ("Run adaptive defense-in-depth security review", "Security-review $ARGUMENTS. Select the relevant threat-model, AppSec, IaC/cloud, supply-chain, secrets and authorized non-destructive pentest gates. Deduplicate findings, arbitrate disagreements, verify remediation evidence, and report residual risk."),
-    "debug": ("Evidence-first adaptive debug workflow", "Debug $ARGUMENTS. Start with evidence, delegate to the relevant specialist, add or propose a regression test, review the fix independently, and invoke security gates when the fix touches a trust boundary. Escalate unresolved ambiguity."),
-    "incident": ("Investigate an incident with SRE and observability", "Investigate $ARGUMENTS using evidence-first debugging. Route to debugger, SRE, observability and the affected platform/language specialists. Separate facts from hypotheses, identify blast radius and rollback/mitigation, then propose a regression test and follow-up actions."),
-    "cost": ("Analyze platform cost and cost-performance trade-offs", "Analyze the cost profile of $ARGUMENTS. Use FinOps and the relevant AWS/Kubernetes/database/networking/performance specialists. State assumptions, cost drivers, savings opportunities, operational trade-offs, and confidence."),
+    "auto": (
+        "Automatically classify and route a task",
+        "Route and execute $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement, and finish with evidence and residual risk.",
+    ),
+    "ship": (
+        "Implement with tests, independent review and adaptive security gates",
+        "Ship $ARGUMENTS. Classify risk first, delegate delivery to orchestrator, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence.",
+    ),
+    "review": (
+        "Run independent adaptive review",
+        "Review $ARGUMENTS via review-lead. Select only review dimensions touched by the change, deduplicate findings, arbitrate material disagreement, and audit weak completion claims.",
+    ),
+    "architecture": (
+        "Run the adaptive platform architecture council",
+        "Design or review $ARGUMENTS via platform-architect. Discover repository evidence when needed, select only relevant platform domains, include threat/IaC security for changed trust boundaries, and return trade-offs, migration/rollback and residual risks.",
+    ),
+    "security": (
+        "Run adaptive defense-in-depth security review",
+        "Security-review $ARGUMENTS via security-lead. Select only relevant threat-model/AppSec/IaC/supply-chain/secrets gates; pentest only explicitly authorized runtime scope. Deduplicate, rank and verify findings.",
+    ),
+    "debug": (
+        "Evidence-first debugging workflow",
+        "Debug $ARGUMENTS via orchestrator. Start with reproduction/evidence, use the affected specialist, add regression coverage, independently review the fix and add security gates if a trust boundary changes.",
+    ),
+    "incident": (
+        "Investigate an incident with SRE and observability",
+        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses, identify blast radius, mitigation/rollback and follow-up evidence.",
+    ),
+    "cost": (
+        "Analyze platform cost and cost-performance trade-offs",
+        "Analyze $ARGUMENTS via platform-architect using FinOps plus only relevant AWS/Kubernetes/database/networking/performance perspectives. State source data, assumptions, trade-offs and confidence.",
+    ),
 }
+
+SECRET_READ_PATTERNS = [
+    "*.env", "*.env.*", "**/.env", "**/.env.*", "*.pem", "*.key",
+    "**/.ssh/**", "**/.aws/credentials", "*id_rsa*", "*id_ed25519*",
+]
+
+COMMON_PROMPT = """## Evidence discipline
+- Separate FACTS, ASSUMPTIONS, and RECOMMENDATIONS.
+- Prefer direct repository/tool evidence over another agent's summary.
+- Never claim a test, plan, command, runtime check, or source lookup succeeded unless evidence is available.
+- Use HIGH confidence only for directly verified/reproduced claims; MEDIUM for strong static/indirect evidence; LOW for unresolved hypotheses.
+
+## Stop conditions
+- Stop and mark BLOCKED when required scope, authorization, dependency, or evidence is missing and proceeding would be unsafe or misleading.
+- Mark ESCALATION_REQUIRED for material disagreement, high-risk irreversible decisions, or unresolved low-confidence conclusions.
+- Do not silently broaden scope.
+
+## Handoff
+Finish delegated work with these sections:
+- STATUS: COMPLETE | BLOCKED | ESCALATION_REQUIRED
+- SUMMARY
+- FACTS
+- ASSUMPTIONS
+- EVIDENCE: exact files/lines, commands/results, logs/metrics, plans, safe requests, or sources
+- FINDINGS: severity + confidence + evidence + remediation when applicable
+- RESIDUAL RISKS
+- RECOMMENDED NEXT AGENTS
+- CONFIDENCE: HIGH | MEDIUM | LOW with a short reason
+
+The machine-readable equivalent is documented in `contracts/agent-handoff.schema.json`.
+"""
+
+
+def generate_prompts() -> None:
+    prompt_dir = ROOT / "prompts"
+    prompt_dir.mkdir(exist_ok=True)
+    for name, spec in MANIFEST.items():
+        special = spec.get("special", "").strip()
+        special_block = f"\n{special}\n" if special else ""
+        text = (
+            f"# Role\n{spec['description']}\n\n"
+            f"## Operating method\n{spec['method']}\n\n"
+            f"## Non-negotiables\n{spec['non_negotiables']}\n"
+            f"{special_block}\n{COMMON_PROMPT}"
+        )
+        (prompt_dir / f"{name}.md").write_text(text)
 
 
 def model_env(name: str) -> str:
     return MODEL_ENV_OVERRIDES.get(name, "MODEL_" + name.upper().replace("-", "_"))
 
 
-def v1_permissions(name: str) -> dict:
-    if name == "meta-router":
-        return {
-            "task": {"*": "deny", **{a: "allow" for a in DESCRIPTIONS if a != name}},
-            "edit": "deny", "bash": "deny",
-            "read": {"*.env": "deny", "*.pem": "deny", "*id_rsa*": "deny"},
-        }
-    if name == "orchestrator":
-        return {
-            "task": {"*": "deny", **{a: "allow" for a in DESCRIPTIONS if a not in {"meta-router", name}}},
-            "edit": "ask", "bash": "ask",
-            "read": {"*.env": "deny", "*.pem": "deny"},
-        }
+def read_permissions(name: str) -> dict:
+    rules: dict[str, str] = {"*": "allow"}
     if name == "project-scanner":
-        return {"edit": {"*": "deny", "~/Projects/**": "deny"}, "bash": "deny", "external_directory": {"~/Projects/**": "allow"}, "read": {"~/Projects/**": "allow"}}
+        rules["~/Projects/**"] = "allow"
+    for pattern in SECRET_READ_PATTERNS:
+        rules[pattern] = "deny"
+    return rules
+
+
+def delegation_permissions(name: str) -> dict:
+    rules = {"*": "deny"}
+    for child in LEAD_CHILDREN.get(name, []):
+        rules[child] = "allow"
+    return rules
+
+
+def shell_permissions(name: str):
+    if name in {"reviewer", "evidence-auditor"}:
+        return dict(SAFE_EVIDENCE_SHELL)
     if name == "terraform-terragrunt":
-        return {"edit": "allow", "bash": {"*": "ask", "terraform fmt*": "allow", "tofu fmt*": "allow", "terragrunt hclfmt*": "allow", "terraform validate*": "allow", "tofu validate*": "allow", "terraform plan*": "ask", "tofu plan*": "ask", "terragrunt plan*": "ask", "* apply*": "deny", "* destroy*": "deny", "terraform apply*": "deny", "tofu apply*": "deny", "terragrunt apply*": "deny", "terraform destroy*": "deny", "tofu destroy*": "deny", "terragrunt destroy*": "deny"}}
+        return {
+            "*": "ask",
+            "terraform fmt*": "allow", "tofu fmt*": "allow",
+            "terragrunt hclfmt*": "allow",
+            "terraform validate*": "allow", "tofu validate*": "allow",
+            "terraform plan*": "ask", "tofu plan*": "ask", "terragrunt plan*": "ask",
+            "* apply*": "deny", "* destroy*": "deny",
+            "terraform apply*": "deny", "tofu apply*": "deny", "terragrunt apply*": "deny",
+            "terraform destroy*": "deny", "tofu destroy*": "deny", "terragrunt destroy*": "deny",
+        }
     if name == "pentest":
-        return {"edit": "deny", "bash": {"*": "ask", "curl http://127.0.0.1*": "allow", "curl http://localhost*": "allow", "curl https://127.0.0.1*": "allow", "curl https://localhost*": "allow"}, "read": {"*.env": "deny", "*.pem": "deny", "*id_rsa*": "deny"}}
-    if name in SECURITY_READONLY:
-        return {"edit": "deny", "bash": "deny", "read": {"*.env": "deny", "*.pem": "deny"}}
+        return {
+            "*": "ask",
+            "curl http://127.0.0.1*": "allow", "curl http://localhost*": "allow",
+            "curl https://127.0.0.1*": "allow", "curl https://localhost*": "allow",
+        }
+    if name in SECURITY_TOOL_AGENTS:
+        return "ask"
     if name in WRITERS:
-        return {"edit": "allow", "bash": "ask"}
-    return {"edit": "deny", "bash": "deny"}
+        return "ask"
+    return "deny"
+
+
+def v1_permissions(name: str) -> dict:
+    p = {
+        "task": delegation_permissions(name),
+        "edit": "allow" if name in WRITERS or name == "terraform-terragrunt" else "deny",
+        "bash": shell_permissions(name),
+        "webfetch": "deny" if name in WEB_DENY else "ask",
+        "websearch": "deny" if name in WEB_DENY else "ask",
+        "skill": "deny" if name in SKILL_DENY else "ask",
+        "read": read_permissions(name),
+    }
+    if name == "project-scanner":
+        p["external_directory"] = {"*": "deny", "~/Projects/**": "allow"}
+    return p
 
 
 def v2_permissions(name: str) -> list[dict]:
     p = v1_permissions(name)
+    action_map = {"bash": "shell", "task": "subagent"}
     rules: list[dict] = []
-    action_map = {"bash": "shell", "task": "subagent", "edit": "edit", "read": "read", "external_directory": "external_directory"}
     for key, value in p.items():
-        action = action_map[key]
+        action = action_map.get(key, key)
         if isinstance(value, str):
             rules.append({"action": action, "resource": "*", "effect": value})
         else:
@@ -123,9 +238,10 @@ def v2_permissions(name: str) -> list[dict]:
 
 
 def agent_entry(name: str, v2: bool) -> dict:
+    mode = "primary" if name == "meta-router" else ("all" if name == "orchestrator" else "subagent")
     return {
         "description": DESCRIPTIONS[name],
-        "mode": "primary" if name == "meta-router" else ("all" if name == "orchestrator" else "subagent"),
+        "mode": mode,
         "model": f"{{env:{model_env(name)}}}",
         ("system" if v2 else "prompt"): f"{{file:./prompts/{name}.md}}",
         "steps": STEPS.get(name, 16),
@@ -135,14 +251,33 @@ def agent_entry(name: str, v2: bool) -> dict:
 
 def build(v2: bool) -> dict:
     agents = {name: agent_entry(name, v2) for name in DESCRIPTIONS}
-    commands = {name: {"description": desc, "template": template, "agent": "meta-router"} for name, (desc, template) in COMMANDS.items()}
+    commands = {
+        name: {"description": desc, "template": template, "agent": "meta-router"}
+        for name, (desc, template) in COMMANDS.items()
+    }
     if v2:
-        return {"$schema": "https://opencode.ai/config.json", "default_agent": "meta-router", "agents": agents, "commands": commands, "experimental": {"subagent_depth": 2}}
-    return {"$schema": "https://opencode.ai/config.json", "default_agent": "meta-router", "subagent_depth": 2, "agent": agents, "command": commands}
+        return {
+            "$schema": "https://opencode.ai/config.json",
+            "default_agent": "meta-router",
+            "agents": agents,
+            "commands": commands,
+            "experimental": {"subagent_depth": 2},
+        }
+    return {
+        "$schema": "https://opencode.ai/config.json",
+        "default_agent": "meta-router",
+        "subagent_depth": 2,
+        "agent": agents,
+        "command": commands,
+    }
 
 
 def main() -> None:
-    outputs = ((ROOT / "opencode.jsonc", build(False)), (ROOT / "opencode.v2.jsonc", build(True)))
+    generate_prompts()
+    outputs = (
+        (ROOT / "opencode.jsonc", build(False)),
+        (ROOT / "opencode.v2.jsonc", build(True)),
+    )
     for path, data in outputs:
         path.write_text(json.dumps(data, indent=2) + "\n")
         print(f"generated {path.name}: {len(data.get('agent', data.get('agents', {})))} agents")

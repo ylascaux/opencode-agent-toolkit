@@ -1,1 +1,0 @@
-Generate 3-5 materially different approaches. For each: benefits, costs, failure modes, operational complexity, security implications, migration impact and reversibility. Recommend one and state what evidence could falsify the recommendation. Avoid implementation until the decision space is clear.

@@ -1,60 +1,42 @@
-# Agents
+# Architecture des agents
 
-Le toolkit définit actuellement 35 agents configurables indépendamment.
+Le toolkit contient **37 agents**, mais ils ne sont pas tous au même niveau. La hiérarchie est volontaire.
 
 ## Plan de contrôle
 
-- `meta-router` : classe les tâches, choisit le chemin le moins coûteux suffisant et escalade selon complexité, risque, désaccord ou confiance faible.
-- `orchestrator` : exécute les workflows multi-étapes et coordonne les spécialistes.
-- `arbiter` : tranche les désaccords matériels à partir des preuves, pas par vote majoritaire.
-- `deep-reasoner` : gère les décisions à haut risque, ambiguës, irréversibles ou à faible confiance.
-- `evidence-auditor` : vérifie que les conclusions sont soutenues par de vraies preuves.
+| Agent | Rôle |
+|---|---|
+| `meta-router` | classe le travail et choisit un chemin principal |
+| `orchestrator` | exécute les livraisons/incidents multi-étapes |
+| `review-lead` | sélectionne les dimensions de review indépendantes |
+| `security-lead` | sélectionne les gates de sécurité |
+| `platform-architect` | dirige le conseil d’architecture |
+| `arbiter` | tranche les désaccords matériels |
+| `deep-reasoner` | escalade les décisions risquées ou peu certaines |
+| `evidence-auditor` | vérifie les affirmations de réussite |
 
-## Ingénierie générale
+`meta-router` ne voit que les quatre portes d’exécution/lead et les trois agents d’escalade/audit. Il n’a pas un catalogue plat de tous les spécialistes.
 
-- `brainstorm` : explore plusieurs approches réellement différentes.
-- `planner` : transforme le besoin en plan exécutable.
-- `builder` : implémente des changements production-ready avec scope minimal.
-- `reviewer` : review indépendante et en lecture seule.
-- `tester` : tests unitaires, intégration et E2E orientés comportement.
-- `mock-generator` : mocks, fakes, fixtures et builders.
-- `debugger` : recherche de root cause basée sur les preuves.
-- `api-contract` : compatibilité API/event/schema et sémantique des erreurs.
-- `performance` : latence, concurrence, scalabilité et compromis coût/performance.
+## Leaf agents de delivery
 
-## Architecture et plateforme
+`brainstorm`, `planner`, `builder`, `tester`, `mock-generator`, `debugger`, `python-specialist`, `go-specialist`, `terraform-terragrunt`, `cicd`.
 
-- `project-scanner` : découverte multi-repositories en lecture seule.
-- `architecture-designer` : architecture actuelle/cible, ADR et diagrammes.
-- `platform-architect` : pilote les décisions d’architecture multi-domaines.
-- `aws-platform` : services AWS, IAM, réseau, fiabilité et coût.
-- `terraform-terragrunt` : Terraform/OpenTofu/Terragrunt.
-- `kubernetes` : Kubernetes/EKS, scheduling, autoscaling et opérations.
-- `cicd` : CI/CD, GitHub Actions, OIDC, artefacts et sécurité de déploiement.
-- `sre` : SLO, capacité, modes de panne, DR et risque opérationnel.
-- `observability` : logs, métriques, traces, dashboards et alerting.
-- `finops` : coûts AWS/plateforme et arbitrages coût/performance.
-- `database` : PostgreSQL/Aurora, schéma, requêtes, migrations, HA et sauvegardes.
-- `networking` : VPC, DNS, CloudFront/WAF, TLS, ingress et accès privés.
+## Leaf agents de review
 
-## Langages
+`reviewer`, `api-contract`, `performance`, plus les domaines/sécurités choisis par `review-lead`.
 
-- `python-specialist` : services Python typés, automatisation et tests.
-- `go-specialist` : services Go, CLI, concurrence et intégrations AWS.
+## Leaf agents architecture/platform
 
-## Sécurité
+`project-scanner`, `architecture-designer`, `aws-platform`, `terraform-terragrunt`, `kubernetes`, `cicd`, `sre`, `observability`, `finops`, `database`, `networking`, `threat-model`, `iac-security`.
 
-- `threat-model` : actifs, acteurs, trust boundaries, abuse cases et mitigations.
-- `appsec` : sécurité applicative et logique métier.
-- `iac-security` : sécurité Terraform/Kubernetes/AWS.
-- `supply-chain` : dépendances, CI, images et provenance.
-- `secrets` : détection de credentials/données sensibles avec sortie masquée.
-- `pentest` : validation runtime explicitement autorisée, limitée et non destructive.
+## Leaf agents sécurité
 
-## Documentation
+`threat-model`, `appsec`, `iac-security`, `supply-chain`, `secrets`, `pentest`.
 
-- `docs-writer` : README, ADR, runbooks et guides de migration basés sur l’implémentation vérifiée.
+## Invariant des leaf agents
 
-## Règles d’indépendance
+Chaque leaf possède un deny-all explicite sur `task`/`subagent`. Seuls les cinq agents de routage/orchestration ont des exceptions. Un spécialiste ne peut donc pas contourner le plan de contrôle.
 
-Un agent d’implémentation ne doit pas être le seul reviewer de son propre travail. Les problèmes sécurité sont examinés par des agents dédiés. Les désaccords matériels vont vers `arbiter`, les décisions risquées ou peu sûres vers `deep-reasoner`, et les affirmations de complétion importantes peuvent être vérifiées par `evidence-auditor`.
+## Contrat des prompts
+
+Chaque prompt généré contient Role, Operating method, Non-negotiables, Evidence discipline, Stop conditions et Handoff. Le comportement spécifique à chaque rôle est défini dans `agents/manifest.json`.
