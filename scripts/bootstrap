@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+refresh=0
+if [[ "${1:-}" == "--refresh" ]]; then
+  refresh=1
+elif [[ $# -gt 0 ]]; then
+  echo "Usage: $0 [--refresh]" >&2
+  exit 2
+fi
+
+need() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    return 1
+  fi
+}
+
+need python3
+
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+  echo "Created .env from .env.example"
+else
+  echo "Keeping existing .env"
+fi
+
+if [[ ! -d .venv || $refresh -eq 1 ]]; then
+  if [[ $refresh -eq 1 ]]; then
+    rm -rf .venv
+  fi
+  python3 -m venv .venv
+  echo "Created .venv"
+fi
+
+if [[ -f requirements.txt ]]; then
+  .venv/bin/python -m pip install --disable-pip-version-check -q -r requirements.txt
+  echo "Installed Python scanner/API dependencies"
+fi
+
+./scripts/generate-config >/dev/null
+python3 -m json.tool opencode.jsonc >/dev/null
+python3 -m json.tool opencode.v2.jsonc >/dev/null
+python3 -m unittest discover -s tests -v
+
+set -a
+source .env
+if [[ -f .env.local ]]; then source .env.local; fi
+set +a
+
+major="${OPENCODE_MAJOR:-1}"
+case "$major" in
+  1) expected="${OPENCODE_BIN:-opencode}" ;;
+  2) expected="${OPENCODE_BIN:-opencode2}" ;;
+  auto)
+    if command -v opencode2 >/dev/null 2>&1; then expected="${OPENCODE_BIN:-opencode2}"; else expected="${OPENCODE_BIN:-opencode}"; fi
+    ;;
+  *)
+    echo "Warning: OPENCODE_MAJOR must be 1, 2, or auto (got: $major)" >&2
+    expected="opencode"
+    ;;
+esac
+
+printf '\nSetup complete.\n'
+if command -v just >/dev/null 2>&1; then
+  echo "Next: just doctor"
+  echo "Then: just run"
+else
+  echo "The toolkit is installed. Installing 'just' is recommended for the friendly command interface."
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo "macOS: brew install just"
+  else
+    echo "See https://just.systems/man/en/packages.html"
+  fi
+  echo "You can already launch with: ./scripts/opencode-agents"
+fi
+
+if ! command -v "$expected" >/dev/null 2>&1; then
+  echo "Warning: selected OpenCode binary is not installed/found: $expected" >&2
+  if [[ "$major" == "2" ]]; then
+    echo "OpenCode 2 beta: npm install -g @opencode-ai/cli@beta" >&2
+  fi
+fi
