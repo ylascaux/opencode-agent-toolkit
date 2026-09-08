@@ -13,7 +13,15 @@ class PromptContractTests(unittest.TestCase):
         cls.config = json.loads((ROOT / "opencode.jsonc").read_text())
 
     def test_every_agent_has_structured_prompt(self):
-        required = ["# Role", "## Operating method", "## Non-negotiables", "## Evidence discipline", "## Stop conditions", "## Handoff"]
+        required = [
+            "# Role",
+            "## Operating method",
+            "## Non-negotiables",
+            "## Evidence discipline",
+            "## Toolkit support files",
+            "## Stop conditions",
+            "## Handoff",
+        ]
         for name in self.config["agent"]:
             path = ROOT / "prompts" / f"{name}.md"
             self.assertTrue(path.exists(), name)
@@ -30,6 +38,19 @@ class PromptContractTests(unittest.TestCase):
         data = json.loads((ROOT / "contracts" / "routing-decision.schema.json").read_text())
         self.assertEqual(data["title"], "Routing Decision")
         self.assertIn("route", data["required"])
+
+    def test_generated_prompts_use_absolute_toolkit_contract_paths(self):
+        handoff = str(ROOT / "contracts" / "agent-handoff.schema.json")
+        routing = str(ROOT / "contracts" / "routing-decision.schema.json")
+
+        for name in self.config["agent"]:
+            text = (ROOT / "prompts" / f"{name}.md").read_text()
+            self.assertIn(handoff, text, name)
+            self.assertNotIn("`contracts/agent-handoff.schema.json`", text, name)
+            self.assertNotIn("`contracts/routing-decision.schema.json`", text, name)
+
+        meta_router = (ROOT / "prompts" / "meta-router.md").read_text()
+        self.assertIn(routing, meta_router)
 
     def test_evidence_auditor_avoids_numeric_confidence(self):
         text = (ROOT / "prompts" / "evidence-auditor.md").read_text().lower()
