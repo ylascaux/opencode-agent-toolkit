@@ -27,6 +27,7 @@ eval "$(python3 "$ROOT/scripts/resolve-models")"
 # Runtime settings must be available before config generation so step overrides are deterministic.
 export OPENCODE_TOOLKIT_RUNTIME_GUARDS="${OC_RUNTIME_GUARDS:-1}"
 python3 "$ROOT/scripts/generate-config" >/dev/null
+python3 "$ROOT/scripts/apply-runtime-policy" >/dev/null
 
 major="${OPENCODE_MAJOR:-1}"
 case "$major" in
