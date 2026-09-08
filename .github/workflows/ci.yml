@@ -19,7 +19,9 @@ jobs:
           python-version: "3.12"
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
-      - name: JavaScript syntax
+      - name: V1 watchdog JavaScript syntax
         run: node --check .opencode/plugins/reliability-v1.js
+      - name: V2 watchdog TypeScript syntax
+        run: node --experimental-strip-types --check .opencode/plugins/reliability-v2.ts
       - name: Generate configs and run tests
         run: just check
