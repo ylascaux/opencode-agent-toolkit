@@ -42,6 +42,7 @@ warn=0
 ok() { printf '  [ok] %s\n' "$*"; }
 warning() { printf '  [warn] %s\n' "$*" >&2; warn=$((warn + 1)); }
 error() { printf '  [fail] %s\n' "$*" >&2; fail=$((fail + 1)); }
+truthy() { [[ "${1:-1}" =~ ^(1|true|yes|on)$ ]]; }
 
 printf 'OpenCode reliability preflight\n'
 
@@ -49,6 +50,41 @@ command -v "$bin" >/dev/null 2>&1 && ok "binary: $bin" || error "binary not foun
 [[ -f "$config" ]] && ok "config: $config" || error "config missing: $config"
 [[ -f "$ROOT/reliability.json" ]] && ok "reliability policy present" || error "reliability.json missing"
 [[ -f "$plugin_file" ]] && ok "watchdog plugin: $plugin_file" || error "watchdog plugin missing: $plugin_file"
+
+if [[ -f "$ROOT/reliability.json" ]]; then
+  if profile_values="$(python3 - "$ROOT/reliability.json" "${RELIABILITY_PROFILE:-}" <<'PY'
+import json, shlex, sys
+from pathlib import Path
+policy = json.loads(Path(sys.argv[1]).read_text())
+name = (sys.argv[2] or policy.get("default_profile", "normal")).strip().lower()
+profiles = policy.get("profiles", {})
+if name not in profiles:
+    raise SystemExit(f"invalid reliability profile {name!r}; expected one of: {', '.join(sorted(profiles))}")
+p = profiles[name]
+print("PROFILE_NAME=" + shlex.quote(name))
+for key in (
+    "max_parallel_subagents", "queue_timeout_seconds", "stalled_timeout_seconds",
+    "max_agent_duration_seconds", "max_same_error", "max_retries",
+    "watch_interval_seconds", "max_child_cost", "max_run_cost",
+):
+    print("PROFILE_" + key.upper() + "=" + shlex.quote(str(p[key])))
+PY
+  )"; then
+    eval "$profile_values"
+    ok "reliability profile: $PROFILE_NAME"
+  else
+    error "invalid RELIABILITY_PROFILE=${RELIABILITY_PROFILE:-<default>}"
+    PROFILE_MAX_PARALLEL_SUBAGENTS=3
+    PROFILE_QUEUE_TIMEOUT_SECONDS=600
+    PROFILE_STALLED_TIMEOUT_SECONDS=180
+    PROFILE_MAX_AGENT_DURATION_SECONDS=900
+    PROFILE_MAX_SAME_ERROR=2
+    PROFILE_MAX_RETRIES=2
+    PROFILE_WATCH_INTERVAL_SECONDS=15
+    PROFILE_MAX_CHILD_COST=0
+    PROFILE_MAX_RUN_COST=0
+  fi
+fi
 
 if [[ -f "$config" ]]; then
   if python3 -m json.tool "$config" >/dev/null 2>&1; then
@@ -58,13 +94,10 @@ if [[ -f "$config" ]]; then
   fi
 
   if python3 - "$config" "$plugin_key" "$plugin_entry" <<'PY' >/dev/null 2>&1
-import json
-import sys
+import json, sys
 from pathlib import Path
-
 config = json.loads(Path(sys.argv[1]).read_text())
-entries = config.get(sys.argv[2], [])
-raise SystemExit(0 if sys.argv[3] in entries else 1)
+raise SystemExit(0 if sys.argv[3] in config.get(sys.argv[2], []) else 1)
 PY
   then
     ok "watchdog plugin wired in selected config"
@@ -78,14 +111,34 @@ for var in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
   [[ -n "$value" ]] && ok "$var=$value" || error "$var is empty"
 done
 
-max_parallel="${MAX_PARALLEL_SUBAGENTS:-3}"
-[[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] && ok "max parallel subagents: $max_parallel" || error "MAX_PARALLEL_SUBAGENTS must be >= 1"
+validate_positive_int() {
+  local name="$1" value="$2"
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] && ok "$name: $value" || error "$name must be >= 1"
+}
+validate_nonnegative_number() {
+  local name="$1" value="$2"
+  python3 - "$value" <<'PY' >/dev/null 2>&1
+import math, sys
+try: value=float(sys.argv[1])
+except ValueError: raise SystemExit(1)
+raise SystemExit(0 if math.isfinite(value) and value >= 0 else 1)
+PY
+  if [[ $? -eq 0 ]]; then ok "$name: $value"; else error "$name must be a finite number >= 0"; fi
+}
 
-queue_timeout="${SUBAGENT_QUEUE_TIMEOUT_SECONDS:-600}"
-[[ "$queue_timeout" =~ ^[1-9][0-9]*$ ]] && ok "subagent queue timeout: ${queue_timeout}s" || error "SUBAGENT_QUEUE_TIMEOUT_SECONDS must be >= 1"
-
-stalled="${SUBAGENT_STALLED_TIMEOUT_SECONDS:-180}"
-[[ "$stalled" =~ ^[1-9][0-9]*$ ]] && ok "stalled timeout: ${stalled}s" || error "SUBAGENT_STALLED_TIMEOUT_SECONDS must be >= 1"
+max_parallel="${MAX_PARALLEL_SUBAGENTS:-${PROFILE_MAX_PARALLEL_SUBAGENTS:-3}}"
+validate_positive_int "max parallel subagents" "$max_parallel"
+for var in MAX_PARALLEL_META_ROUTER MAX_PARALLEL_ORCHESTRATOR MAX_PARALLEL_REVIEW_LEAD MAX_PARALLEL_PLATFORM_ARCHITECT MAX_PARALLEL_SECURITY_LEAD; do
+  [[ -z "${!var:-}" ]] || validate_positive_int "$var" "${!var}"
+done
+validate_positive_int "subagent queue timeout seconds" "${SUBAGENT_QUEUE_TIMEOUT_SECONDS:-${PROFILE_QUEUE_TIMEOUT_SECONDS:-600}}"
+validate_positive_int "stalled timeout seconds" "${SUBAGENT_STALLED_TIMEOUT_SECONDS:-${PROFILE_STALLED_TIMEOUT_SECONDS:-180}}"
+validate_positive_int "max agent duration seconds" "${SUBAGENT_MAX_DURATION_SECONDS:-${PROFILE_MAX_AGENT_DURATION_SECONDS:-900}}"
+validate_positive_int "same error limit" "${MAX_SAME_ERROR:-${PROFILE_MAX_SAME_ERROR:-2}}"
+validate_positive_int "provider retries" "${MAX_PROVIDER_RETRIES:-${PROFILE_MAX_RETRIES:-2}}"
+validate_positive_int "watch interval seconds" "${SUBAGENT_WATCH_INTERVAL_SECONDS:-${PROFILE_WATCH_INTERVAL_SECONDS:-15}}"
+validate_nonnegative_number "max child provider-reported cost" "${MAX_CHILD_COST:-${PROFILE_MAX_CHILD_COST:-0}}"
+validate_nonnegative_number "max run provider-reported cost" "${MAX_RUN_COST:-${PROFILE_MAX_RUN_COST:-0}}"
 
 if command -v git >/dev/null 2>&1; then
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -101,33 +154,60 @@ if command -v git >/dev/null 2>&1; then
 fi
 
 if command -v "$bin" >/dev/null 2>&1; then
-  if auth_output="$(OPENCODE_CONFIG="$config" "$bin" auth list 2>&1)"; then
-    if printf '%s\n' "$auth_output" | grep -Eqi '(^|[^0-9])0[[:space:]]+credentials|no[[:space:]]+credentials|not[[:space:]]+authenticated'; then
-      error "OpenCode reports no configured credentials"
+  mapfile -t configured_models < <(python3 - "$config" <<'PY'
+import json, sys
+from pathlib import Path
+p=Path(sys.argv[1])
+if not p.exists(): raise SystemExit(0)
+data=json.loads(p.read_text())
+agents=data.get("agent", data.get("agents", {}))
+for value in sorted({spec.get("model") for spec in agents.values() if spec.get("model")}): print(value)
+PY
+  )
+
+  require_auth=0
+  for value in "${configured_models[@]}"; do
+    provider="${value%%/*}"
+    case "$provider" in github-copilot|openai|anthropic|google|google-vertex) require_auth=1 ;; esac
+  done
+
+  if truthy "${OPENCODE_PREFLIGHT_AUTH:-1}"; then
+    if [[ $require_auth -eq 1 ]]; then
+      if auth_output="$(OPENCODE_CONFIG="$config" "$bin" auth list 2>&1)"; then
+        if printf '%s\n' "$auth_output" | grep -Eqi '(^|[^0-9])0[[:space:]]+credentials|no[[:space:]]+credentials|not[[:space:]]+authenticated'; then
+          error "OpenCode reports no configured credentials for an authenticated provider"
+        else
+          ok "OpenCode authentication is available"
+        fi
+      else
+        warning "could not verify provider credentials with '$bin auth list'"
+      fi
     else
-      ok "OpenCode auth command succeeds"
+      ok "auth preflight not required for configured provider set"
     fi
   else
-    warning "could not verify provider credentials with '$bin auth list'"
+    warning "authentication preflight disabled"
   fi
 
-  if model_output="$(OPENCODE_CONFIG="$config" "$bin" models 2>&1)"; then
-    for var in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
-      value="${!var:-}"
-      [[ -z "$value" ]] && continue
-      if printf '%s\n' "$model_output" | grep -Fqx "$value"; then
-        ok "$var model is available"
-      else
-        error "$var model not exposed by '$bin models': $value"
-      fi
-    done
+  if truthy "${OPENCODE_PREFLIGHT_MODELS:-1}"; then
+    if model_output="$(OPENCODE_CONFIG="$config" "$bin" models 2>&1)"; then
+      for value in "${configured_models[@]}"; do
+        if printf '%s\n' "$model_output" | grep -Fqx "$value"; then
+          ok "model available: $value"
+        else
+          error "configured model not exposed by '$bin models': $value"
+        fi
+      done
+    else
+      warning "could not verify configured models with '$bin models'"
+    fi
   else
-    warning "could not verify configured models with '$bin models'"
+    warning "model availability preflight disabled"
   fi
 fi
 
 if (( fail > 0 )); then
-  printf 'Preflight failed: %d error(s), %d warning(s)\n' "$fail" "$warn" >&2
+  printf 'Preflight failed: %d error(s), %d warning(s). No agent session was started.\n' "$fail" "$warn" >&2
   exit 3
 fi
 
