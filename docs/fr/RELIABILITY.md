@@ -1,91 +1,190 @@
 # Fiabilité des agents et garde-fous de coût
 
-Le toolkit applique maintenant des protections déterministes avant et pendant l'exécution des agents. L'objectif est de détecter tôt les problèmes de configuration, de borner les boucles coûteuses et de superviser les sessions enfants sans dépendre uniquement du prompt.
+Le toolkit combine des garde-fous déterministes et des règles de supervision dans les leads. Le principe reste simple : **les LLM décident du travail d'ingénierie ; le runtime décide des limites de sécurité opérationnelle**.
 
-## Valeurs par défaut
+## Profils de fiabilité
 
-La politique par défaut se trouve dans `reliability.json`.
+`reliability.json` définit trois profils :
 
-- sous-agents parallèles maximum : `3`
-- timeout de file d'attente des sous-agents : `600s`
-- délai avant détection d'un enfant bloqué : `180s`
-- durée maximale d'un enfant : `900s`
-- même erreur racine tolérée : `2`
-- retries provider : `2`
-- intervalle du watchdog : `15s`
-- les caps de steps sont plus bas que les valeurs brutes du générateur ; `orchestrator` et `builder` sont limités à `16` par défaut
+| Profil | Parallèle | Queue | Stall | Durée enfant | Retries | Coût enfant* | Coût run* |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `cheap` | 2 | 300s | 120s | 600s | 1 | 0.25 | 1.00 |
+| `normal` | 3 | 600s | 180s | 900s | 2 | 0.50 | 2.00 |
+| `premium` | 4 | 900s | 240s | 1200s | 2 | 1.50 | 5.00 |
 
-Toutes ces valeurs peuvent être surchargées dans `.env.local` sans modifier les fichiers versionnés.
+`normal` est le profil par défaut. Les valeurs de coût marquées `*` utilisent **la valeur remontée par OpenCode/provider**, dans son unité native. Le toolkit ne convertit pas arbitrairement en EUR.
 
 ```bash
-MAX_PARALLEL_SUBAGENTS=2
-SUBAGENT_QUEUE_TIMEOUT_SECONDS=600
-SUBAGENT_STALLED_TIMEOUT_SECONDS=240
-SUBAGENT_MAX_DURATION_SECONDS=1200
-MAX_PROVIDER_RETRIES=1
-MAX_STEPS_ORCHESTRATOR=12
-MAX_STEPS_BUILDER=14
+RELIABILITY_PROFILE=normal
 ```
 
-`just reliability` affiche la politique effective.
+Toute valeur explicite dans `.env.local` prend le dessus sur le profil.
 
-## Séquence de lancement
+## Parallélisme global et par lead
 
-`oc` / `just run` exécute désormais :
+Le plafond global reste :
 
-1. chargement de `.env` et `.env.local`
-2. régénération de la configuration OpenCode
-3. application des caps de fiabilité et branchement du watchdog
-4. résolution des tiers de modèles
-5. preflight déterministe
-6. démarrage d'OpenCode uniquement si le preflight passe
+```bash
+MAX_PARALLEL_SUBAGENTS=3
+```
 
-`just install` applique désormais le même post-traitement de fiabilité aux configs générées, afin que l'installation et l'exécution ne divergent pas silencieusement.
+On peut maintenant affiner par lead :
 
-Le preflight peut être désactivé temporairement avec `OPENCODE_PREFLIGHT=0`. `OPENCODE_PREFLIGHT_STRICT=1` transforme les warnings en erreurs bloquantes.
+```bash
+MAX_PARALLEL_META_ROUTER=2
+MAX_PARALLEL_ORCHESTRATOR=3
+MAX_PARALLEL_REVIEW_LEAD=3
+MAX_PARALLEL_PLATFORM_ARCHITECT=3
+MAX_PARALLEL_SECURITY_LEAD=2
+```
 
-## Preflight
+Si une limite spécifique n'est pas définie, la valeur globale est utilisée.
 
-Le preflight ne consomme aucun appel LLM. Il vérifie le binaire OpenCode sélectionné, la configuration générée, la policy de fiabilité, le fichier du watchdog et son branchement dans la config, les variables de modèles, la limite de parallélisme, l'état Git, l'auth OpenCode et la présence des modèles LOW/MEDIUM/HIGH dans `opencode models`.
+Le runtime suit les vraies child sessions et les réservations de lancement. Une réservation est consommée dès que le child correspondant apparaît via les événements ou `session.children()`. Cela évite à la fois :
 
-Un résultat explicite `0 credentials` / non authentifié est considéré comme une erreur. Les erreurs de configuration, d'authentification, de provider ou de modèle détectables localement doivent donc être remontées avant de lancer une boucle de coding coûteuse.
+- de dépasser la limite lors d'un burst concurrent ;
+- de compter temporairement un même lancement deux fois (`pending + child actif`).
 
-## Watchdog des sous-agents
+Quand tous les slots sont occupés, la délégation attend dans une queue **sans appel LLM supplémentaire**. `SUBAGENT_QUEUE_TIMEOUT_SECONDS` borne cette attente.
 
-Les runtimes V1 et V2 utilisent chacun leur plugin watchdog.
+## Preflight avant le premier token coûteux
 
-Le watchdog suit les sessions enfants indépendamment de l'orchestrateur racine. Il distingue l'activité du progrès utile et ne considère pas `WAITING_PERMISSION` comme un blocage.
+`oc` / `just run` exécute le preflight avant OpenCode :
 
-Un enfant peut être interrompu s'il dépasse sa durée maximale ou s'il ne produit plus de progrès matériel pendant le délai configuré. En V1, le watchdog coupe aussi les répétitions de la même erreur runtime/tool. En V2, il contrôle en plus les retries provider : HTTP `400`, `401`, `403` et `404` sont terminaux ; `429` et les erreurs serveur ne sont réessayés que dans la limite configurée.
+- binaire sélectionné présent ;
+- config JSON valide ;
+- watchdog V1/V2 présent et branché ;
+- profil reliability valide ;
+- paramètres numériques valides ;
+- modèles réellement configurés dans les agents disponibles via `opencode models` ;
+- auth disponible pour les providers connus nécessitant une authentification OpenCode ;
+- état Git observable.
 
-## Parallélisme maximum et file d'attente
+Contrôles configurables :
 
-`MAX_PARALLEL_SUBAGENTS` fixe le nombre maximal d'enfants actifs pour une session parent. La valeur par défaut est `3`.
+```bash
+OPENCODE_PREFLIGHT=1
+OPENCODE_PREFLIGHT_AUTH=1
+OPENCODE_PREFLIGHT_MODELS=1
+# OPENCODE_PREFLIGHT_STRICT=1
+```
 
-Lorsque tous les slots sont occupés, une nouvelle délégation attend dans une file d'attente déterministe côté runtime au lieu de consommer un nouvel appel LLM ou d'échouer immédiatement. Les lancements en attente réservent leur capacité afin que plusieurs délégations simultanées ne puissent pas dépasser la limite par course concurrente. `SUBAGENT_QUEUE_TIMEOUT_SECONDS` borne cette attente (par défaut `600s`) ; si aucun slot ne se libère avant le timeout, l'outil échoue explicitement au lieu de rester bloqué indéfiniment.
+Le script reste compatible avec le Bash 3 fourni par défaut sur macOS.
 
-Le prompt de l'orchestrateur est généré avec la même limite de parallélisme afin que le modèle et le garde runtime utilisent le même budget de concurrence.
+## Watchdog V1 et V2
 
-Valeurs conseillées :
+V1 et V2 gardent les mêmes capacités fonctionnelles :
 
-- `1` : modèles premium coûteux ou debug d'environnements fragiles
-- `2` : mode conservateur pour une API payante
-- `3` : valeur par défaut du toolkit, bon compromis pour le dev courant
-- `4+` : uniquement lorsque les rate limits et le coût sont maîtrisés
+- suivi individuel des sessions enfants ;
+- distinction `lastActivityAt` / `lastProgressAt` ;
+- `WAITING_PERMISSION` exclu du stall ;
+- durée maximale ;
+- absence de progrès ;
+- erreurs répétées ;
+- queue et plafond de parallélisme ;
+- réconciliation `session.children()` quand disponible ;
+- checkpoints de métadonnées ;
+- budgets de coût lorsque le provider fournit la donnée.
+
+V2 conserve en plus le hook de retry provider :
+
+```text
+400 / 401 / 403 / 404 -> terminal
+429                  -> retry borné
+5xx                  -> retry borné
+```
+
+## Détection de boucle outil
+
+Le watchdog mémorise la signature de l'appel et de son résultat. Si un child exécute plusieurs fois **le même tool avec les mêmes arguments et obtient le même résultat**, cette activité n'est plus considérée comme un progrès.
+
+Au-delà de `MAX_SAME_ERROR`, le child peut être interrompu.
+
+Cela couvre des boucles du type :
+
+```text
+commande A -> résultat X
+commande A -> résultat X
+commande A -> résultat X
+```
+
+que le simple compteur de steps ne diagnostique pas correctement.
+
+## Budgets de coût remontés par le provider
+
+```bash
+MAX_CHILD_COST=0.50
+MAX_RUN_COST=2.00
+```
+
+`0` désactive la limite monétaire correspondante.
+
+Le garde-fou n'est actif que lorsque OpenCode/provider remonte un champ de coût exploitable. S'il n'y a aucune télémétrie de coût, **aucun coût n'est inventé** : steps, durée, stall, retries, profondeur et parallélisme restent les barrières sûres.
+
+`MAX_CHILD_COST` coupe un child dépassant son budget remonté. `MAX_RUN_COST` coupe la famille de sessions du run lorsque le total remonté dépasse la limite.
+
+## Checkpoints
+
+Le watchdog persiste uniquement des **métadonnées**, jamais le prompt ni une copie du code :
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit/runs/<session-id>.json
+```
+
+Surcharge possible :
+
+```bash
+RELIABILITY_STATE_DIR=$HOME/.local/state/opencode-agent-toolkit/runs
+```
+
+Un checkpoint contient notamment :
+
+- session ID et parent ;
+- agent ;
+- statut ;
+- raison d'abort ;
+- coût remonté ;
+- timestamps de démarrage, activité et progrès.
+
+La session OpenCode et les handoffs restent la source de vérité pour le contenu détaillé du travail.
+
+## Caps de steps
+
+Les overrides de steps sont des **plafonds**, pas des valeurs absolues permettant d'augmenter la liberté d'un agent.
+
+```bash
+MAX_STEPS_BUILDER=7    # peut réduire
+MAX_STEPS_BUILDER=999  # ne peut pas dépasser la limite du générateur
+```
+
+`scripts/apply-reliability` applique :
+
+```text
+steps effectifs = min(steps générés, cap reliability)
+```
 
 ## Politique d'arrêt
 
-Les agents leads reçoivent maintenant des règles explicites : ne pas créer de chaîne de retries illimitée, réutiliser les handoffs déjà complets et distinguer `WAITING_PERMISSION` de `STALLED`.
-
 Comportement attendu :
 
-- erreur auth/config/permission/provider/modèle -> arrêt rapide
-- `429`/`5xx` temporaire -> retry borné
-- erreur code/test avec nouvelle preuve -> poursuite dans le budget de steps
-- même cause racine sans nouvelle preuve -> arrêt ou une seule réorientation vers un spécialiste distinct
-- enfant bloqué -> interruption, conservation des preuves, puis réorientation ou remontée du blocker
-- parallélisme saturé -> attente dans la file runtime sans nouvel appel LLM
+- auth/config/provider/modèle non retryable -> arrêt rapide ;
+- `429` / `5xx` -> retry borné ;
+- même erreur racine sans nouvelle preuve -> arrêt ;
+- même tool + mêmes args + même résultat -> boucle détectable ;
+- child sans progrès -> interruption ;
+- child trop long -> interruption ;
+- child au-dessus du coût remonté -> interruption si télémétrie disponible ;
+- `WAITING_PERMISSION` -> pas considéré comme stall ;
+- limite parallèle atteinte -> attente dans la queue ;
+- child bloqué/aborté -> consommer handoff/checkpoint avant de décider d'un remplacement.
 
-## Contrôle de coût restant
+## Commandes utiles
 
-Les limites de steps, retries, durée et parallélisme bornent déjà fortement le coût. Un vrai plafond en euros nécessite cependant une télémétrie fiable du coût par requête venant du provider ou du gateway. Le toolkit ne doit appliquer un hard stop monétaire que lorsque cette donnée est autoritative ; sinon des budgets de tokens/appels/steps/temps sont plus sûrs qu'une estimation présentée comme exacte.
+```bash
+just reliability
+just preflight
+just doctor
+just check
+```
+
+`just reliability` affiche la politique effective après profil et overrides locaux.

@@ -1,12 +1,50 @@
 {
-  "max_parallel_subagents": 3,
-  "queue_timeout_seconds": 600,
-  "heartbeat_timeout_seconds": 60,
-  "stalled_timeout_seconds": 180,
-  "max_agent_duration_seconds": 900,
-  "max_same_error": 2,
-  "max_retries": 2,
-  "watch_interval_seconds": 15,
+  "default_profile": "normal",
+  "profiles": {
+    "cheap": {
+      "max_parallel_subagents": 2,
+      "queue_timeout_seconds": 300,
+      "heartbeat_timeout_seconds": 45,
+      "stalled_timeout_seconds": 120,
+      "max_agent_duration_seconds": 600,
+      "max_same_error": 2,
+      "max_retries": 1,
+      "watch_interval_seconds": 10,
+      "max_child_cost": 0.25,
+      "max_run_cost": 1.0
+    },
+    "normal": {
+      "max_parallel_subagents": 3,
+      "queue_timeout_seconds": 600,
+      "heartbeat_timeout_seconds": 60,
+      "stalled_timeout_seconds": 180,
+      "max_agent_duration_seconds": 900,
+      "max_same_error": 2,
+      "max_retries": 2,
+      "watch_interval_seconds": 15,
+      "max_child_cost": 0.5,
+      "max_run_cost": 2.0
+    },
+    "premium": {
+      "max_parallel_subagents": 4,
+      "queue_timeout_seconds": 900,
+      "heartbeat_timeout_seconds": 90,
+      "stalled_timeout_seconds": 240,
+      "max_agent_duration_seconds": 1200,
+      "max_same_error": 3,
+      "max_retries": 2,
+      "watch_interval_seconds": 15,
+      "max_child_cost": 1.5,
+      "max_run_cost": 5.0
+    }
+  },
+  "lead_parallel_env": {
+    "meta-router": "MAX_PARALLEL_META_ROUTER",
+    "orchestrator": "MAX_PARALLEL_ORCHESTRATOR",
+    "review-lead": "MAX_PARALLEL_REVIEW_LEAD",
+    "platform-architect": "MAX_PARALLEL_PLATFORM_ARCHITECT",
+    "security-lead": "MAX_PARALLEL_SECURITY_LEAD"
+  },
   "step_caps": {
     "meta-router": 12,
     "orchestrator": 16,
