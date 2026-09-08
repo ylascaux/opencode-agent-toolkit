@@ -17,6 +17,7 @@ A cost-aware, evidence-driven multi-agent engineering system for OpenCode, focus
 - Reviewers may collect safe Git evidence without edit permissions.
 - Enriched multi-repository architecture inventory with evidence and confidence.
 - Native OpenCode V1 stable and OpenCode 2 configs generated from one source.
+- Deterministic reliability guards: preflight, capped steps, bounded retries, subagent queue, stall detection and max duration.
 - Optional reversible `oc` user command lets you use the toolkit from any working directory.
 
 ## Quick start
@@ -126,6 +127,8 @@ just install-user
 just user-status
 just uninstall-user
 just doctor
+just preflight
+just reliability
 just run
 just v1
 just v2
@@ -150,6 +153,13 @@ OPENCODE_TOOLKIT_BIN_DIR="$HOME/bin" just install-user
 ```
 
 ## Documentation
+
+Start here if you want to understand how the toolkit itself works end to end:
+
+- **Français:** [`docs/fr/SYSTEM_ARCHITECTURE.md`](docs/fr/SYSTEM_ARCHITECTURE.md)
+- **English:** [`docs/en/SYSTEM_ARCHITECTURE.md`](docs/en/SYSTEM_ARCHITECTURE.md)
+
+Full documentation indexes:
 
 - English: [`docs/en/`](docs/en/README.md)
 - Français: [`docs/fr/`](docs/fr/README.md)
