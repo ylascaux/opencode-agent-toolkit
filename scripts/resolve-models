@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shlex
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+TIERS = ROOT / "profiles" / "agent-tiers.json"
+
+
+def load_tiers() -> dict[str, str]:
+    data = json.loads(TIERS.read_text())
+    if not isinstance(data, dict):
+        raise SystemExit("profiles/agent-tiers.json must contain an object")
+    allowed = {"low", "medium", "high"}
+    bad = {k: v for k, v in data.items() if not isinstance(k, str) or v not in allowed}
+    if bad:
+        raise SystemExit(f"invalid agent tier mapping: {bad}")
+    return data
+
+
+def resolve(environ: dict[str, str] | None = None) -> dict[str, str]:
+    env = environ or os.environ
+    tier_models = {
+        "low": env.get("MODEL_LOW", "").strip(),
+        "medium": env.get("MODEL_MEDIUM", "").strip(),
+        "high": env.get("MODEL_HIGH", "").strip(),
+    }
+    missing = [name for name, value in tier_models.items() if not value]
+    if missing:
+        raise SystemExit("Missing tier model(s): " + ", ".join("MODEL_" + name.upper() for name in missing))
+
+    result: dict[str, str] = {}
+    for variable, tier in load_tiers().items():
+        override = env.get(variable, "").strip()
+        result[variable] = override or tier_models[tier]
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Resolve MODEL_* agent variables from LOW/MEDIUM/HIGH tiers")
+    parser.add_argument("--show", action="store_true", help="Show effective mapping with tiers")
+    args = parser.parse_args()
+
+    mapping = resolve()
+    tiers = load_tiers()
+    if args.show:
+        print(f"profile={os.getenv('MODEL_PROFILE', 'custom')}")
+        print(f"LOW={os.getenv('MODEL_LOW', '')}")
+        print(f"MEDIUM={os.getenv('MODEL_MEDIUM', '')}")
+        print(f"HIGH={os.getenv('MODEL_HIGH', '')}")
+        print()
+        for variable in sorted(mapping):
+            print(f"{variable:<28} [{tiers[variable]:<6}] {mapping[variable]}")
+        return 0
+
+    for variable, model in mapping.items():
+        print(f"export {variable}={shlex.quote(model)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
