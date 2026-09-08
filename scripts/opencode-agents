@@ -1,9 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+"$ROOT/scripts/generate-config" >/dev/null
+
+if [[ ! -f "$ROOT/.env" ]]; then
+  echo "Missing $ROOT/.env. Run: just install or ./scripts/bootstrap" >&2
+  exit 1
+fi
+
 set -a
 source "$ROOT/.env"
 if [[ -f "$ROOT/.env.local" ]]; then source "$ROOT/.env.local"; fi
 set +a
-export OPENCODE_CONFIG="$ROOT/opencode.jsonc"
-exec opencode "$@"
+
+major="${OPENCODE_MAJOR:-1}"
+case "$major" in
+  1)
+    bin="${OPENCODE_BIN:-opencode}"
+    config="$ROOT/opencode.jsonc"
+    ;;
+  2)
+    bin="${OPENCODE_BIN:-opencode2}"
+    config="$ROOT/opencode.v2.jsonc"
+    ;;
+  auto)
+    if command -v opencode2 >/dev/null 2>&1; then
+      bin="${OPENCODE_BIN:-opencode2}"
+      config="$ROOT/opencode.v2.jsonc"
+    else
+      bin="${OPENCODE_BIN:-opencode}"
+      config="$ROOT/opencode.jsonc"
+    fi
+    ;;
+  *)
+    echo "OPENCODE_MAJOR must be 1, 2, or auto (got: $major)" >&2
+    exit 2
+    ;;
+esac
+
+if ! command -v "$bin" >/dev/null 2>&1; then
+  echo "OpenCode binary not found: $bin" >&2
+  exit 127
+fi
+
+export OPENCODE_CONFIG="$config"
+exec "$bin" "$@"
