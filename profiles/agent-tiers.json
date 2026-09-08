@@ -5,8 +5,8 @@
   "MODEL_SECURITY_LEAD": "high",
   "MODEL_ARBITER": "high",
   "MODEL_DEEP_REASONER": "high",
-  "MODEL_EVIDENCE_AUDITOR": "high",
-  "MODEL_BRAINSTORM": "low",
+  "MODEL_EVIDENCE_AUDITOR": "medium",
+  "MODEL_BRAINSTORM": "medium",
   "MODEL_PLANNER": "medium",
   "MODEL_BUILDER": "medium",
   "MODEL_REVIEWER": "medium",
@@ -15,7 +15,7 @@
   "MODEL_DEBUGGER": "medium",
   "MODEL_API_CONTRACT": "medium",
   "MODEL_PERFORMANCE": "medium",
-  "MODEL_PROJECT_SCANNER": "low",
+  "MODEL_PROJECT_SCANNER": "medium",
   "MODEL_ARCHITECTURE": "high",
   "MODEL_PLATFORM_ARCHITECT": "high",
   "MODEL_AWS": "medium",
@@ -25,8 +25,8 @@
   "MODEL_GO": "medium",
   "MODEL_CICD": "medium",
   "MODEL_SRE": "medium",
-  "MODEL_OBSERVABILITY": "low",
-  "MODEL_FINOPS": "low",
+  "MODEL_OBSERVABILITY": "medium",
+  "MODEL_FINOPS": "medium",
   "MODEL_DATABASE": "medium",
   "MODEL_NETWORKING": "medium",
   "MODEL_THREAT_MODEL": "high",
@@ -35,5 +35,5 @@
   "MODEL_SUPPLY_CHAIN": "medium",
   "MODEL_SECRETS": "low",
   "MODEL_PENTEST": "high",
-  "MODEL_DOCS": "low"
+  "MODEL_DOCS": "medium"
 }
