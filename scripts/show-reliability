@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+policy = json.loads((ROOT / "reliability.json").read_text())
+
+print("max_parallel_subagents =", os.getenv("MAX_PARALLEL_SUBAGENTS", policy["max_parallel_subagents"]))
+print("stalled_timeout_seconds =", os.getenv("SUBAGENT_STALLED_TIMEOUT_SECONDS", policy["stalled_timeout_seconds"]))
+print("max_agent_duration_seconds =", os.getenv("SUBAGENT_MAX_DURATION_SECONDS", policy["max_agent_duration_seconds"]))
+print("max_same_error =", os.getenv("MAX_SAME_ERROR", policy["max_same_error"]))
+print("max_provider_retries =", os.getenv("MAX_PROVIDER_RETRIES", policy["max_retries"]))
+print("step_caps =")
+for name, value in sorted(policy["step_caps"].items()):
+    env_name = "MAX_STEPS_" + name.upper().replace("-", "_")
+    print(f"  {name}: {os.getenv(env_name, value)}")
