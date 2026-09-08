@@ -13,10 +13,13 @@ class InstallationSurfaceTests(unittest.TestCase):
         text = (ROOT / "justfile").read_text()
         for recipe in [
             "install:",
+            'profile name="copilot":',
+            "profiles:",
             'install-user command="oc":',
             'uninstall-user command="oc":',
             'user-status command="oc":',
             "configure *args:",
+            "configure-litellm *args:",
             "doctor:",
             "check:",
             "run *args:",
@@ -29,8 +32,11 @@ class InstallationSurfaceTests(unittest.TestCase):
     def test_makefile_is_not_required(self):
         self.assertFalse((ROOT / "Makefile").exists())
 
-    def test_bootstrap_doctor_configure_generator_and_user_link_exist(self):
-        for name in ["bootstrap", "doctor", "configure-models", "generate-config", "opencode-agents", "user-link"]:
+    def test_installation_scripts_exist(self):
+        for name in [
+            "bootstrap", "doctor", "configure-models", "generate-config", "opencode-agents",
+            "user-link", "apply-profile", "resolve-models",
+        ]:
             self.assertTrue((ROOT / "scripts" / name).exists(), name)
 
     def test_user_link_install_is_idempotent_and_reversible(self):
@@ -57,18 +63,27 @@ class InstallationSurfaceTests(unittest.TestCase):
             toolkit = tmp_path / "toolkit"
             scripts = toolkit / "scripts"
             agents = toolkit / "agents"
+            profiles = toolkit / "profiles"
             scripts.mkdir(parents=True)
             agents.mkdir()
+            profiles.mkdir()
 
-            for name in ["opencode-agents", "generate-config", "user-link"]:
+            for name in ["opencode-agents", "generate-config", "user-link", "resolve-models"]:
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
             shutil.copy2(ROOT / "agents" / "manifest.json", agents / "manifest.json")
-            (toolkit / ".env").write_text("OPENCODE_MAJOR=1\n")
+            shutil.copy2(ROOT / "profiles" / "agent-tiers.json", profiles / "agent-tiers.json")
+            (toolkit / ".env").write_text(
+                "OPENCODE_MAJOR=1\n"
+                "MODEL_PROFILE=test\n"
+                "MODEL_LOW=test/low\n"
+                "MODEL_MEDIUM=test/medium\n"
+                "MODEL_HIGH=test/high\n"
+            )
 
             fake_opencode = tmp_path / "fake-opencode"
             fake_opencode.write_text(
                 "#!/usr/bin/env bash\n"
-                "printf 'cwd=%s\\nconfig=%s\\nargs=%s\\n' \"$PWD\" \"${OPENCODE_CONFIG:-}\" \"$*\"\n"
+                "printf 'cwd=%s\\nconfig=%s\\nargs=%s\\nmodel=%s\\n' \"$PWD\" \"${OPENCODE_CONFIG:-}\" \"$*\" \"${MODEL_BUILDER:-}\"\n"
             )
             fake_opencode.chmod(0o755)
 
@@ -100,6 +115,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             self.assertIn(f"cwd={project}", result.stdout)
             self.assertIn(f"config={toolkit / 'opencode.jsonc'}", result.stdout)
             self.assertIn("args=run hello", result.stdout)
+            self.assertIn("model=test/medium", result.stdout)
 
     def test_user_link_refuses_to_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as tmp:
