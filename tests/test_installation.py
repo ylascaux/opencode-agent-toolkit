@@ -21,6 +21,8 @@ class InstallationSurfaceTests(unittest.TestCase):
             "configure *args:",
             "configure-litellm *args:",
             "doctor:",
+            "preflight:",
+            "reliability:",
             "check:",
             "run *args:",
             "scan *args:",
@@ -35,7 +37,8 @@ class InstallationSurfaceTests(unittest.TestCase):
     def test_installation_scripts_exist(self):
         for name in [
             "bootstrap", "doctor", "configure-models", "generate-config", "opencode-agents",
-            "user-link", "apply-profile", "resolve-models",
+            "user-link", "apply-profile", "resolve-models", "apply-reliability", "preflight",
+            "show-reliability",
         ]:
             self.assertTrue((ROOT / "scripts" / name).exists(), name)
 
@@ -64,16 +67,27 @@ class InstallationSurfaceTests(unittest.TestCase):
             scripts = toolkit / "scripts"
             agents = toolkit / "agents"
             profiles = toolkit / "profiles"
+            plugins = toolkit / ".opencode" / "plugins"
             scripts.mkdir(parents=True)
             agents.mkdir()
             profiles.mkdir()
+            plugins.mkdir(parents=True)
 
-            for name in ["opencode-agents", "generate-config", "user-link", "resolve-models"]:
+            for name in [
+                "opencode-agents", "generate-config", "user-link", "resolve-models",
+                "apply-reliability", "preflight",
+            ]:
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
             shutil.copy2(ROOT / "agents" / "manifest.json", agents / "manifest.json")
             shutil.copy2(ROOT / "profiles" / "agent-tiers.json", profiles / "agent-tiers.json")
+            shutil.copy2(ROOT / "reliability.json", toolkit / "reliability.json")
+            shutil.copy2(
+                ROOT / ".opencode" / "plugins" / "reliability-v1.js",
+                plugins / "reliability-v1.js",
+            )
             (toolkit / ".env").write_text(
                 "OPENCODE_MAJOR=1\n"
+                "OPENCODE_PREFLIGHT=1\n"
                 "MODEL_PROFILE=test\n"
                 "MODEL_LOW=test/low\n"
                 "MODEL_MEDIUM=test/medium\n"
