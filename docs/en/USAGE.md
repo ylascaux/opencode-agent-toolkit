@@ -33,7 +33,23 @@ This goes through `review-lead`, which selects only relevant review dimensions.
 /architecture Discover the systems under ~/Projects and propose a target AWS platform architecture.
 ```
 
-This goes directly to `platform-architect`, preserving the two-level delegation depth.
+The workflow is staged rather than self-reviewed:
+
+1. `meta-router` routes design and evidence gathering to `platform-architect`.
+2. If a durable document is requested, `platform-architect` delegates file writing to `docs-writer` after the design is stable.
+3. Once the artifact exists, `meta-router` routes it to `review-lead` for an independent repository-backed review.
+4. When trust boundaries, IAM, public exposure, secrets or infrastructure-security posture materially change, `security-lead` runs as an additional gate. It can run in parallel with `review-lead` when both only read the completed artifact.
+5. The final synthesis reports evidence, trade-offs, rejected alternatives, migration/rollback and residual risks.
+
+The producing architecture path does not perform its own final independent review.
+
+To review an existing architecture artifact without running a new design pass first:
+
+```text
+/architecture-review Review docs/architecture/aws-platform.md against the current repository.
+```
+
+This routes through `review-lead`, which can re-establish facts with `project-scanner` and select only the relevant platform/security dimensions.
 
 ## Security
 
