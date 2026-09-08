@@ -23,6 +23,16 @@ meta-router
 
 The lead selects only relevant domains. When durable documentation is requested, `platform-architect` stabilizes the design and delegates the actual file writing to `docs-writer`; the architecture lead stays non-editing.
 
+## Delegation economy
+
+Lead agents start from the evidence they can inspect directly and use the smallest sufficient set of child agents. A technology being present in the repository is not enough to justify a specialist task by itself.
+
+For example, finding `.tf`, `.hcl` or Terragrunt files does not automatically trigger `terraform-terragrunt`. That specialist is useful when module boundaries, state, provider behavior, lifecycle/replacement, Terragrunt dependency semantics or migration risk materially affect the architecture or need specialist verification.
+
+The same rule applies to AWS, Kubernetes, networking, database, SRE, observability and FinOps domains. Related discovery questions should be grouped instead of sending several children over the same evidence. Once a child returns a complete handoff, the parent should consume it and continue rather than dispatching the same task again unless the evidence is incomplete, stale or contradictory.
+
+Independent verification remains an intentional exception: a reviewer may re-read the same primary evidence because independence requires not trusting the producer handoff as proof.
+
 ## Independent architecture review
 
 Architecture delivery is intentionally staged:

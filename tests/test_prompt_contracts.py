@@ -83,6 +83,27 @@ class PromptContractTests(unittest.TestCase):
         self.assertIn("native background subagents", text)
         self.assertIn("same completed artifact", text)
 
+    def test_leads_use_delegation_economy_but_leaves_do_not(self):
+        for name in ["meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"]:
+            text = (ROOT / "prompts" / f"{name}.md").read_text().lower()
+            self.assertIn("## delegation economy", text, name)
+            self.assertIn("smallest sufficient set of children", text, name)
+            self.assertIn("do not delegate merely because a technology is detected", text, name)
+            self.assertIn("once a child returns complete", text, name)
+
+        for name in ["builder", "terraform-terragrunt", "project-scanner", "reviewer"]:
+            text = (ROOT / "prompts" / f"{name}.md").read_text().lower()
+            self.assertNotIn("## delegation economy", text, name)
+
+    def test_platform_architect_requires_material_specialist_trigger(self):
+        text = (ROOT / "prompts" / "platform-architect.md").read_text().lower()
+        self.assertIn("## architecture specialist trigger policy", text)
+        self.assertIn("do not fan out to every technology detected", text)
+        self.assertIn(".tf", text)
+        self.assertIn("terraform-terragrunt", text)
+        self.assertIn("module/state/provider/lifecycle/dependency/migration", text)
+        self.assertIn("material architecture decision", text)
+
     def test_evidence_auditor_avoids_numeric_confidence(self):
         text = (ROOT / "prompts" / "evidence-auditor.md").read_text().lower()
         self.assertIn("high/medium/low", text)
