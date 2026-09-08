@@ -22,7 +22,7 @@ check_cmd opencode2
 if [[ -f .env ]]; then
   echo "[ok]   .env         present"
 else
-  echo "[fail] .env         missing (run: just install or ./scripts/bootstrap)"
+  echo "[fail] .env         missing (run: just install or bash ./scripts/bootstrap)"
   ok=0
 fi
 
@@ -32,7 +32,7 @@ else
   echo "[warn] .venv        missing (API dependencies are not installed)"
 fi
 
-./scripts/generate-config >/dev/null
+python3 ./scripts/generate-config >/dev/null
 if python3 -m json.tool opencode.jsonc >/dev/null 2>&1 && python3 -m json.tool opencode.v2.jsonc >/dev/null 2>&1; then
   echo "[ok]   configs      valid JSON"
 else
