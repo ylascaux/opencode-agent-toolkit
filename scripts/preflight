@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+KNOWN_AUTH_PROVIDERS = {"github-copilot", "openai", "anthropic", "google", "google-vertex"}
+RUNTIME_NUMBERS = {
+    "OC_MAX_PARALLEL_SUBAGENTS": (int, 1),
+    "OC_MAX_PARALLEL_META_ROUTER": (int, 1),
+    "OC_MAX_PARALLEL_ORCHESTRATOR": (int, 1),
+    "OC_MAX_PARALLEL_REVIEW_LEAD": (int, 1),
+    "OC_MAX_PARALLEL_PLATFORM_ARCHITECT": (int, 1),
+    "OC_MAX_PARALLEL_SECURITY_LEAD": (int, 1),
+    "OC_STALLED_TIMEOUT_SECONDS": (float, 15),
+    "OC_MAX_AGENT_DURATION_SECONDS": (float, 30),
+    "OC_MAX_SAME_FAILURE": (int, 1),
+    "OC_MAX_CHILD_COST": (float, 0),
+    "OC_MAX_RUN_COST": (float, 0),
+    "OC_SUBAGENT_QUEUE_TIMEOUT_SECONDS": (float, 30),
+    "OC_WATCHDOG_POLL_SECONDS": (float, 2),
+}
+
+
+def truthy(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def fail(message: str, errors: list[str]) -> None:
+    errors.append(message)
+    print(f"[fail] {message}", file=sys.stderr)
+
+
+def ok(message: str) -> None:
+    print(f"[ok]   {message}")
+
+
+def warn(message: str) -> None:
+    print(f"[warn] {message}")
+
+
+def run(command: list[str], timeout: int = 20) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, text=True, capture_output=True, timeout=timeout, check=False)
+
+
+def model_values() -> list[str]:
+    values: list[str] = []
+    for key, value in os.environ.items():
+        if key.startswith("MODEL_") and key not in {"MODEL_PROFILE"} and "/" in value:
+            values.append(value.strip())
+    return sorted(set(values))
+
+
+def providers(models: list[str]) -> set[str]:
+    return {model.split("/", 1)[0] for model in models if "/" in model}
+
+
+def validate_numbers(errors: list[str]) -> None:
+    for name, (kind, minimum) in RUNTIME_NUMBERS.items():
+        raw = os.getenv(name)
+        if raw in {None, ""}:
+            continue
+        try:
+            value = kind(raw)
+        except ValueError:
+            fail(f"{name} must be a valid {kind.__name__} (got {raw!r})", errors)
+            continue
+        if value < minimum:
+            fail(f"{name} must be >= {minimum} (got {value})", errors)
+    profile = os.getenv("OC_RUNTIME_PROFILE", "normal").lower()
+    if profile not in {"cheap", "normal", "premium"}:
+        fail(f"OC_RUNTIME_PROFILE must be cheap, normal, or premium (got {profile!r})", errors)
+    else:
+        ok(f"runtime profile {profile}")
+
+
+def validate_runtime_plugin(major: str, errors: list[str]) -> None:
+    if not truthy("OC_RUNTIME_GUARDS", True):
+        warn("runtime watchdog disabled by OC_RUNTIME_GUARDS=0")
+        return
+
+    source = (ROOT / "plugins" / "runtime-guardrails.js").resolve()
+    if not source.is_file():
+        fail(f"runtime guard plugin missing: {source}", errors)
+        return
+
+    if major == "1":
+        config_home = Path(os.getenv("OPENCODE_CONFIG_DIR", Path.home() / ".config" / "opencode"))
+        link = config_home / "plugins" / "opencode-agent-toolkit-runtime.js"
+        if not link.is_symlink():
+            fail(f"runtime watchdog is not installed globally: {link} (run: just install-user)", errors)
+            return
+        try:
+            if link.resolve() != source:
+                fail(f"runtime watchdog symlink points elsewhere: {link} -> {link.resolve()}", errors)
+                return
+        except FileNotFoundError:
+            fail(f"runtime watchdog symlink is broken: {link}", errors)
+            return
+        ok("runtime watchdog plugin installed")
+    else:
+        warn("OpenCode V2 uses prompt/step guardrails only; the V1 watchdog plugin is not loaded into V2")
+
+
+def validate_auth(binary: str, model_providers: set[str], errors: list[str]) -> None:
+    if not truthy("OC_PREFLIGHT_AUTH", True):
+        warn("authentication preflight disabled")
+        return
+    if not (model_providers & KNOWN_AUTH_PROVIDERS):
+        ok("authentication preflight not required for configured provider set")
+        return
+    try:
+        result = run([binary, "auth", "list"], timeout=15)
+    except subprocess.TimeoutExpired:
+        fail("opencode auth list timed out", errors)
+        return
+    combined = f"{result.stdout}\n{result.stderr}".strip()
+    if result.returncode != 0:
+        fail(f"opencode auth list failed: {combined[-500:]}", errors)
+        return
+    if re.search(r"\b0\s+credentials?\b", combined, re.I):
+        fail("OpenCode reports 0 credentials for an authenticated model provider", errors)
+        return
+    ok("OpenCode authentication is available")
+
+
+def validate_models(binary: str, models: list[str], errors: list[str]) -> None:
+    if not truthy("OC_PREFLIGHT_MODELS", True):
+        warn("model availability preflight disabled")
+        return
+    by_provider: dict[str, set[str]] = {}
+    for model in models:
+        provider, model_id = model.split("/", 1)
+        by_provider.setdefault(provider, set()).add(model_id)
+
+    for provider, expected_ids in sorted(by_provider.items()):
+        try:
+            result = run([binary, "models", provider], timeout=20)
+        except subprocess.TimeoutExpired:
+            fail(f"model discovery timed out for provider {provider}", errors)
+            continue
+        combined = f"{result.stdout}\n{result.stderr}"
+        if result.returncode != 0:
+            fail(f"model discovery failed for provider {provider}: {combined.strip()[-500:]}", errors)
+            continue
+        missing = [model_id for model_id in sorted(expected_ids) if model_id not in combined]
+        if missing:
+            fail(f"provider {provider} does not expose configured model(s): {', '.join(missing)}", errors)
+        else:
+            ok(f"provider {provider}: configured models exposed")
+
+
+def validate_project() -> None:
+    git = shutil.which("git")
+    if not git:
+        warn("git not found; repository-state checks unavailable")
+        return
+    result = run([git, "rev-parse", "--show-toplevel"], timeout=5)
+    if result.returncode == 0:
+        root = result.stdout.strip()
+        dirty = run([git, "status", "--porcelain"], timeout=5).stdout.strip()
+        ok(f"git repository detected: {root}")
+        if dirty:
+            warn("working tree is dirty; agents must preserve unrelated changes")
+    else:
+        warn("current directory is not a git repository")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Zero-token checks before launching OpenCode agents")
+    parser.add_argument("--bin", required=True, dest="binary")
+    parser.add_argument("--major", required=True, choices=["1", "2"])
+    args = parser.parse_args()
+
+    errors: list[str] = []
+    binary = shutil.which(args.binary)
+    if not binary:
+        fail(f"OpenCode binary not found: {args.binary}", errors)
+        return 1
+    ok(f"OpenCode binary {binary}")
+
+    models = model_values()
+    if not models:
+        fail("no resolved MODEL_* values found in the environment", errors)
+    else:
+        ok(f"resolved {len(models)} distinct model target(s)")
+
+    validate_numbers(errors)
+    validate_runtime_plugin(args.major, errors)
+    validate_auth(binary, providers(models), errors)
+    validate_models(binary, models, errors)
+    validate_project()
+
+    if errors:
+        print(f"\nPreflight failed with {len(errors)} blocking issue(s). No agent session was started.", file=sys.stderr)
+        return 1
+    print("\nPreflight passed. Runtime guardrails are ready before the first model call.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
