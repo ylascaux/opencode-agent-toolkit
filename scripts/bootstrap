@@ -56,9 +56,10 @@ esac
 
 printf '\nSetup complete.\n'
 echo "Recommended next steps:"
-echo "  just configure   # optional: discover LiteLLM models and specialize agent profiles"
+echo "  just configure      # optional: discover LiteLLM models and specialize agent profiles"
 echo "  just doctor"
-echo "  just run"
+echo "  just install-user   # optional: create ~/.local/bin/oc for use from any workspace"
+echo "  just run            # alternatively run directly from this repository"
 
 if ! command -v just >/dev/null 2>&1; then
   echo "Note: 'just' is recommended for the friendly command interface."
