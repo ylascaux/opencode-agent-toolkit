@@ -47,14 +47,25 @@ class ConfigPolicyTests(unittest.TestCase):
         self.assertEqual(self.v1["agent"]["orchestrator"]["mode"], "all")
         self.assertEqual(self.v2["agents"]["orchestrator"]["mode"], "all")
 
-    def test_every_model_env_is_documented(self):
-        env_text = (ROOT / ".env.example").read_text()
-        vars_in_env = set(re.findall(r"^(MODEL_[A-Z0-9_]+)=", env_text, re.MULTILINE))
-        self.assertEqual(len(vars_in_env), 37)
+    def test_every_model_env_has_a_tier(self):
+        tiers = json.loads((ROOT / "profiles" / "agent-tiers.json").read_text())
+        expected_model_envs = set()
         for agent in self.v2["agents"].values():
             match = re.fullmatch(r"\{env:(MODEL_[A-Z0-9_]+)\}", agent["model"])
             self.assertIsNotNone(match, agent["model"])
-            self.assertIn(match.group(1), vars_in_env)
+            expected_model_envs.add(match.group(1))
+        self.assertEqual(len(expected_model_envs), 37)
+        self.assertEqual(set(tiers), expected_model_envs)
+        self.assertTrue(set(tiers.values()) <= {"low", "medium", "high"})
+
+    def test_default_env_defines_three_tiers(self):
+        env_text = (ROOT / ".env.example").read_text()
+        for variable in ["MODEL_PROFILE", "MODEL_LOW", "MODEL_MEDIUM", "MODEL_HIGH"]:
+            self.assertRegex(env_text, rf"(?m)^{variable}=.+$")
+        self.assertIn("MODEL_PROFILE=copilot", env_text)
+        self.assertIn("github-copilot/gpt-5.6-luna", env_text)
+        self.assertIn("github-copilot/gpt-5.6-terra", env_text)
+        self.assertIn("github-copilot/gpt-5.6-sol", env_text)
 
     def test_leaf_agents_cannot_delegate(self):
         for name, agent in self.v1["agent"].items():
