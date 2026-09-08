@@ -117,13 +117,19 @@ validate_positive_int() {
 }
 validate_nonnegative_number() {
   local name="$1" value="$2"
-  python3 - "$value" <<'PY' >/dev/null 2>&1
+  if python3 - "$value" <<'PY' >/dev/null 2>&1
 import math, sys
-try: value=float(sys.argv[1])
-except ValueError: raise SystemExit(1)
+try:
+    value = float(sys.argv[1])
+except ValueError:
+    raise SystemExit(1)
 raise SystemExit(0 if math.isfinite(value) and value >= 0 else 1)
 PY
-  if [[ $? -eq 0 ]]; then ok "$name: $value"; else error "$name must be a finite number >= 0"; fi
+  then
+    ok "$name: $value"
+  else
+    error "$name must be a finite number >= 0"
+  fi
 }
 
 max_parallel="${MAX_PARALLEL_SUBAGENTS:-${PROFILE_MAX_PARALLEL_SUBAGENTS:-3}}"
@@ -154,14 +160,19 @@ if command -v git >/dev/null 2>&1; then
 fi
 
 if command -v "$bin" >/dev/null 2>&1; then
-  mapfile -t configured_models < <(python3 - "$config" <<'PY'
+  configured_models=()
+  while IFS= read -r value; do
+    [[ -n "$value" ]] && configured_models+=("$value")
+  done < <(python3 - "$config" <<'PY'
 import json, sys
 from pathlib import Path
-p=Path(sys.argv[1])
-if not p.exists(): raise SystemExit(0)
-data=json.loads(p.read_text())
-agents=data.get("agent", data.get("agents", {}))
-for value in sorted({spec.get("model") for spec in agents.values() if spec.get("model")}): print(value)
+p = Path(sys.argv[1])
+if not p.exists():
+    raise SystemExit(0)
+data = json.loads(p.read_text())
+agents = data.get("agent", data.get("agents", {}))
+for value in sorted({spec.get("model") for spec in agents.values() if spec.get("model")}):
+    print(value)
 PY
   )
 
