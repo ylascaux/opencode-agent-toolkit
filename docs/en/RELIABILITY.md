@@ -7,6 +7,7 @@ The toolkit applies deterministic safeguards before and during agent execution. 
 The default policy lives in `reliability.json`.
 
 - maximum parallel subagents: `3`
+- subagent queue timeout: `600s`
 - stalled child timeout: `180s`
 - maximum child duration: `900s`
 - repeated root error limit: `2`
@@ -18,6 +19,7 @@ Every value can be overridden from `.env.local` without changing tracked files.
 
 ```bash
 MAX_PARALLEL_SUBAGENTS=2
+SUBAGENT_QUEUE_TIMEOUT_SECONDS=600
 SUBAGENT_STALLED_TIMEOUT_SECONDS=240
 SUBAGENT_MAX_DURATION_SECONDS=1200
 MAX_PROVIDER_RETRIES=1
@@ -38,13 +40,15 @@ Use `just reliability` to inspect the effective policy.
 5. run deterministic preflight checks
 6. start OpenCode only when preflight passes
 
+`just install` applies the same reliability post-processing to generated configs, so installation and runtime cannot silently drift.
+
 Disable the preflight only for troubleshooting with `OPENCODE_PREFLIGHT=0`. `OPENCODE_PREFLIGHT_STRICT=1` turns warnings into failures.
 
 ## Preflight
 
-The preflight does not call an LLM. It verifies the selected OpenCode binary, generated config, reliability policy, model tier variables, concurrency configuration, git state, and whether the OpenCode auth command can be executed.
+The preflight does not call an LLM. It verifies the selected OpenCode binary, generated config, reliability policy, watchdog plugin file and config wiring, model tier variables, concurrency configuration, git state, the OpenCode auth command, and the configured LOW/MEDIUM/HIGH models exposed by `opencode models`.
 
-Configuration/auth/provider failures should therefore be discovered before an expensive coding loop starts whenever they can be detected locally.
+An explicit `0 credentials` / unauthenticated result is treated as a failure. Configuration/auth/provider/model failures should therefore be discovered before an expensive coding loop starts whenever they can be detected locally.
 
 ## Subagent watchdog
 
@@ -54,11 +58,13 @@ The watchdog tracks child sessions separately from their root orchestrator. It d
 
 A child may be interrupted when it exceeds its maximum duration or has no material progress beyond the configured stalled timeout. V1 also stops repeated identical runtime/tool errors. V2 additionally overrides provider retry decisions so HTTP `400`, `401`, `403`, and `404` failures are terminal, while `429` and server failures are retryable only within the configured retry budget.
 
-## Maximum parallelism
+## Maximum parallelism and queueing
 
 `MAX_PARALLEL_SUBAGENTS` controls the maximum number of active children per parent session. The default is `3`.
 
-The orchestrator prompt is also generated with the same value, so both the model and runtime guard agree on the concurrency budget. When the runtime guard sees the limit already reached, another delegation is rejected and the orchestrator must wait for an existing child to complete.
+When all slots are busy, another delegation waits in a deterministic runtime queue instead of consuming another LLM turn or immediately failing. Pending launches reserve capacity so simultaneous delegations cannot race past the configured limit. `SUBAGENT_QUEUE_TIMEOUT_SECONDS` bounds that wait (default `600s`); if no slot becomes available before the timeout, the tool fails clearly instead of waiting forever.
+
+The orchestrator prompt is generated with the same maximum parallel value, so both the model and runtime guard agree on the concurrency budget.
 
 Recommended values:
 
@@ -73,11 +79,12 @@ Lead agents are explicitly instructed to stop retry chains when the same root ca
 
 The intended behavior is:
 
-- auth/config/permission/provider error -> fail fast
+- auth/config/permission/provider/model error -> fail fast
 - temporary `429`/`5xx` -> bounded retry
 - repeatable code/test failure with new evidence -> continue within the step budget
 - same root cause without new evidence -> stop or route once to a distinct specialist
 - stalled child -> interrupt, preserve evidence, then reroute or report the blocker
+- concurrency full -> wait in the runtime queue without another LLM call
 
 ## Remaining cost control
 
