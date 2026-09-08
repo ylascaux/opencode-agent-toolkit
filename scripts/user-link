@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ACTION="${1:-status}"
+COMMAND_NAME="${2:-oc}"
+BIN_DIR="${OPENCODE_TOOLKIT_BIN_DIR:-$HOME/.local/bin}"
+TARGET="$ROOT/scripts/opencode-agents"
+LINK="$BIN_DIR/$COMMAND_NAME"
+
+if [[ ! "$COMMAND_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "Invalid command name: $COMMAND_NAME" >&2
+  exit 2
+fi
+
+show_path_warning() {
+  case ":${PATH:-}:" in
+    *":$BIN_DIR:"*) ;;
+    *)
+      echo "Warning: $BIN_DIR is not currently in PATH." >&2
+      echo "Add it to PATH yourself if you want to run '$COMMAND_NAME' by name." >&2
+      ;;
+  esac
+}
+
+status() {
+  if [[ -L "$LINK" ]]; then
+    current="$(readlink "$LINK")"
+    if [[ "$current" == "$TARGET" ]]; then
+      echo "$COMMAND_NAME is installed: $LINK -> $TARGET"
+      return 0
+    fi
+    echo "$COMMAND_NAME exists as a symlink to another target: $LINK -> $current" >&2
+    return 1
+  fi
+
+  if [[ -e "$LINK" ]]; then
+    echo "$COMMAND_NAME exists but is not managed by this toolkit: $LINK" >&2
+    return 1
+  fi
+
+  echo "$COMMAND_NAME is not installed in $BIN_DIR"
+  return 1
+}
+
+case "$ACTION" in
+  install)
+    mkdir -p "$BIN_DIR"
+
+    if [[ -L "$LINK" ]]; then
+      current="$(readlink "$LINK")"
+      if [[ "$current" == "$TARGET" ]]; then
+        echo "$COMMAND_NAME is already installed: $LINK -> $TARGET"
+        show_path_warning
+        exit 0
+      fi
+      echo "Refusing to replace existing symlink: $LINK -> $current" >&2
+      exit 1
+    fi
+
+    if [[ -e "$LINK" ]]; then
+      echo "Refusing to replace existing file: $LINK" >&2
+      exit 1
+    fi
+
+    ln -s "$TARGET" "$LINK"
+    echo "Installed $COMMAND_NAME: $LINK -> $TARGET"
+    echo "The current working directory is preserved when $COMMAND_NAME launches OpenCode."
+    show_path_warning
+    ;;
+
+  uninstall)
+    if [[ ! -L "$LINK" ]]; then
+      if [[ -e "$LINK" ]]; then
+        echo "Refusing to remove non-symlink path not managed by this toolkit: $LINK" >&2
+        exit 1
+      fi
+      echo "$COMMAND_NAME is already absent from $BIN_DIR"
+      exit 0
+    fi
+
+    current="$(readlink "$LINK")"
+    if [[ "$current" != "$TARGET" ]]; then
+      echo "Refusing to remove symlink owned by something else: $LINK -> $current" >&2
+      exit 1
+    fi
+
+    rm "$LINK"
+    echo "Removed $COMMAND_NAME: $LINK"
+    ;;
+
+  status)
+    status
+    ;;
+
+  *)
+    echo "Usage: $0 {install|uninstall|status} [command-name]" >&2
+    exit 2
+    ;;
+esac
