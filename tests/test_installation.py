@@ -97,6 +97,14 @@ class InstallationSurfaceTests(unittest.TestCase):
             fake_opencode = tmp_path / "fake-opencode"
             fake_opencode.write_text(
                 "#!/usr/bin/env bash\n"
+                "if [[ \"${1:-}\" == \"auth\" && \"${2:-}\" == \"list\" ]]; then\n"
+                "  echo '1 credential'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [[ \"${1:-}\" == \"models\" ]]; then\n"
+                "  printf '%s\\n' \"${MODEL_LOW:-}\" \"${MODEL_MEDIUM:-}\" \"${MODEL_HIGH:-}\"\n"
+                "  exit 0\n"
+                "fi\n"
                 "printf 'cwd=%s\\nconfig=%s\\nargs=%s\\nmodel=%s\\n' \"$PWD\" \"${OPENCODE_CONFIG:-}\" \"$*\" \"${MODEL_BUILDER:-}\"\n"
             )
             fake_opencode.chmod(0o755)
