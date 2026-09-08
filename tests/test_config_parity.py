@@ -113,6 +113,36 @@ class ConfigPolicyTests(unittest.TestCase):
             for command in ["git status*", "git diff*", "git show*", "git log*", "git rev-parse*"]:
                 self.assertEqual(bash[command], "allow")
 
+    def test_platform_architect_can_delegate_durable_document_writing(self):
+        agent = self.v1["agent"]["platform-architect"]
+        self.assertEqual(agent["permission"]["edit"], "deny")
+        self.assertEqual(agent["permission"]["task"]["docs-writer"], "allow")
+
+    def test_review_lead_can_independently_recheck_architecture_evidence(self):
+        agent = self.v1["agent"]["review-lead"]
+        self.assertEqual(agent["permission"]["edit"], "deny")
+        task = agent["permission"]["task"]
+        for child in [
+            "reviewer", "project-scanner", "aws-platform", "kubernetes", "sre",
+            "observability", "finops", "database", "networking", "iac-security",
+        ]:
+            self.assertEqual(task[child], "allow", child)
+
+    def test_architecture_command_requires_independent_post_design_review(self):
+        template = self.v1["command"]["architecture"]["template"].lower()
+        self.assertIn("platform-architect", template)
+        self.assertIn("docs-writer", template)
+        self.assertIn("review-lead", template)
+        self.assertIn("security-lead", template)
+        self.assertIn("parallel", template)
+        self.assertIn("self-review", template)
+
+    def test_architecture_review_command_is_independent(self):
+        template = self.v1["command"]["architecture-review"]["template"].lower()
+        self.assertIn("review-lead", template)
+        self.assertIn("project-scanner", template)
+        self.assertIn("producer handoff", template)
+
     def test_terraform_destructive_commands_denied(self):
         bash = self.v1["agent"]["terraform-terragrunt"]["permission"]["bash"]
         for command in ["terraform apply*", "terraform destroy*", "tofu apply*", "tofu destroy*", "terragrunt apply*", "terragrunt destroy*"]:

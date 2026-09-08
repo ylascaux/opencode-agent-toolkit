@@ -51,6 +51,38 @@ class PromptContractTests(unittest.TestCase):
         meta_router = (ROOT / "prompts" / "meta-router.md").read_text()
         self.assertIn("embedded Routing Decision contract below", meta_router)
 
+    def test_architecture_workflow_is_staged_and_independent(self):
+        meta_router = (ROOT / "prompts" / "meta-router.md").read_text().lower()
+        self.assertIn("## architecture delivery workflow", meta_router)
+        self.assertIn("platform-architect", meta_router)
+        self.assertIn("review-lead", meta_router)
+        self.assertIn("security-lead", meta_router)
+        self.assertIn("parallelizable", meta_router)
+        self.assertIn("final independent reviewer", meta_router)
+
+    def test_platform_architect_produces_review_ready_handoff(self):
+        text = (ROOT / "prompts" / "platform-architect.md").read_text().lower()
+        self.assertIn("## review-ready architecture output", text)
+        self.assertIn("docs-writer", text)
+        self.assertIn("artifact path", text)
+        self.assertIn("review-lead", text)
+        self.assertIn("security-lead", text)
+        self.assertIn("do not self-certify", text)
+
+    def test_review_lead_rechecks_architecture_from_direct_evidence(self):
+        text = (ROOT / "prompts" / "review-lead.md").read_text().lower()
+        self.assertIn("## architecture review policy", text)
+        self.assertIn("direct repository evidence", text)
+        self.assertIn("project-scanner", text)
+        self.assertIn("aws-platform", text)
+        self.assertIn("migration/rollback gaps", text)
+        self.assertIn("parallelize independent read-only dimensions", text)
+
+    def test_common_prompt_encourages_native_parallel_read_only_gates(self):
+        text = (ROOT / "prompts" / "meta-router.md").read_text().lower()
+        self.assertIn("native background subagents", text)
+        self.assertIn("same completed artifact", text)
+
     def test_evidence_auditor_avoids_numeric_confidence(self):
         text = (ROOT / "prompts" / "evidence-auditor.md").read_text().lower()
         self.assertIn("high/medium/low", text)
