@@ -13,7 +13,15 @@ class PromptContractTests(unittest.TestCase):
         cls.config = json.loads((ROOT / "opencode.jsonc").read_text())
 
     def test_every_agent_has_structured_prompt(self):
-        required = ["# Role", "## Operating method", "## Non-negotiables", "## Evidence discipline", "## Stop conditions", "## Handoff"]
+        required = [
+            "# Role",
+            "## Operating method",
+            "## Non-negotiables",
+            "## Evidence discipline",
+            "## Runtime contracts",
+            "## Stop conditions",
+            "## Handoff",
+        ]
         for name in self.config["agent"]:
             path = ROOT / "prompts" / f"{name}.md"
             self.assertTrue(path.exists(), name)
@@ -30,6 +38,18 @@ class PromptContractTests(unittest.TestCase):
         data = json.loads((ROOT / "contracts" / "routing-decision.schema.json").read_text())
         self.assertEqual(data["title"], "Routing Decision")
         self.assertIn("route", data["required"])
+
+    def test_generated_prompts_embed_contracts_without_runtime_file_reads(self):
+        for name in self.config["agent"]:
+            text = (ROOT / "prompts" / f"{name}.md").read_text()
+            self.assertNotIn("`contracts/agent-handoff.schema.json`", text, name)
+            self.assertNotIn("`contracts/routing-decision.schema.json`", text, name)
+            self.assertIn("Agent Handoff required fields:", text, name)
+            self.assertIn("Routing Decision required fields:", text, name)
+            self.assertIn("Do not try to read them from the target repository at runtime.", text, name)
+
+        meta_router = (ROOT / "prompts" / "meta-router.md").read_text()
+        self.assertIn("embedded Routing Decision contract below", meta_router)
 
     def test_evidence_auditor_avoids_numeric_confidence(self):
         text = (ROOT / "prompts" / "evidence-auditor.md").read_text().lower()

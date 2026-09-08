@@ -119,11 +119,33 @@ SECRET_READ_PATTERNS = [
     "**/.ssh/**", "**/.aws/credentials", "*id_rsa*", "*id_ed25519*",
 ]
 
-COMMON_PROMPT = """## Evidence discipline
+CONTRACT_REFERENCES = {
+    "`contracts/agent-handoff.schema.json`": "the embedded Agent Handoff contract below",
+    "`contracts/routing-decision.schema.json`": "the embedded Routing Decision contract below",
+}
+
+
+def inline_contract_references(text: str) -> str:
+    """Keep toolkit documentation paths out of runtime prompts."""
+    for reference, replacement in CONTRACT_REFERENCES.items():
+        text = text.replace(reference, replacement)
+    return text
+
+
+COMMON_PROMPT = inline_contract_references("""## Evidence discipline
 - Separate FACTS, ASSUMPTIONS, and RECOMMENDATIONS.
 - Prefer direct repository/tool evidence over another agent's summary.
 - Never claim a test, plan, command, runtime check, or source lookup succeeded unless evidence is available.
 - Use HIGH confidence only for directly verified/reproduced claims; MEDIUM for strong static/indirect evidence; LOW for unresolved hypotheses.
+
+## Runtime contracts
+- Toolkit schema files are documentation/test artifacts. Do not try to read them from the target repository at runtime.
+- Routing Decision required fields: domains, complexity, risk, uncertainty, blast_radius, change_type, route, gates, escalation_triggers. Optional: parallelizable.
+- Routing enums: complexity=low|medium|high; risk=low|medium|high|critical; uncertainty=low|medium|high; blast_radius=local|service|multi-service|platform|production-critical; change_type=analysis|implementation|review|incident|migration|architecture|documentation|cost.
+- Agent Handoff required fields: status, summary, facts, assumptions, evidence, findings, residual_risks, recommended_next_agents, confidence. Optional: confidence_reason.
+- Handoff status=complete|blocked|escalation_required; confidence=high|medium|low.
+- Evidence entries require type, status, result; evidence status=verified|partially_verified|unverified|contradicted.
+- Findings require severity, confidence, description; severity=critical|high|medium|low|info.
 
 ## Stop conditions
 - Stop and mark BLOCKED when required scope, authorization, dependency, or evidence is missing and proceeding would be unsafe or misleading.
@@ -142,15 +164,15 @@ Finish delegated work with these sections:
 - RECOMMENDED NEXT AGENTS
 - CONFIDENCE: HIGH | MEDIUM | LOW with a short reason
 
-The machine-readable equivalent is documented in `contracts/agent-handoff.schema.json`.
-"""
+The machine-readable equivalent follows the embedded Agent Handoff contract above; no runtime schema read is required.
+""")
 
 
 def generate_prompts() -> None:
     prompt_dir = ROOT / "prompts"
     prompt_dir.mkdir(exist_ok=True)
     for name, spec in MANIFEST.items():
-        special = spec.get("special", "").strip()
+        special = inline_contract_references(spec.get("special", "").strip())
         special_block = f"\n{special}\n" if special else ""
         text = (
             f"# Role\n{spec['description']}\n\n"
