@@ -101,7 +101,7 @@ if command -v git >/dev/null 2>&1; then
 fi
 
 if command -v "$bin" >/dev/null 2>&1; then
-  if auth_output="$("$bin" auth list 2>&1)"; then
+  if auth_output="$(OPENCODE_CONFIG="$config" "$bin" auth list 2>&1)"; then
     if printf '%s\n' "$auth_output" | grep -Eqi '(^|[^0-9])0[[:space:]]+credentials|no[[:space:]]+credentials|not[[:space:]]+authenticated'; then
       error "OpenCode reports no configured credentials"
     else
@@ -111,7 +111,7 @@ if command -v "$bin" >/dev/null 2>&1; then
     warning "could not verify provider credentials with '$bin auth list'"
   fi
 
-  if model_output="$("$bin" models 2>&1)"; then
+  if model_output="$(OPENCODE_CONFIG="$config" "$bin" models 2>&1)"; then
     for var in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
       value="${!var:-}"
       [[ -z "$value" ]] && continue
