@@ -2,10 +2,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-"$ROOT/scripts/generate-config" >/dev/null
+python3 "$ROOT/scripts/generate-config" >/dev/null
 
 if [[ ! -f "$ROOT/.env" ]]; then
-  echo "Missing $ROOT/.env. Run: just install or ./scripts/bootstrap" >&2
+  echo "Missing $ROOT/.env. Run: just install or bash ./scripts/bootstrap" >&2
   exit 1
 fi
 
