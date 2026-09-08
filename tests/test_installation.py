@@ -112,10 +112,18 @@ class InstallationSurfaceTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f"cwd={project}", result.stdout)
-            self.assertIn(f"config={toolkit / 'opencode.jsonc'}", result.stdout)
-            self.assertIn("args=run hello", result.stdout)
-            self.assertIn("model=test/medium", result.stdout)
+            output = dict(
+                line.split("=", 1)
+                for line in result.stdout.splitlines()
+                if "=" in line
+            )
+            # macOS exposes /var as a symlink to /private/var. Bash `cd -P`
+            # intentionally canonicalizes paths, so compare filesystem identity
+            # instead of the lexical spelling returned by tempfile.
+            self.assertEqual(Path(output["cwd"]).resolve(), project.resolve())
+            self.assertEqual(Path(output["config"]).resolve(), (toolkit / "opencode.jsonc").resolve())
+            self.assertEqual(output["args"], "run hello")
+            self.assertEqual(output["model"], "test/medium")
 
     def test_user_link_refuses_to_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as tmp:
