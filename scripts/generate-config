@@ -32,7 +32,8 @@ LEAD_CHILDREN = {
         "performance", "database", "networking",
     ],
     "review-lead": [
-        "reviewer", "api-contract", "performance", "database", "networking",
+        "reviewer", "project-scanner", "api-contract", "performance", "aws-platform",
+        "kubernetes", "sre", "observability", "finops", "database", "networking",
         "appsec", "iac-security", "supply-chain", "evidence-auditor",
         "arbiter", "deep-reasoner",
     ],
@@ -40,7 +41,7 @@ LEAD_CHILDREN = {
         "project-scanner", "architecture-designer", "aws-platform",
         "terraform-terragrunt", "kubernetes", "cicd", "sre", "observability",
         "finops", "database", "networking", "threat-model", "iac-security",
-        "arbiter", "deep-reasoner", "evidence-auditor",
+        "docs-writer", "arbiter", "deep-reasoner", "evidence-auditor",
     ],
     "security-lead": [
         "threat-model", "appsec", "iac-security", "supply-chain", "pentest",
@@ -79,6 +80,29 @@ STEPS = {
     "kubernetes": 20, "tester": 20, "pentest": 20,
 }
 
+WORKFLOW_AUGMENTS = {
+    "meta-router": """## Architecture delivery workflow
+For architecture, platform design, or architecture-documentation tasks that create or materially update an artifact:
+1. Route design and evidence gathering to `platform-architect` first.
+2. Wait for a concrete artifact or complete architecture handoff before starting independent review.
+3. Route the completed artifact to `review-lead` for independent verification against repository evidence. If trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, also route to `security-lead`.
+4. Mark `review-lead` and `security-lead` parallelizable when both are read-only consumers of the same completed artifact and neither depends on the other's result.
+5. Synthesize the final answer only after all required gates complete. Report accepted decisions, rejected alternatives, evidence gaps, migration/rollback, and residual risks.
+
+Never use the producing `platform-architect` path as the final independent reviewer of its own artifact. Do not start a review against a half-written document unless the user explicitly asks for iterative review.
+""",
+    "platform-architect": """## Review-ready architecture output
+When the user requests durable architecture documentation, stabilize the design first and then delegate document writing to `docs-writer`; the architecture lead itself remains non-editing. The handoff must identify the artifact path, important decisions, rejected alternatives, assumptions, evidence map, migration/rollback, residual risks, and ownership/operability concerns.
+
+Do not self-certify the artifact as independently reviewed. Recommend `review-lead` next for independent repository-backed review, and recommend `security-lead` when trust boundaries, IAM, exposure, secrets, or infrastructure-security posture materially change.
+""",
+    "review-lead": """## Architecture review policy
+For architecture documents, independently inspect the completed artifact and direct repository evidence rather than trusting the producing agent's summary. Use `project-scanner` when repository facts need to be re-established, then select only the relevant architecture dimensions such as `aws-platform`, `kubernetes`, `sre`, `observability`, `finops`, `database`, `networking`, `iac-security`, or the baseline `reviewer`.
+
+Review for contradictions with repository evidence, undocumented assumptions, missing failure domains, hidden blast radius, migration/rollback gaps, SLO/DR inconsistencies, security-boundary mistakes, operational ownership gaps, and unsupported cost claims. Parallelize independent read-only dimensions when useful, deduplicate findings, and keep the review non-editing.
+""",
+}
+
 COMMANDS = {
     "auto": (
         "Automatically classify and route a task",
@@ -93,8 +117,12 @@ COMMANDS = {
         "Review $ARGUMENTS via review-lead. Select only review dimensions touched by the change, deduplicate findings, arbitrate material disagreement, and audit weak completion claims.",
     ),
     "architecture": (
-        "Run the adaptive platform architecture council",
-        "Design or review $ARGUMENTS via platform-architect. Discover repository evidence when needed, select only relevant platform domains, include threat/IaC security for changed trust boundaries, and return trade-offs, migration/rollback and residual risks.",
+        "Run architecture design, independent review and adaptive security gates",
+        "Design $ARGUMENTS via platform-architect. If durable documentation is requested, have platform-architect delegate writing to docs-writer after the design is stable. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
+    ),
+    "architecture-review": (
+        "Independently review an existing architecture artifact",
+        "Independently review $ARGUMENTS via review-lead. Re-establish repository evidence with project-scanner when needed, select only relevant platform and security dimensions, do not treat the producer handoff as proof, and report contradictions, missing assumptions, rollback gaps, residual risks and confidence.",
     ),
     "security": (
         "Run adaptive defense-in-depth security review",
@@ -137,6 +165,7 @@ COMMON_PROMPT = inline_contract_references("""## Evidence discipline
 - Prefer direct repository/tool evidence over another agent's summary.
 - Never claim a test, plan, command, runtime check, or source lookup succeeded unless evidence is available.
 - Use HIGH confidence only for directly verified/reproduced claims; MEDIUM for strong static/indirect evidence; LOW for unresolved hypotheses.
+- When multiple read-only gates depend on the same completed artifact and not on each other, mark them parallelizable and dispatch them concurrently when the runtime supports native background subagents.
 
 ## Runtime contracts
 - Toolkit schema files are documentation/test artifacts. Do not try to read them from the target repository at runtime.
@@ -174,11 +203,13 @@ def generate_prompts() -> None:
     for name, spec in MANIFEST.items():
         special = inline_contract_references(spec.get("special", "").strip())
         special_block = f"\n{special}\n" if special else ""
+        workflow = inline_contract_references(WORKFLOW_AUGMENTS.get(name, "").strip())
+        workflow_block = f"\n{workflow}\n" if workflow else ""
         text = (
             f"# Role\n{spec['description']}\n\n"
             f"## Operating method\n{spec['method']}\n\n"
             f"## Non-negotiables\n{spec['non_negotiables']}\n"
-            f"{special_block}\n{COMMON_PROMPT}"
+            f"{special_block}{workflow_block}\n{COMMON_PROMPT}"
         )
         (prompt_dir / f"{name}.md").write_text(text)
 
