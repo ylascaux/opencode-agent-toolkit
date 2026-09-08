@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+POLICY = json.loads((ROOT / "reliability.json").read_text())
+
+
+def env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise SystemExit(f"{name} must be an integer (got {raw!r})") from exc
+    if value < 1:
+        raise SystemExit(f"{name} must be >= 1 (got {value})")
+    return value
+
+
+def patch_config(path: Path, *, v2: bool) -> None:
+    data = json.loads(path.read_text())
+    agents_key = "agents" if v2 else "agent"
+    agents = data.get(agents_key, {})
+    caps = POLICY["step_caps"]
+    default_cap = env_int("MAX_STEPS_DEFAULT", int(caps["default"]))
+
+    for name, agent in agents.items():
+        env_name = "MAX_STEPS_" + name.upper().replace("-", "_")
+        cap = env_int(env_name, int(caps.get(name, default_cap)))
+        current = int(agent.get("steps", cap))
+        agent["steps"] = min(current, cap)
+
+    plugin = (
+        "./.opencode/plugins/reliability-v2.ts"
+        if v2
+        else "./.opencode/plugins/reliability-v1.js"
+    )
+    if v2:
+        plugins = data.setdefault("plugins", [])
+    else:
+        plugins = data.setdefault("plugin", [])
+    if plugin not in plugins:
+        plugins.append(plugin)
+
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def append_prompt_policy() -> None:
+    max_parallel = env_int("MAX_PARALLEL_SUBAGENTS", int(POLICY["max_parallel_subagents"]))
+    max_same_error = env_int("MAX_SAME_ERROR", int(POLICY["max_same_error"]))
+    stalled = env_int("SUBAGENT_STALLED_TIMEOUT_SECONDS", int(POLICY["stalled_timeout_seconds"]))
+    block = f"""
+
+## Reliability and child supervision
+- Never have more than {max_parallel} delegated child agents RUNNING at the same time. Queue additional independent work until a slot is free.
+- Treat CONFIG/AUTH/PERMISSION/PROVIDER failures differently from code/test failures. Do not repeatedly reason around a deterministic environment failure.
+- If the same root cause is observed {max_same_error} times without new evidence, stop retrying that path and return BLOCKED or ESCALATION_REQUIRED.
+- A child that has activity but no material progress for about {stalled} seconds must be treated as STALLED: stop re-dispatching equivalent work, preserve its evidence, and choose a different specialist or return the blocker.
+- WAITING_PERMISSION is not STALLED. Do not duplicate a child merely because it is waiting for a human permission decision.
+- Before delegating, check whether an equivalent child task is already running or already returned COMPLETE. Reuse completed handoffs instead of paying for duplicate work.
+- Prefer checkpoints between discovery, implementation, tests and review so a later failure does not force successful phases to be repeated.
+- When a child is BLOCKED, consume the blocker and decide once: fix the prerequisite, route to a distinct specialist, or stop. Never create an unbounded retry chain.
+"""
+    prompt_dir = ROOT / "prompts"
+    for name in ("meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"):
+        path = prompt_dir / f"{name}.md"
+        if not path.exists():
+            continue
+        text = path.read_text()
+        marker = "## Reliability and child supervision"
+        if marker in text:
+            text = text[: text.index(marker)].rstrip() + "\n"
+        path.write_text(text.rstrip() + block + "\n")
+
+
+def main() -> None:
+    patch_config(ROOT / "opencode.jsonc", v2=False)
+    patch_config(ROOT / "opencode.v2.jsonc", v2=True)
+    append_prompt_policy()
+    print("Reliability policy applied")
+
+
+if __name__ == "__main__":
+    main()

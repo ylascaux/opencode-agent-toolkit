@@ -37,13 +37,22 @@ configure-litellm *args:
 doctor:
     bash ./scripts/doctor
 
+# Fast deterministic checks performed before an OpenCode run.
+preflight:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/generate-config >/dev/null; python3 ./scripts/apply-reliability >/dev/null; bash ./scripts/preflight
+
+# Show the effective reliability policy after environment overrides.
+reliability:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/show-reliability
+
 check: config test
 
 config:
     python3 ./scripts/generate-config
+    python3 ./scripts/apply-reliability
     python3 -m json.tool opencode.jsonc >/dev/null
     python3 -m json.tool opencode.v2.jsonc >/dev/null
-    @echo "OpenCode V1/V2 configs: generated and valid JSON"
+    @echo "OpenCode V1/V2 configs: generated, reliability-capped and valid JSON"
 
 test:
     python3 -m unittest discover -s tests -v

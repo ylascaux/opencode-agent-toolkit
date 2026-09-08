@@ -11,8 +11,6 @@ while [[ -L "$SOURCE" ]]; do
 done
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 
-python3 "$ROOT/scripts/generate-config" >/dev/null
-
 if [[ ! -f "$ROOT/.env" ]]; then
   echo "Missing $ROOT/.env. Run: just install" >&2
   exit 1
@@ -22,6 +20,9 @@ set -a
 source "$ROOT/.env"
 [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
 set +a
+
+python3 "$ROOT/scripts/generate-config" >/dev/null
+python3 "$ROOT/scripts/apply-reliability" >/dev/null
 
 # Resolve unset per-agent MODEL_* variables from the active LOW/MEDIUM/HIGH tiers.
 eval "$(python3 "$ROOT/scripts/resolve-models")"
@@ -54,6 +55,10 @@ esac
 if ! command -v "$bin" >/dev/null 2>&1; then
   echo "OpenCode binary not found: $bin" >&2
   exit 127
+fi
+
+if [[ "${OPENCODE_PREFLIGHT:-1}" == "1" ]]; then
+  bash "$ROOT/scripts/preflight"
 fi
 
 export OPENCODE_CONFIG="$config"
