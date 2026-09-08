@@ -7,6 +7,14 @@ default:
 install:
     bash ./scripts/bootstrap
 
+# Apply a model-provider profile (default: copilot). Persistent per-agent overrides belong in .env.local.
+profile name="copilot":
+    python3 ./scripts/apply-profile "{{name}}"
+
+# List available model profiles.
+profiles:
+    @for f in profiles/*.env.example; do basename "$f" .env.example; done
+
 # Install a reversible per-user command (default: oc) in ~/.local/bin.
 install-user command="oc":
     bash ./scripts/user-link install "{{command}}"
@@ -19,8 +27,11 @@ uninstall-user command="oc":
 user-status command="oc":
     bash ./scripts/user-link status "{{command}}"
 
-# Discover LiteLLM models and interactively map agent profiles into .env.
+# Optional/future: discover LiteLLM models and create explicit per-agent mappings.
 configure *args:
+    python3 ./scripts/configure-models {{args}}
+
+configure-litellm *args:
     python3 ./scripts/configure-models {{args}}
 
 doctor:
@@ -54,7 +65,7 @@ api:
     bash ./scripts/inventory-api
 
 models:
-    @grep '^MODEL_' .env 2>/dev/null || { echo "Missing .env; run: just install" >&2; exit 1; }
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/resolve-models --show
 
 refresh:
     bash ./scripts/bootstrap --refresh
