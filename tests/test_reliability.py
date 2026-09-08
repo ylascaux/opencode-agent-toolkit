@@ -47,6 +47,9 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertIn("./.opencode/plugins/reliability-v2.ts", config["plugins"])
 
     def test_step_override_can_lower_but_never_raise_generator_boundary(self):
+        policy = json.loads((ROOT / "reliability.json").read_text())
+        builder_cap = policy["step_caps"]["builder"]
+
         low_env = os.environ.copy()
         low_env["MAX_STEPS_BUILDER"] = "7"
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], cwd=ROOT, env=low_env, check=True)
@@ -59,10 +62,11 @@ class ReliabilityPolicyTests(unittest.TestCase):
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], cwd=ROOT, env=high_env, check=True)
         raw = json.loads((ROOT / "opencode.jsonc").read_text())
         raw_steps = raw["agent"]["builder"]["steps"]
+        self.assertGreater(raw_steps, builder_cap)
         subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], cwd=ROOT, env=high_env, check=True)
         bounded = json.loads((ROOT / "opencode.jsonc").read_text())
-        self.assertEqual(bounded["agent"]["builder"]["steps"], raw_steps)
-        self.assertLessEqual(bounded["agent"]["builder"]["steps"], 16)
+        self.assertEqual(bounded["agent"]["builder"]["steps"], builder_cap)
+        self.assertLess(bounded["agent"]["builder"]["steps"], raw_steps)
 
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], cwd=ROOT, check=True)
         subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], cwd=ROOT, check=True)
