@@ -15,6 +15,7 @@ A cost-aware, evidence-driven multi-agent engineering system for OpenCode, focus
 - Enriched multi-repository architecture inventory with evidence and confidence.
 - Native OpenCode V1 stable and OpenCode 2 configs generated from one source.
 - `just configure` discovers LiteLLM models and maps profiles to all agents.
+- Optional reversible `oc` user command lets you use the toolkit from any working directory.
 
 ## Quick start
 
@@ -30,8 +31,19 @@ export LITELLM_API_KEY="..."
 just configure
 
 just doctor
-just run
+
+# Optional: install ~/.local/bin/oc as a symlink to the toolkit launcher.
+just install-user
 ```
+
+After `just install-user`, you can launch the toolkit from any project while preserving that project as the OpenCode workspace:
+
+```bash
+cd ~/Projects/my-api
+oc
+```
+
+The user install is intentionally minimal: it does not modify shell startup files or `~/.config`. It only creates `~/.local/bin/oc` (or another name you choose). Remove it with `just uninstall-user`.
 
 Cloudflare Access is supported for model discovery via `CF_ACCESS_TOKEN` or `LITELLM_HEADERS_JSON`; credentials are never written by the configurator.
 
@@ -70,6 +82,9 @@ Maximum intended delegation depth stays at **2**. Leads cannot invoke other lead
 
 ```bash
 just install
+just install-user
+just user-status
+just uninstall-user
 just configure
 just doctor
 just run
@@ -82,6 +97,18 @@ just api
 just models
 just refresh
 just clean
+```
+
+Use a different command name if `oc` already exists:
+
+```bash
+just install-user opencode-agents
+```
+
+Override the user bin directory without changing shell configuration:
+
+```bash
+OPENCODE_TOOLKIT_BIN_DIR="$HOME/bin" just install-user
 ```
 
 ## Documentation
