@@ -11,8 +11,6 @@ while [[ -L "$SOURCE" ]]; do
 done
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 
-python3 "$ROOT/scripts/generate-config" >/dev/null
-
 if [[ ! -f "$ROOT/.env" ]]; then
   echo "Missing $ROOT/.env. Run: just install" >&2
   exit 1
@@ -26,6 +24,10 @@ set +a
 # Resolve unset per-agent MODEL_* variables from the active LOW/MEDIUM/HIGH tiers.
 eval "$(python3 "$ROOT/scripts/resolve-models")"
 
+# Runtime settings must be available before config generation so step overrides are deterministic.
+export OPENCODE_TOOLKIT_RUNTIME_GUARDS="${OC_RUNTIME_GUARDS:-1}"
+python3 "$ROOT/scripts/generate-config" >/dev/null
+
 major="${OPENCODE_MAJOR:-1}"
 case "$major" in
   1)
@@ -38,9 +40,11 @@ case "$major" in
     ;;
   auto)
     if command -v opencode2 >/dev/null 2>&1; then
+      major=2
       bin="${OPENCODE_BIN:-opencode2}"
       config="$ROOT/opencode.v2.jsonc"
     else
+      major=1
       bin="${OPENCODE_BIN:-opencode}"
       config="$ROOT/opencode.jsonc"
     fi
@@ -54,6 +58,12 @@ esac
 if ! command -v "$bin" >/dev/null 2>&1; then
   echo "OpenCode binary not found: $bin" >&2
   exit 127
+fi
+
+if [[ "${OC_PREFLIGHT:-1}" =~ ^(1|true|yes|on)$ ]]; then
+  python3 "$ROOT/scripts/preflight" --bin "$bin" --major "$major"
+else
+  echo "[warn] OpenCode toolkit preflight disabled by OC_PREFLIGHT=${OC_PREFLIGHT}" >&2
 fi
 
 export OPENCODE_CONFIG="$config"
