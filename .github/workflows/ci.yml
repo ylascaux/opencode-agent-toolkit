@@ -22,8 +22,15 @@ jobs:
       - name: Reliability core JavaScript syntax
         run: node --check .opencode/plugins/reliability-core.js
       - name: V1 watchdog JavaScript syntax
-        run: node --check .opencode/plugins/reliability-v1.js
+        run: |
+          node --check .opencode/plugins/reliability-v1.js
+          node --check .opencode/plugins/reliability-v1-legacy.js
       - name: V2 watchdog TypeScript syntax
-        run: node --experimental-strip-types --check .opencode/plugins/reliability-v2.ts
+        run: |
+          node --experimental-strip-types --check .opencode/plugins/reliability-v2.ts
+          node --experimental-strip-types --check .opencode/plugins/reliability-v2-legacy.ts
+          node --experimental-strip-types --check plugins/reliability-approval/rpc.ts
+          node --experimental-strip-types --check plugins/reliability-approval/index.ts
+          node --experimental-strip-types --check plugins/reliability-approval/tui.ts
       - name: Generate configs and run tests
         run: just check
