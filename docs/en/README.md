@@ -1,23 +1,18 @@
 # Documentation
 
-The toolkit is a 37-agent engineering system with a shallow, auditable control plane.
+Recommended reading order:
 
-## Read in this order
-
-1. [Toolkit system architecture](SYSTEM_ARCHITECTURE.md) — **start here to understand the whole system**
-2. [Installation](INSTALLATION.md)
-3. [Agent architecture](AGENTS.md)
-4. [Routing](ROUTING.md)
-5. [Model strategy](MODEL_STRATEGY.md)
-6. [Reliability and guardrails](RELIABILITY.md)
-7. [Usage](USAGE.md)
-8. [Security](SECURITY.md)
-9. [Architecture workflow produced by the agents](ARCHITECTURE.md)
-10. [Project discovery](PROJECT_DISCOVERY.md)
-11. [OpenCode compatibility](OPENCODE_COMPATIBILITY.md)
-
-`SYSTEM_ARCHITECTURE.md` describes the toolkit itself: `oc` boot flow, config generation, control plane, delegation, model resolution, watchdog, subagent queue, failure modes and extension points. `ARCHITECTURE.md` instead describes the workflow used to design and review a target project's architecture.
-
-The two machine-readable contracts are in `contracts/`:
-- `agent-handoff.schema.json`
-- `routing-decision.schema.json`
+1. [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — toolkit internals and runtime architecture
+2. [AGENT_CONFIGURATION.md](./AGENT_CONFIGURATION.md) — self-contained `agents/<name>/` source format
+3. [AGENTS.md](./AGENTS.md) — control plane and agent hierarchy
+4. [INSTALLATION.md](./INSTALLATION.md) — install and local setup
+5. [USAGE.md](./USAGE.md) — day-to-day commands and workflows
+6. [MODEL_STRATEGY.md](./MODEL_STRATEGY.md) — LOW/MEDIUM/HIGH model tiers
+7. [PERMISSIONS.md](./PERMISSIONS.md) — editable permission policy
+8. [RELIABILITY.md](./RELIABILITY.md) — watchdogs, retries, concurrency and cost guardrails
+9. [ROUTING.md](./ROUTING.md) — routing decisions and delegation
+10. [ARCHITECTURE.md](./ARCHITECTURE.md) — architecture-design workflow used by agents
+11. [SECURITY.md](./SECURITY.md) — security workflow and guardrails
+12. [PROJECT_DISCOVERY.md](./PROJECT_DISCOVERY.md) — multi-repository project discovery
+13. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
+14. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details
