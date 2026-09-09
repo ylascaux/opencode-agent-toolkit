@@ -38,6 +38,28 @@ Pour forcer un runtime sur une commande : `just v1` ou `just v2`.
 
 Le générateur traduit la même politique logique vers les deux formats.
 
+## Compaction de contexte native en V2
+
+OpenCode V2 fournit maintenant une compaction de contexte native. Le toolkit n’installe donc pas et ne dépend pas de plugins tiers de type DCP/context-compression.
+
+Le `opencode.v2.jsonc` généré active explicitement les valeurs V2 documentées :
+
+```jsonc
+{
+  "compaction": {
+    "auto": true,
+    "keep": {
+      "tokens": 15000
+    },
+    "buffer": 20000
+  }
+}
+```
+
+Cela conserve la compaction automatique avant dépassement de contexte ainsi que la récupération unique après une erreur de context overflow, tout en gardant environ 15k tokens récents et une marge de sécurité de 20k tokens. Les valeurs sont volontairement explicites dans la configuration générée afin de garder un comportement déterministe du toolkit entre les installations.
+
+N’ajoute pas de plugin de pruning V1 comme DCP dans la configuration V2 tant qu’il n’annonce pas une compatibilité V2 explicite et qu’il n’apporte pas une fonction réellement absente de la compaction native.
+
 ## Délégation imbriquée
 
 La hiérarchie prévue comporte deux niveaux :
