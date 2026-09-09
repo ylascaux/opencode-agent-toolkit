@@ -4,118 +4,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from agent_config import load_agents, v1_permissions, v2_permissions, write_generated_sources
+
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = json.loads((ROOT / "agents" / "manifest.json").read_text())
-DESCRIPTIONS = {name: spec["description"] for name, spec in MANIFEST.items()}
-
-MODEL_ENV_OVERRIDES = {
-    "architecture-designer": "MODEL_ARCHITECTURE",
-    "aws-platform": "MODEL_AWS",
-    "terraform-terragrunt": "MODEL_TERRAFORM",
-    "python-specialist": "MODEL_PYTHON",
-    "go-specialist": "MODEL_GO",
-    "docs-writer": "MODEL_DOCS",
-}
-
-LEAD_CHILDREN = {
-    "meta-router": [
-        "orchestrator", "review-lead", "platform-architect", "security-lead",
-        "arbiter", "deep-reasoner", "evidence-auditor",
-    ],
-    "orchestrator": [
-        "brainstorm", "planner", "builder", "reviewer", "tester", "mock-generator",
-        "debugger", "project-scanner", "architecture-designer", "aws-platform",
-        "terraform-terragrunt", "kubernetes", "python-specialist", "go-specialist",
-        "cicd", "sre", "observability", "finops", "threat-model", "appsec",
-        "iac-security", "supply-chain", "pentest", "secrets", "docs-writer",
-        "arbiter", "deep-reasoner", "evidence-auditor", "api-contract",
-        "performance", "database", "networking",
-    ],
-    "review-lead": [
-        "reviewer", "project-scanner", "api-contract", "performance", "aws-platform",
-        "kubernetes", "sre", "observability", "finops", "database", "networking",
-        "appsec", "iac-security", "supply-chain", "evidence-auditor",
-        "arbiter", "deep-reasoner",
-    ],
-    "platform-architect": [
-        "project-scanner", "architecture-designer", "aws-platform",
-        "terraform-terragrunt", "kubernetes", "cicd", "sre", "observability",
-        "finops", "database", "networking", "threat-model", "iac-security",
-        "docs-writer", "arbiter", "deep-reasoner", "evidence-auditor",
-    ],
-    "security-lead": [
-        "threat-model", "appsec", "iac-security", "supply-chain", "pentest",
-        "secrets", "arbiter", "deep-reasoner", "evidence-auditor",
-    ],
-}
-
-WRITERS = {
-    "builder", "tester", "mock-generator", "debugger", "python-specialist",
-    "go-specialist", "cicd", "docs-writer",
-}
-SECURITY_TOOL_AGENTS = {"appsec", "iac-security", "supply-chain", "secrets"}
-SAFE_EVIDENCE_SHELL = {
-    "*": "ask",
-    "git status*": "allow",
-    "git diff*": "allow",
-    "git show*": "allow",
-    "git log*": "allow",
-    "git rev-parse*": "allow",
-}
-WEB_DENY = {
-    "meta-router", "orchestrator", "review-lead", "reviewer", "tester",
-    "mock-generator", "planner", "project-scanner", "arbiter",
-    "evidence-auditor", "secrets", "pentest",
-}
-SKILL_DENY = {
-    "meta-router", "review-lead", "reviewer", "tester", "mock-generator",
-    "project-scanner", "arbiter", "evidence-auditor", "secrets", "pentest",
-}
-STEPS = {
-    "meta-router": 20, "orchestrator": 32, "review-lead": 20, "security-lead": 20,
-    "platform-architect": 24, "deep-reasoner": 24, "arbiter": 14,
-    "evidence-auditor": 16, "terraform-terragrunt": 24, "debugger": 24,
-    "builder": 26, "python-specialist": 22, "go-specialist": 22,
-    "project-scanner": 20, "architecture-designer": 20, "aws-platform": 20,
-    "kubernetes": 20, "tester": 20, "pentest": 20,
-}
-
-LEAD_DELEGATION_POLICY = """## Delegation economy
-- Start with direct read/glob/grep evidence already available to this lead before spawning a child solely for discovery.
-- Delegate only when the child adds distinct value: domain-specific judgment, evidence collection that is too broad or specialized for the lead, implementation/testing ownership, a required independent gate, or escalation for disagreement/high-risk uncertainty.
-- Do not delegate merely because a technology is detected. The presence of Terraform, Kubernetes, AWS, database, CI, or other domain files is not by itself a reason to invoke that specialist.
-- Avoid multiple children scanning the same evidence for the same question. Combine related questions into one child handoff where possible.
-- Start with the smallest sufficient set of children and add another only when new evidence exposes a material decision, risk, or uncertainty.
-- Once a child returns COMPLETE, consume its handoff and continue. Re-dispatch the same task only when evidence is missing, stale, contradictory, or the scope materially changed.
-- Parallelize independent read-only children only when they consume the same stable artifact/evidence and neither depends on the other's result.
-- Independent verification gates are an intentional exception: a reviewer may re-read the same primary evidence to avoid trusting the producer's summary.
-"""
-
-WORKFLOW_AUGMENTS = {
-    "meta-router": """## Architecture delivery workflow
-For architecture, platform design, or architecture-documentation tasks that create or materially update an artifact:
-1. Route design and evidence gathering to `platform-architect` first.
-2. Wait for a concrete artifact or complete architecture handoff before starting independent review.
-3. Route the completed artifact to `review-lead` for independent verification against repository evidence. If trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, also route to `security-lead`.
-4. Mark `review-lead` and `security-lead` parallelizable when both are read-only consumers of the same completed artifact and neither depends on the other's result.
-5. Synthesize the final answer only after all required gates complete. Report accepted decisions, rejected alternatives, evidence gaps, migration/rollback, and residual risks.
-
-Never use the producing `platform-architect` path as the final independent reviewer of its own artifact. Do not start a review against a half-written document unless the user explicitly asks for iterative review.
-""",
-    "platform-architect": """## Review-ready architecture output
-When the user requests durable architecture documentation, stabilize the design first and then delegate document writing to `docs-writer`; the architecture lead itself remains non-editing. The handoff must identify the artifact path, important decisions, rejected alternatives, assumptions, evidence map, migration/rollback, residual risks, and ownership/operability concerns.
-
-Do not self-certify the artifact as independently reviewed. Recommend `review-lead` next for independent repository-backed review, and recommend `security-lead` when trust boundaries, IAM, exposure, secrets, or infrastructure-security posture materially change.
-
-## Architecture specialist trigger policy
-Do not fan out to every technology detected in the repository. Invoke a domain specialist only when that domain owns a material architecture decision, unresolved risk, or evidence gap. In particular, `.tf`, `.hcl`, or Terragrunt files alone do not justify `terraform-terragrunt`; use it when module/state/provider/lifecycle/dependency/migration semantics materially affect the architecture or need specialist verification. Apply the same rule to AWS, Kubernetes, networking, database, SRE, observability, and FinOps specialists.
-""",
-    "review-lead": """## Architecture review policy
-For architecture documents, independently inspect the completed artifact and direct repository evidence rather than trusting the producing agent's summary. Use `project-scanner` when repository facts need to be re-established, then select only the relevant architecture dimensions such as `aws-platform`, `kubernetes`, `sre`, `observability`, `finops`, `database`, `networking`, `iac-security`, or the baseline `reviewer`.
-
-Review for contradictions with repository evidence, undocumented assumptions, missing failure domains, hidden blast radius, migration/rollback gaps, SLO/DR inconsistencies, security-boundary mistakes, operational ownership gaps, and unsupported cost claims. Parallelize independent read-only dimensions when useful, deduplicate findings, and keep the review non-editing.
-""",
-}
 
 COMMANDS = {
     "auto": (
@@ -156,185 +47,50 @@ COMMANDS = {
     ),
 }
 
-SECRET_READ_PATTERNS = [
-    "*.env", "*.env.*", "**/.env", "**/.env.*", "*.pem", "*.key",
-    "**/.ssh/**", "**/.aws/credentials", "*id_rsa*", "*id_ed25519*",
-]
-
-CONTRACT_REFERENCES = {
-    "`contracts/agent-handoff.schema.json`": "the embedded Agent Handoff contract below",
-    "`contracts/routing-decision.schema.json`": "the embedded Routing Decision contract below",
+GENERATED_AGENT_KEYS = {
+    "description", "mode", "model", "prompt", "system", "steps", "permission", "permissions",
 }
 
 
-def inline_contract_references(text: str) -> str:
-    """Keep toolkit documentation paths out of runtime prompts."""
-    for reference, replacement in CONTRACT_REFERENCES.items():
-        text = text.replace(reference, replacement)
-    return text
-
-
-COMMON_PROMPT = inline_contract_references("""## Evidence discipline
-- Separate FACTS, ASSUMPTIONS, and RECOMMENDATIONS.
-- Prefer direct repository/tool evidence over another agent's summary.
-- Never claim a test, plan, command, runtime check, or source lookup succeeded unless evidence is available.
-- Use HIGH confidence only for directly verified/reproduced claims; MEDIUM for strong static/indirect evidence; LOW for unresolved hypotheses.
-- When multiple read-only gates depend on the same completed artifact and not on each other, mark them parallelizable and dispatch them concurrently when the runtime supports native background subagents.
-
-## Runtime contracts
-- Toolkit schema files are documentation/test artifacts. Do not try to read them from the target repository at runtime.
-- Routing Decision required fields: domains, complexity, risk, uncertainty, blast_radius, change_type, route, gates, escalation_triggers. Optional: parallelizable.
-- Routing enums: complexity=low|medium|high; risk=low|medium|high|critical; uncertainty=low|medium|high; blast_radius=local|service|multi-service|platform|production-critical; change_type=analysis|implementation|review|incident|migration|architecture|documentation|cost.
-- Agent Handoff required fields: status, summary, facts, assumptions, evidence, findings, residual_risks, recommended_next_agents, confidence. Optional: confidence_reason.
-- Handoff status=complete|blocked|escalation_required; confidence=high|medium|low.
-- Evidence entries require type, status, result; evidence status=verified|partially_verified|unverified|contradicted.
-- Findings require severity, confidence, description; severity=critical|high|medium|low|info.
-
-## Stop conditions
-- Stop and mark BLOCKED when required scope, authorization, dependency, or evidence is missing and proceeding would be unsafe or misleading.
-- Mark ESCALATION_REQUIRED for material disagreement, high-risk irreversible decisions, or unresolved low-confidence conclusions.
-- Do not silently broaden scope.
-
-## Handoff
-Finish delegated work with these sections:
-- STATUS: COMPLETE | BLOCKED | ESCALATION_REQUIRED
-- SUMMARY
-- FACTS
-- ASSUMPTIONS
-- EVIDENCE: exact files/lines, commands/results, logs/metrics, plans, safe requests, or sources
-- FINDINGS: severity + confidence + evidence + remediation when applicable
-- RESIDUAL RISKS
-- RECOMMENDED NEXT AGENTS
-- CONFIDENCE: HIGH | MEDIUM | LOW with a short reason
-
-The machine-readable equivalent follows the embedded Agent Handoff contract above; no runtime schema read is required.
-""")
-
-
-def generate_prompts() -> None:
-    prompt_dir = ROOT / "prompts"
-    prompt_dir.mkdir(exist_ok=True)
-    for name, spec in MANIFEST.items():
-        special = inline_contract_references(spec.get("special", "").strip())
-        special_block = f"\n{special}\n" if special else ""
-        workflow = inline_contract_references(WORKFLOW_AUGMENTS.get(name, "").strip())
-        workflow_block = f"\n{workflow}\n" if workflow else ""
-        delegation = LEAD_DELEGATION_POLICY.strip() if name in LEAD_CHILDREN else ""
-        delegation_block = f"\n{delegation}\n" if delegation else ""
-        text = (
-            f"# Role\n{spec['description']}\n\n"
-            f"## Operating method\n{spec['method']}\n\n"
-            f"## Non-negotiables\n{spec['non_negotiables']}\n"
-            f"{special_block}{workflow_block}{delegation_block}\n{COMMON_PROMPT}"
+def agent_entry(name: str, specs, *, v2: bool) -> dict:
+    spec = specs[name]
+    collisions = GENERATED_AGENT_KEYS & set(spec.opencode)
+    if collisions:
+        raise SystemExit(
+            f"{name}: opencode cannot override generated keys: {', '.join(sorted(collisions))}"
         )
-        (prompt_dir / f"{name}.md").write_text(text)
-
-
-def model_env(name: str) -> str:
-    return MODEL_ENV_OVERRIDES.get(name, "MODEL_" + name.upper().replace("-", "_"))
-
-
-def read_permissions(name: str) -> dict:
-    rules: dict[str, str] = {"*": "allow"}
-    if name == "project-scanner":
-        rules["~/Projects/**"] = "allow"
-    for pattern in SECRET_READ_PATTERNS:
-        rules[pattern] = "deny"
-    return rules
-
-
-def delegation_permissions(name: str) -> dict:
-    rules = {"*": "deny"}
-    for child in LEAD_CHILDREN.get(name, []):
-        rules[child] = "allow"
-    return rules
-
-
-def shell_permissions(name: str):
-    if name in {"reviewer", "evidence-auditor"}:
-        return dict(SAFE_EVIDENCE_SHELL)
-    if name == "terraform-terragrunt":
-        return {
-            "*": "ask",
-            "terraform fmt*": "allow", "tofu fmt*": "allow",
-            "terragrunt hclfmt*": "allow",
-            "terraform validate*": "allow", "tofu validate*": "allow",
-            "terraform plan*": "ask", "tofu plan*": "ask", "terragrunt plan*": "ask",
-            "* apply*": "deny", "* destroy*": "deny",
-            "terraform apply*": "deny", "tofu apply*": "deny", "terragrunt apply*": "deny",
-            "terraform destroy*": "deny", "tofu destroy*": "deny", "terragrunt destroy*": "deny",
-        }
-    if name == "pentest":
-        return {
-            "*": "ask",
-            "curl http://127.0.0.1*": "allow", "curl http://localhost*": "allow",
-            "curl https://127.0.0.1*": "allow", "curl https://localhost*": "allow",
-        }
-    if name in SECURITY_TOOL_AGENTS:
-        return "ask"
-    if name in WRITERS:
-        return "ask"
-    return "deny"
-
-
-def v1_permissions(name: str) -> dict:
-    p = {
-        "task": delegation_permissions(name),
-        "edit": "allow" if name in WRITERS or name == "terraform-terragrunt" else "deny",
-        "bash": shell_permissions(name),
-        "webfetch": "deny" if name in WEB_DENY else "ask",
-        "websearch": "deny" if name in WEB_DENY else "ask",
-        "skill": "deny" if name in SKILL_DENY else "ask",
-        "read": read_permissions(name),
+    entry = {
+        "description": spec.description,
+        "mode": spec.mode,
+        "model": f"{{env:{spec.model_env}}}",
+        ("system" if v2 else "prompt"): f"{{file:./.generated/prompts/{name}.md}}",
+        "steps": spec.steps,
+        ("permissions" if v2 else "permission"): (
+            v2_permissions(name, specs) if v2 else v1_permissions(name, specs)
+        ),
     }
-    if name == "project-scanner":
-        p["external_directory"] = {"*": "deny", "~/Projects/**": "allow"}
-    return p
+    entry.update(spec.opencode)
+    return entry
 
 
-def v2_permissions(name: str) -> list[dict]:
-    p = v1_permissions(name)
-    action_map = {"bash": "shell", "task": "subagent"}
-    rules: list[dict] = []
-    for key, value in p.items():
-        action = action_map.get(key, key)
-        if isinstance(value, str):
-            rules.append({"action": action, "resource": "*", "effect": value})
-        else:
-            for resource, effect in value.items():
-                rules.append({"action": action, "resource": resource, "effect": effect})
-    return rules
-
-
-def agent_entry(name: str, v2: bool) -> dict:
-    mode = "primary" if name == "meta-router" else ("all" if name == "orchestrator" else "subagent")
-    return {
-        "description": DESCRIPTIONS[name],
-        "mode": mode,
-        "model": f"{{env:{model_env(name)}}}",
-        ("system" if v2 else "prompt"): f"{{file:./prompts/{name}.md}}",
-        "steps": STEPS.get(name, 16),
-        ("permissions" if v2 else "permission"): v2_permissions(name) if v2 else v1_permissions(name),
-    }
-
-
-def build(v2: bool) -> dict:
-    agents = {name: agent_entry(name, v2) for name in DESCRIPTIONS}
+def build(specs, *, v2: bool) -> dict:
+    primary = next(name for name, spec in specs.items() if spec.mode == "primary")
+    agents = {name: agent_entry(name, specs, v2=v2) for name in sorted(specs)}
     commands = {
-        name: {"description": desc, "template": template, "agent": "meta-router"}
+        name: {"description": desc, "template": template, "agent": primary}
         for name, (desc, template) in COMMANDS.items()
     }
     if v2:
         return {
             "$schema": "https://opencode.ai/config.json",
-            "default_agent": "meta-router",
+            "default_agent": primary,
             "agents": agents,
             "commands": commands,
             "experimental": {"subagent_depth": 2},
         }
     return {
         "$schema": "https://opencode.ai/config.json",
-        "default_agent": "meta-router",
+        "default_agent": primary,
         "subagent_depth": 2,
         "agent": agents,
         "command": commands,
@@ -342,14 +98,16 @@ def build(v2: bool) -> dict:
 
 
 def main() -> None:
-    generate_prompts()
+    specs = load_agents()
+    write_generated_sources(specs)
     outputs = (
-        (ROOT / "opencode.jsonc", build(False)),
-        (ROOT / "opencode.v2.jsonc", build(True)),
+        (ROOT / "opencode.jsonc", build(specs, v2=False)),
+        (ROOT / "opencode.v2.jsonc", build(specs, v2=True)),
     )
     for path, data in outputs:
         path.write_text(json.dumps(data, indent=2) + "\n")
-        print(f"generated {path.name}: {len(data.get('agent', data.get('agents', {})))} agents")
+        print(f"generated {path.name}: {len(specs)} agents")
+    print("agent source: agents/<name>/{agent.json,prompt.md,permissions.json}")
 
 
 if __name__ == "__main__":
