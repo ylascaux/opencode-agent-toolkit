@@ -17,6 +17,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install OpenCode V2 plugin SDK
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify OpenCode V2 plugin SDK resolution
+        run: npm ls @opencode/plugin --depth=0
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
       - name: Reliability, plan and sandbox core JavaScript syntax
