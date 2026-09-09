@@ -79,6 +79,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             ]:
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
             shutil.copy2(ROOT / "agents" / "manifest.json", agents / "manifest.json")
+            shutil.copytree(ROOT / "agents" / "permissions", agents / "permissions")
             shutil.copy2(ROOT / "profiles" / "agent-tiers.json", profiles / "agent-tiers.json")
             shutil.copy2(ROOT / "reliability.json", toolkit / "reliability.json")
             shutil.copy2(
