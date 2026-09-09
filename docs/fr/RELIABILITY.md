@@ -1,24 +1,20 @@
-# Fiabilité des agents et garde-fous de coût
+# Fiabilité des agents
 
-Le toolkit combine des garde-fous déterministes et des règles de supervision dans les leads. Le principe reste simple : **les LLM décident du travail d'ingénierie ; le runtime décide des limites de sécurité opérationnelle**.
+Le toolkit combine des garde-fous déterministes et des règles de supervision dans les leads. Le principe devient : **les LLM décident du travail d'ingénierie ; le runtime applique les limites sûres, mais un signal watchdog ambigu ne doit jamais détruire du travail automatiquement**.
 
 ## Profils de fiabilité
 
 `reliability.json` définit trois profils :
 
-| Profil | Parallèle | Queue | Stall | Durée enfant | Retries | Coût enfant* | Coût run* |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `cheap` | 2 | 300s | 120s | 600s | 1 | 0.25 | 1.00 |
-| `normal` | 3 | 600s | 180s | 900s | 2 | 0.50 | 2.00 |
-| `premium` | 4 | 900s | 240s | 1200s | 2 | 1.50 | 5.00 |
+| Profil | Parallèle | Queue | Heartbeat | Stall | Durée enfant | Retries délégation |
+|---|---:|---:|---:|---:|---:|---:|
+| `cheap` | 2 | 300s | 45s | 120s | 600s | 1 |
+| `normal` | 3 | 600s | 60s | 180s | 900s | 2 |
+| `premium` | 4 | 900s | 90s | 240s | 1200s | 2 |
 
-`normal` est le profil par défaut. Les valeurs de coût marquées `*` utilisent **la valeur remontée par OpenCode/provider**, dans son unité native. Le toolkit ne convertit pas arbitrairement en EUR.
+`normal` reste le profil par défaut. Les valeurs explicites dans `.env.local` prennent le dessus sur le profil.
 
-```bash
-RELIABILITY_PROFILE=normal
-```
-
-Toute valeur explicite dans `.env.local` prend le dessus sur le profil.
+Les budgets monétaires remontés par le provider ne font volontairement **plus partie** du runtime. `MAX_CHILD_COST` et `MAX_RUN_COST` sont supprimés : la télémétrie de coût n'est pas assez fiable pour justifier l'interruption destructive d'une session.
 
 ## Parallélisme global et par lead
 
@@ -28,7 +24,7 @@ Le plafond global reste :
 MAX_PARALLEL_SUBAGENTS=3
 ```
 
-On peut maintenant affiner par lead :
+Overrides facultatifs :
 
 ```bash
 MAX_PARALLEL_META_ROUTER=2
@@ -38,145 +34,74 @@ MAX_PARALLEL_PLATFORM_ARCHITECT=3
 MAX_PARALLEL_SECURITY_LEAD=2
 ```
 
-Si une limite spécifique n'est pas définie, la valeur globale est utilisée.
+Le runtime suit les child sessions actives et les réservations de lancement afin d'éviter de dépasser la limite lors de délégations concurrentes. Quand tous les slots sont occupés, la délégation attend dans une queue déterministe sans nouvel appel LLM.
 
-Le runtime suit les vraies child sessions et les réservations de lancement. Une réservation est consommée dès que le child correspondant apparaît via les événements ou `session.children()`. Cela évite à la fois :
+## Watchdog avec approbation utilisateur
 
-- de dépasser la limite lors d'un burst concurrent ;
-- de compter temporairement un même lancement deux fois (`pending + child actif`).
+La télémétrie OpenCode peut être incomplète alors qu'un agent est toujours en train de réfléchir ou d'attendre dans le runtime. Donc **le silence est un soupçon, pas la preuve d'un stall**.
 
-Quand tous les slots sont occupés, la délégation attend dans une queue **sans appel LLM supplémentaire**. `SUBAGENT_QUEUE_TIMEOUT_SECONDS` borne cette attente.
+Les wrappers V1/V2 actifs neutralisent les interruptions automatiques basées sur les heuristiques suivantes :
 
-## Preflight avant le premier token coûteux
+- absence de progrès observable ;
+- durée maximale du child ;
+- répétitions détectées par heuristique ;
+- coût provider child/run.
 
-`oc` / `just run` exécute le preflight avant OpenCode :
+Les anciens watchdogs restent isolés pour compatibilité et tests de régression, mais ces heuristiques destructives ne sont plus autorisées pendant un run normal.
 
-- binaire sélectionné présent ;
-- config JSON valide ;
-- watchdog V1/V2 présent et branché ;
-- profil reliability valide ;
-- paramètres numériques valides ;
-- modèles réellement configurés dans les agents disponibles via `opencode models` ;
-- auth disponible pour les providers connus nécessitant une authentification OpenCode ;
-- état Git observable.
+### OpenCode V2
 
-Contrôles configurables :
+V2 charge `./plugins/reliability-approval` en plus du plugin runtime. Ce plugin observe l'activité indépendamment et émet un événement `suspected` lorsqu'un child semble bloqué ou dépasse sa durée configurée.
 
-```bash
-OPENCODE_PREFLIGHT=1
-OPENCODE_PREFLIGHT_AUTH=1
-OPENCODE_PREFLIGHT_MODELS=1
-# OPENCODE_PREFLIGHT_STRICT=1
-```
+Le TUI demande ensuite explicitement à l'utilisateur avant toute action destructive. `session.interrupt()` n'est appelé **que si l'utilisateur choisit Kill**.
 
-Le script reste compatible avec le Bash 3 fourni par défaut sur macOS.
+Si la session redevient active avant que la décision n'arrive au serveur, la demande est considérée comme obsolète et aucune interruption n'est effectuée. Si le TUI est absent, déconnecté ou si l'événement d'approbation ne peut pas être transmis, le système **fail open** et ne tue pas la session.
 
-## Watchdog V1 et V2
+Le choix **Keep running** remet à zéro la fenêtre d'observation et évite de reproposer immédiatement le même popup.
 
-V1 et V2 gardent les mêmes capacités fonctionnelles :
+### OpenCode V1 / mode headless
 
-- suivi individuel des sessions enfants ;
-- distinction `lastActivityAt` / `lastProgressAt` ;
-- `WAITING_PERMISSION` exclu du stall ;
-- durée maximale ;
-- détection de stall tenant compte de l'activité ;
-- erreurs répétées ;
-- queue et plafond de parallélisme ;
-- réconciliation `session.children()` quand disponible ;
-- checkpoints de métadonnées ;
-- budgets de coût lorsque le provider fournit la donnée.
+V1 ne fournit pas actuellement une surface de confirmation suffisamment fiable pour ce workflow. Les heuristiques watchdog passent donc en **fail open** : la session est conservée au lieu d'être tuée automatiquement.
 
-V2 conserve en plus le hook de retry provider :
+## Ce qui peut encore arrêter une session
 
-```text
-400 / 401 / 403 / 404 -> terminal
-429                  -> retry borné
-5xx                  -> retry borné
-```
+Ce changement concerne les heuristiques ambiguës du watchdog. OpenCode peut toujours terminer lui-même une session sur une erreur runtime/provider terminale. Le runtime legacy distingue aussi les erreurs explicites non retryable de configuration/provider. Ces décisions ne sont pas déduites d'un simple silence.
 
-## Détection de stall tenant compte de l'activité
+## Retry et identité de la task
 
-Un child n'est plus considéré comme bloqué uniquement parce qu'il n'a pas produit récemment de modification de fichier, de diff, de todo ou d'autre événement qualifié de progrès matériel. Le watchdog exige maintenant simultanément :
+L'état de retry conserve toujours le `task_id` connu lorsqu'une terminaison retryable est réellement observée. Une nouvelle tentative de la même délégation doit reprendre le child connu plutôt que recréer silencieusement un leaf vide.
 
-1. aucun progrès matériel depuis plus de `SUBAGENT_STALLED_TIMEOUT_SECONDS` ;
-2. aucun heartbeat runtime/message depuis plus de `SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS` ;
-3. aucun appel de tool encore en cours ;
-4. la même situation toujours présente au cycle de watchdog suivant.
+Les siblings déjà terminés et le lead parent ne doivent pas être redémarrés uniquement parce qu'un leaf échoue.
 
-Valeurs par défaut du profil `normal` :
+## Permission et supervision
 
-```bash
-SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS=60
-SUBAGENT_STALLED_TIMEOUT_SECONDS=180
-SUBAGENT_WATCH_INTERVAL_SECONDS=15
-```
+`WAITING_PERMISSION` n'est jamais un stall. Un lead ayant un child actif est `WAITING_ON_CHILD`, même si le lead lui-même reste silencieux.
 
-Cela protège les longues phases de réflexion, lecture, analyse ou génération de message contre les annulations à tort, tout en conservant une récupération déterministe des vrais stalls.
-
-Lorsqu'un child doit malgré tout être interrompu pour une raison retryable, le watchdog persiste d'abord la délégation existante et son `task_id` avec le statut `retryable_failed`, **avant** d'envoyer l'interruption. Une nouvelle tentative de la même délégation reprend donc la task connue au lieu de recréer silencieusement un child vide et de perdre le contexte déjà produit.
-
-## Détection de boucle outil
-
-Le watchdog mémorise la signature de l'appel et de son résultat. Si un child exécute plusieurs fois **le même tool avec les mêmes arguments et obtient le même résultat**, cette activité n'est plus considérée comme un progrès.
-
-Au-delà de `MAX_SAME_ERROR`, le child peut être interrompu.
-
-Cela couvre des boucles du type :
-
-```text
-commande A -> résultat X
-commande A -> résultat X
-commande A -> résultat X
-```
-
-que le simple compteur de steps ne diagnostique pas correctement.
-
-## Budgets de coût remontés par le provider
-
-```bash
-MAX_CHILD_COST=0.50
-MAX_RUN_COST=2.00
-```
-
-`0` désactive la limite monétaire correspondante.
-
-Le garde-fou n'est actif que lorsque OpenCode/provider remonte un champ de coût exploitable. S'il n'y a aucune télémétrie de coût, **aucun coût n'est inventé** : steps, durée, stall, retries, profondeur et parallélisme restent les barrières sûres.
-
-`MAX_CHILD_COST` coupe un child dépassant son budget remonté. `MAX_RUN_COST` coupe la famille de sessions du run lorsque le total remonté dépasse la limite.
+Les prompts des leads indiquent explicitement qu'un silence watchdog doit être traité comme `STALL_SUSPECTED` uniquement, sans remplacement ni annulation avant décision utilisateur.
 
 ## Checkpoints
 
-Le watchdog persiste uniquement des **métadonnées**, jamais le prompt ni une copie du code :
+Les métadonnées sont stockées sous :
 
 ```text
 ${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit/runs/<session-id>.json
 ```
 
-Surcharge possible :
+Surcharge facultative :
 
 ```bash
 RELIABILITY_STATE_DIR=$HOME/.local/state/opencode-agent-toolkit/runs
 ```
 
-Un checkpoint contient notamment :
-
-- session ID et parent ;
-- agent ;
-- statut ;
-- raison d'abort ;
-- état de retry de la délégation si applicable ;
-- coût remonté ;
-- timestamps de démarrage, activité et progrès.
-
-La session OpenCode et les handoffs restent la source de vérité pour le contenu détaillé du travail.
+Les checkpoints contiennent les métadonnées de session/délégation, statuts, timestamps et raisons d'abort. Ils ne copient volontairement ni les prompts ni le code du projet.
 
 ## Caps de steps
 
-Les overrides de steps sont des **plafonds**, pas des valeurs absolues permettant d'augmenter la liberté d'un agent.
+Les overrides restent des plafonds :
 
 ```bash
 MAX_STEPS_BUILDER=7    # peut réduire
-MAX_STEPS_BUILDER=999  # ne peut pas dépasser la limite du générateur
+MAX_STEPS_BUILDER=999  # ne peut pas dépasser la limite policy/générateur
 ```
 
 `scripts/apply-reliability` applique :
@@ -185,22 +110,18 @@ MAX_STEPS_BUILDER=999  # ne peut pas dépasser la limite du générateur
 steps effectifs = min(steps générés, cap reliability)
 ```
 
-## Politique d'arrêt
+## Politique attendue
 
-Comportement attendu :
-
-- auth/config/provider/modèle non retryable -> arrêt rapide ;
-- `429` / `5xx` -> retry borné ;
-- même erreur racine sans nouvelle preuve -> arrêt ;
-- même tool + mêmes args + même résultat -> boucle détectable ;
-- absence de progrès **et** de heartbeat, confirmée au cycle suivant -> interruption ;
-- activité ou tool encore en cours -> pas considéré comme stall ;
-- child trop long -> interruption ;
-- child au-dessus du coût remonté -> interruption si télémétrie disponible ;
-- `WAITING_PERMISSION` -> pas considéré comme stall ;
-- limite parallèle atteinte -> attente dans la queue ;
-- abort watchdog retryable -> conservation et réutilisation du `task_id` connu ;
-- child bloqué/aborté -> consommer handoff/checkpoint avant de décider d'un remplacement.
+- absence de heartbeat/progrès -> suspicion uniquement, jamais kill automatique ;
+- durée maximale -> suspicion uniquement, jamais kill automatique ;
+- child suspect en V2 -> demander à l'utilisateur avant interruption ;
+- child suspect en V1/headless -> fail open ;
+- `WAITING_PERMISSION` -> pas un stall ;
+- tool actif/en cours -> pas un stall ;
+- limite parallèle atteinte -> attente dans la queue runtime ;
+- kill explicitement approuvé -> interruption de ce child uniquement ;
+- terminaison retryable -> conservation/réutilisation du `task_id` connu si possible ;
+- télémétrie monétaire provider -> jamais utilisée comme limite de kill.
 
 ## Commandes utiles
 
@@ -211,4 +132,4 @@ just doctor
 just check
 ```
 
-`just reliability` affiche la politique effective après profil et overrides locaux.
+`just reliability` affiche les limites effectives et le mode d'approbation actif.
