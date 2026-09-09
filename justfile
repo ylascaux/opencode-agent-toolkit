@@ -55,6 +55,26 @@ configure-litellm *args:
 doctor:
     bash ./scripts/doctor
 
+# Enable the optional Git-backed long-term memory. Passing a repository also stores it in .env.local.
+memory-on repo="":
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory enable "{{repo}}"
+
+# Disable long-term memory and remove rendered context from .generated.
+memory-off:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory disable
+
+# Show effective memory settings and the current project match.
+memory-status:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory status
+
+# Force clone/pull of the configured memory repository and rebuild context.
+memory-sync:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory sync
+
+# Render the exact common + hat memory context for one agent.
+memory-show agent="orchestrator":
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory show "{{agent}}"
+
 # Build the hardened Nix development sandbox image using Docker or Podman.
 sandbox-build:
     bash ./scripts/sandbox-build
@@ -78,7 +98,7 @@ sandbox-clean:
 
 # Fast deterministic checks performed before an OpenCode run.
 preflight:
-    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/generate-config >/dev/null; python3 ./scripts/apply-reliability >/dev/null; bash ./scripts/preflight
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/generate-config >/dev/null; python3 ./scripts/apply-memory >/dev/null; python3 ./scripts/apply-reliability >/dev/null; bash ./scripts/preflight
 
 # Show the effective reliability policy after environment overrides.
 reliability:
@@ -89,6 +109,7 @@ check: config test runtime-test
 # Purely local/deterministic generation. No provider discovery and no interactive prompts.
 config:
     python3 ./scripts/generate-config
+    python3 ./scripts/apply-memory
     python3 ./scripts/apply-reliability
     python3 -m json.tool opencode.jsonc >/dev/null
     python3 -m json.tool opencode.v2.jsonc >/dev/null

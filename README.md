@@ -34,6 +34,18 @@ just configure-litellm       # découverte LiteLLM, optionnelle
 
 Les overrides par agent doivent aller dans `.env.local`, afin de ne pas être écrasés par `just profile`.
 
+## Mémoire Git privée optionnelle
+
+Le toolkit peut charger une mémoire long terme depuis un dépôt Git privé, avec contexte par projet, préférences de travail et casquettes par agent. Cette mémoire est **désactivée par défaut** et reste en lecture seule côté agents.
+
+```bash
+just memory-on git@github.com:USER/opencode-memory.git
+just memory-status
+just memory-show orchestrator
+```
+
+Le clone mémoire n'est pas monté dans la sandbox : seul le contexte rendu est injecté dans les prompts générés. Voir [la documentation mémoire](docs/fr/MEMORY.md).
+
 ## Toutes les recettes `just`
 
 Sans argument, `just` exécute `default`, qui affiche cette liste (`just --list`). Les paramètres entre guillemets indiquent leur valeur par défaut ; `*args` transmet des arguments supplémentaires.
@@ -87,6 +99,16 @@ Sans argument, `just` exécute `default`, qui affiche cette liste (`just --list`
 | `uninstall-oc2` | `just uninstall-oc2` | Retire le lanceur dédié `oc2`. |
 | `oc2-status` | `just oc2-status` | Indique si `oc2` est installé. |
 
+### Mémoire long terme
+
+| Recette | Syntaxe | Description |
+| --- | --- | --- |
+| `memory-on` | `just memory-on [repo=""]` | Active la mémoire Git et peut enregistrer l'URL du dépôt privé dans `.env.local`. |
+| `memory-off` | `just memory-off` | Désactive la mémoire et supprime le contexte rendu. |
+| `memory-status` | `just memory-status` | Affiche la configuration effective et le projet mémoire détecté. |
+| `memory-sync` | `just memory-sync` | Force le clone/pull du dépôt mémoire et reconstruit le contexte. |
+| `memory-show` | `just memory-show [agent="orchestrator"]` | Affiche le contexte commun et les casquettes injectés pour un agent. |
+
 ### Sandbox et maintenance
 
 | Recette | Syntaxe | Description |
@@ -102,7 +124,7 @@ Sans argument, `just` exécute `default`, qui affiche cette liste (`just --list`
 
 - [Documentation française](docs/fr/README.md) : installation, agents, permissions, modèles, fiabilité, sandbox et usage.
 - [Index de la documentation anglaise](docs/en/README.md).
-- [Architecture système](docs/fr/SYSTEM_ARCHITECTURE.md) et [configuration des agents](docs/fr/CONFIGURATION_AGENTS.md).
+- [Architecture système](docs/fr/SYSTEM_ARCHITECTURE.md), [configuration des agents](docs/fr/CONFIGURATION_AGENTS.md) et [mémoire Git](docs/fr/MEMORY.md).
 - [Gates de qualité de contribution](workflows/quality-gates.md).
 
 Les contrats machine lisibles sont dans [`contracts/`](contracts/), notamment `agent-handoff.schema.json` et `routing-decision.schema.json`.

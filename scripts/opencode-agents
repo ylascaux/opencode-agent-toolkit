@@ -46,6 +46,7 @@ export OPENCODE_MAJOR
 [[ -z "${OPENCODE_BIN:-}" ]] || export OPENCODE_BIN
 
 python3 "$ROOT/scripts/generate-config" >/dev/null
+python3 "$ROOT/scripts/apply-memory" >/dev/null
 python3 "$ROOT/scripts/apply-reliability" >/dev/null
 
 # Resolve unset per-agent MODEL_* variables from the active LOW/MEDIUM/HIGH tiers.
