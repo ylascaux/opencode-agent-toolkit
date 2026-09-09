@@ -42,6 +42,15 @@ class Oc2LauncherTests(unittest.TestCase):
 
         return toolkit, bin_dir
 
+    @staticmethod
+    def _output_map(stdout: str) -> dict[str, str]:
+        return {
+            key: value
+            for line in stdout.splitlines()
+            if "=" in line
+            for key, value in [line.split("=", 1)]
+        }
+
     def test_oc2_symlink_forces_v2_even_when_env_defaults_to_v1(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -62,10 +71,14 @@ class Oc2LauncherTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("binary=opencode2", result.stdout)
-            self.assertIn("major=2", result.stdout)
-            self.assertIn(f"config={toolkit / 'opencode.v2.jsonc'}", result.stdout)
-            self.assertIn("args=run hello", result.stdout)
+            output = self._output_map(result.stdout)
+            self.assertEqual(output["binary"], "opencode2")
+            self.assertEqual(output["major"], "2")
+            self.assertEqual(
+                Path(output["config"]).resolve(),
+                (toolkit / "opencode.v2.jsonc").resolve(),
+            )
+            self.assertEqual(output["args"], "run hello")
 
     def test_explicit_v2_override_wins_over_env_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -85,9 +98,13 @@ class Oc2LauncherTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("binary=opencode2", result.stdout)
-            self.assertIn("major=2", result.stdout)
-            self.assertIn(f"config={toolkit / 'opencode.v2.jsonc'}", result.stdout)
+            output = self._output_map(result.stdout)
+            self.assertEqual(output["binary"], "opencode2")
+            self.assertEqual(output["major"], "2")
+            self.assertEqual(
+                Path(output["config"]).resolve(),
+                (toolkit / "opencode.v2.jsonc").resolve(),
+            )
 
 
 if __name__ == "__main__":
