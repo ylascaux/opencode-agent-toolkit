@@ -45,7 +45,7 @@ preflight:
 reliability:
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/show-reliability
 
-check: config test
+check: config test runtime-test
 
 config:
     python3 ./scripts/generate-config
@@ -56,6 +56,11 @@ config:
 
 test:
     python3 -m unittest discover -s tests -v
+
+# Behavioral tests for queue/call tracking, progress-aware loop detection,
+# provider retry decisions, cost enforcement, and permission/stall handling.
+runtime-test:
+    node --test tests/runtime_guardrails.test.mjs
 
 run *args:
     bash ./scripts/opencode-agents {{args}}
