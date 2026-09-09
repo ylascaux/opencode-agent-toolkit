@@ -55,25 +55,61 @@ configure-litellm *args:
 doctor:
     bash ./scripts/doctor
 
-# Enable the optional Git-backed long-term memory. Passing a repository also stores it in .env.local.
+# Enable the external Git-backed memory plugin. The optional repository is the private memory-data repository.
 memory-on repo="":
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory enable "{{repo}}"
 
-# Disable long-term memory and remove rendered context from .generated.
+# Disable memory without uninstalling the external plugin checkout.
 memory-off:
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory disable
 
-# Show effective memory settings and the current project match.
+# Show external plugin version/ref plus effective memory/project status.
 memory-status:
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory status
 
-# Force clone/pull of the configured memory repository and rebuild context.
+# Force synchronization of both the external plugin checkout and the private memory vault.
 memory-sync:
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory sync
 
-# Render the exact common + hat memory context for one agent.
+# Render the exact memory context the named agent receives.
 memory-show agent="orchestrator":
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory show "{{agent}}"
+
+# Enable automatic V1/V2 extraction into the local candidate quarantine.
+memory-capture-on:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory capture-on
+
+# Disable automatic candidate extraction while keeping durable memory enabled.
+memory-capture-off:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory capture-off
+
+# List pending candidates; pass plugin CLI flags such as --all or --json.
+memory-candidates *args:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory candidates {{args}}
+
+# Inspect one candidate by id/prefix.
+memory-candidate id:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory candidate "{{id}}"
+
+# Reject a pending candidate locally; this never touches the Git memory vault.
+memory-reject id:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory reject "{{id}}"
+
+# Accept a candidate into inbox/accepted (inactive). Set push=true only when desired.
+memory-accept id push="false":
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; push_arg=""; [[ "{{push}}" == "true" ]] && push_arg="--push"; python3 ./scripts/memory accept "{{id}}" $$push_arg
+
+# Promote an accepted candidate to active project/workstyle/hat memory.
+memory-promote id target="" push="false":
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; args=(promote "{{id}}"); [[ -n "{{target}}" ]] && args+=(--target "{{target}}"); [[ "{{push}}" == "true" ]] && args+=(--push); python3 ./scripts/memory "$${args[@]}"
+
+# Push already committed memory-vault changes.
+memory-push:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory push
+
+# Create a candidate manually. Example: just memory-add workstyle 'Prefer Just' 'Prefer Justfiles.' --target workstyle/preferences.md
+memory-add *args:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory add {{args}}
 
 # Build the hardened Nix development sandbox image using Docker or Podman.
 sandbox-build:
