@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEADS = ["meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"]
+READ_ONLY_GIT = ["git status*", "git diff*", "git log*", "git show*", "git rev-parse*"]
 
 
 class ReliabilityPolicyTests(unittest.TestCase):
@@ -24,6 +25,8 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertEqual(normal["max_parallel_subagents"], 3)
         self.assertEqual(normal["queue_timeout_seconds"], 600)
         self.assertEqual(normal["max_same_error"], 2)
+        self.assertEqual(normal["max_subagent_retries"], 2)
+        self.assertGreater(normal["heartbeat_timeout_seconds"], 0)
         self.assertGreater(normal["max_child_cost"], 0)
         self.assertGreater(normal["max_run_cost"], normal["max_child_cost"])
         self.assertLessEqual(policy["step_caps"]["orchestrator"], 16)
@@ -45,6 +48,32 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertLessEqual(config["agents"]["orchestrator"]["steps"], 16)
         self.assertLessEqual(config["agents"]["builder"]["steps"], 16)
         self.assertIn("./.opencode/plugins/reliability-v2.ts", config["plugins"])
+
+    def test_every_agent_can_websearch_and_use_read_only_git_v1(self):
+        config = json.loads((ROOT / "opencode.jsonc").read_text())
+        for name, agent in config["agent"].items():
+            permission = agent["permission"]
+            self.assertEqual(permission["websearch"], "allow", name)
+            bash = permission["bash"]
+            self.assertIsInstance(bash, dict, name)
+            for pattern in READ_ONLY_GIT:
+                self.assertEqual(bash.get(pattern), "allow", f"{name}: {pattern}")
+
+    def test_every_agent_can_websearch_and_use_read_only_git_v2(self):
+        config = json.loads((ROOT / "opencode.v2.jsonc").read_text())
+        for name, agent in config["agents"].items():
+            rules = agent["permissions"]
+            web = [r for r in rules if r.get("action") == "websearch" and r.get("resource") == "*"]
+            self.assertTrue(web, name)
+            self.assertEqual(web[-1]["effect"], "allow", name)
+            for pattern in READ_ONLY_GIT:
+                git_rules = [
+                    r
+                    for r in rules
+                    if r.get("action") == "shell" and r.get("resource") == pattern
+                ]
+                self.assertTrue(git_rules, f"{name}: {pattern}")
+                self.assertEqual(git_rules[-1]["effect"], "allow", f"{name}: {pattern}")
 
     def test_step_override_can_lower_but_never_raise_generator_boundary(self):
         policy = json.loads((ROOT / "reliability.json").read_text())
@@ -77,7 +106,18 @@ class ReliabilityPolicyTests(unittest.TestCase):
             self.assertIn("## reliability and child supervision", text, name)
             self.assertIn("runtime slot", text, name)
             self.assertIn("waiting_permission is not stalled", text, name)
+            self.assertIn("waiting_on_child", text, name)
+            self.assertIn("retry only that failed child", text, name)
+            self.assertIn("task_id", text, name)
             self.assertIn("checkpoint", text, name)
+
+    def test_all_prompts_include_external_research_contract(self):
+        config = json.loads((ROOT / "opencode.jsonc").read_text())
+        for name in config["agent"]:
+            text = (ROOT / "prompts" / f"{name}.md").read_text().lower()
+            self.assertIn("## external research", text, name)
+            self.assertIn("websearch", text, name)
+            self.assertIn("primary sources", text, name)
 
     def test_v1_watchdog_has_advanced_runtime_guards(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-v1.js").read_text()
@@ -89,10 +129,14 @@ class ReliabilityPolicyTests(unittest.TestCase):
             "lead_parallel_env",
             "MAX_CHILD_COST",
             "MAX_RUN_COST",
+            "MAX_SUBAGENT_RETRIES",
             "RELIABILITY_STATE_DIR",
             "writeCheckpoint",
             "same tool call produced the same result",
             "WAITING_PERMISSION",
+            "retryable_failed",
+            "task_id",
+            "usedSlots(state.id) > 0",
             "createCallIdTracker",
             "createProgressAwareRepeatDetector",
         ]:
@@ -108,21 +152,28 @@ class ReliabilityPolicyTests(unittest.TestCase):
             "lead_parallel_env",
             "MAX_CHILD_COST",
             "MAX_RUN_COST",
+            "MAX_SUBAGENT_RETRIES",
             "RELIABILITY_STATE_DIR",
             "writeCheckpoint",
             "same tool call produced the same result",
             "MAX_PROVIDER_RETRIES",
+            "retryable_failed",
+            "task_id",
+            "usedSlots(state.id) > 0",
             "createCallIdTracker",
             "createProgressAwareRepeatDetector",
             "providerRetryDecision",
         ]:
             self.assertIn(needle, text)
 
-    def test_shared_runtime_core_contains_terminal_retry_policy(self):
+    def test_shared_runtime_core_contains_terminal_and_delegation_retry_policy(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-core.js").read_text()
         self.assertIn("[400, 401, 403, 404]", text)
         self.assertIn("createCallIdTracker", text)
         self.assertIn("createProgressAwareRepeatDetector", text)
+        self.assertIn("delegationFailureClass", text)
+        self.assertIn("delegationTaskKey", text)
+        self.assertIn("task cancel", text)
 
     def test_env_exposes_new_reliability_controls(self):
         text = (ROOT / ".env.example").read_text()
@@ -131,6 +182,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
             "OPENCODE_PREFLIGHT_AUTH=",
             "OPENCODE_PREFLIGHT_MODELS=",
             "MAX_PARALLEL_SUBAGENTS=",
+            "MAX_SUBAGENT_RETRIES=",
             "MAX_CHILD_COST=",
             "MAX_RUN_COST=",
         ]:
