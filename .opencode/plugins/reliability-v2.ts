@@ -299,7 +299,7 @@ export default Plugin.define({
         const type = event?.type
         const p = event?.properties ?? event?.data ?? event ?? {}
         const info = p.info ?? p.session ?? p
-        const id = info?.id ?? info?.sessionID ?? p.sessionID ?? p.sessionId ?? event?.sessionID
+        const id = info?.sessionID ?? p.sessionID ?? p.sessionId ?? event?.sessionID ?? info?.id
         const parentID = info?.parentID ?? info?.parentId ?? info?.parent?.id ?? p.parentID ?? p.parentId
         const state = ensure(id)
         if (!state) continue
