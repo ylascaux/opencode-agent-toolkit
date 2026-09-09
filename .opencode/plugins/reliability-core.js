@@ -88,6 +88,51 @@ export const createProgressAwareRepeatDetector = () => {
   return { markProgress, observe, epochFor }
 }
 
+export const createStallDetector = () => {
+  const suspects = new Map()
+
+  const clear = (sessionID) => {
+    if (sessionID) suspects.delete(sessionID)
+  }
+
+  const observe = ({
+    sessionID,
+    timestamp,
+    lastActivityAt,
+    lastProgressAt,
+    heartbeatMs,
+    stalledMs,
+    confirmationMs = 0,
+    busy = false,
+  }) => {
+    if (!sessionID) return { stalled: false, suspect: false }
+
+    const noHeartbeat = timestamp - lastActivityAt > heartbeatMs
+    const noProgress = timestamp - lastProgressAt > stalledMs
+    if (busy || !noHeartbeat || !noProgress) {
+      clear(sessionID)
+      return { stalled: false, suspect: false }
+    }
+
+    const previous = suspects.get(sessionID)
+    if (
+      !previous ||
+      previous.lastActivityAt !== lastActivityAt ||
+      previous.lastProgressAt !== lastProgressAt
+    ) {
+      suspects.set(sessionID, { since: timestamp, lastActivityAt, lastProgressAt })
+      return { stalled: false, suspect: true }
+    }
+
+    if (timestamp - previous.since < confirmationMs) return { stalled: false, suspect: true }
+
+    clear(sessionID)
+    return { stalled: true, suspect: false }
+  }
+
+  return { observe, clear }
+}
+
 export const providerRetryDecision = ({ status, attempt, maxRetries }) => {
   if ([400, 401, 403, 404].includes(status ?? 0)) return { retry: false }
   if (attempt > maxRetries + 1) return { retry: false }

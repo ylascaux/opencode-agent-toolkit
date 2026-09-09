@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import {
   createCallIdTracker,
   createProgressAwareRepeatDetector,
+  createStallDetector,
   delegationFailureClass,
   delegationTaskKey,
   stableString,
@@ -66,6 +67,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
   const d = defaults()
   const globalParallel = intEnv("MAX_PARALLEL_SUBAGENTS", Number(d.max_parallel_subagents))
   const queueTimeoutMs = intEnv("SUBAGENT_QUEUE_TIMEOUT_SECONDS", Number(d.queue_timeout_seconds)) * 1000
+  const heartbeatMs = intEnv("SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS", Number(d.heartbeat_timeout_seconds)) * 1000
   const stalledMs = intEnv("SUBAGENT_STALLED_TIMEOUT_SECONDS", Number(d.stalled_timeout_seconds)) * 1000
   const maxDurationMs = intEnv("SUBAGENT_MAX_DURATION_SECONDS", Number(d.max_agent_duration_seconds)) * 1000
   const maxSameError = intEnv("MAX_SAME_ERROR", Number(d.max_same_error))
@@ -88,6 +90,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
   const delegationByTaskID = new Map()
   const callIds = createCallIdTracker()
   const repeatDetector = createProgressAwareRepeatDetector()
+  const stallDetector = createStallDetector()
 
   const stateFor = (id) => {
     if (!id) return undefined
@@ -247,6 +250,8 @@ export const ReliabilityV1Plugin = async ({ client }) => {
   }
   const usedSlots = (parentID) => activeChildren(parentID).length + reservationCount(parentID)
   const hasDelegatedChildren = (parentID) => (childrenByParent.get(parentID)?.size ?? 0) > 0
+  const hasInFlightTool = (sessionID) =>
+    [...inFlightTools.values()].some((call) => call.sessionID === sessionID)
 
   const reconcileChildren = async (parentID) => {
     try {
@@ -318,8 +323,20 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     }
   }
 
+  const preserveRetryableDelegation = (state, reason) => {
+    const delegation = delegationByTaskID.get(state?.id)
+    if (!delegation || delegation.status === "complete" || delegation.status === "failed") return
+    if (delegationFailureClass(reason) !== "retryable") return
+    delegation.taskID = state.id
+    delegation.status = "retryable_failed"
+    delegation.lastFailure = normalizeError(reason)
+    delegationByTaskID.set(state.id, delegation)
+  }
+
   const abortSession = async (state, reason) => {
     if (!state || state.abortedByWatchdog || TERMINAL.has(statusName(state.status))) return
+    preserveRetryableDelegation(state, reason)
+    stallDetector.clear(state.id)
     state.abortedByWatchdog = true
     state.abortReason = reason
     state.status = "ABORTED"
@@ -408,6 +425,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       // completed sibling handoffs and force the whole council to restart.
       if (usedSlots(state.id) > 0) {
         state.lastActivityAt = ts
+        stallDetector.clear(state.id)
         continue
       }
 
@@ -422,7 +440,17 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         await abortSession(state, "max-duration-exceeded")
         continue
       }
-      if (ts - state.lastProgressAt > stalledMs) await abortSession(state, "no-material-progress")
+      const stall = stallDetector.observe({
+        sessionID: state.id,
+        timestamp: ts,
+        lastActivityAt: state.lastActivityAt,
+        lastProgressAt: state.lastProgressAt,
+        heartbeatMs,
+        stalledMs,
+        confirmationMs: watchMs,
+        busy: hasInFlightTool(state.id),
+      })
+      if (stall.stalled) await abortSession(state, "no-material-progress")
     }
   }, watchMs)
   timer.unref?.()

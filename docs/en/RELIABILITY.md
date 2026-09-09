@@ -79,7 +79,7 @@ V1 and V2 keep the same functional safeguards:
 - `lastActivityAt` versus `lastProgressAt`;
 - `WAITING_PERMISSION` excluded from stall detection;
 - maximum duration;
-- no-progress timeout;
+- activity-aware no-progress timeout;
 - repeated-failure detection;
 - bounded queue and parallelism;
 - `session.children()` reconciliation when available;
@@ -93,6 +93,27 @@ V2 additionally keeps the provider retry hook:
 429                  -> bounded retry
 5xx                  -> bounded retry
 ```
+
+## Activity-aware stall detection
+
+A child is no longer considered stalled merely because it has not emitted a file edit, diff, todo update, or other material-progress event recently. The watchdog now requires all of the following before interrupting it:
+
+1. no material progress for longer than `SUBAGENT_STALLED_TIMEOUT_SECONDS`;
+2. no runtime/message heartbeat for longer than `SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS`;
+3. no tool call still in flight;
+4. the same stale condition is observed again on the next watchdog cycle.
+
+Example defaults for the `normal` profile:
+
+```bash
+SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS=60
+SUBAGENT_STALLED_TIMEOUT_SECONDS=180
+SUBAGENT_WATCH_INTERVAL_SECONDS=15
+```
+
+This protects long reasoning, reading, analysis, and streamed message generation from false-positive cancellation while retaining deterministic stall recovery.
+
+When the watchdog does interrupt a retryable child, it persists the existing delegation and its `task_id` as `retryable_failed` **before** sending the interrupt. A retry of the same logical delegation therefore resumes the known task instead of silently creating a fresh child and losing already-produced context.
 
 ## Repeated tool-loop detection
 
@@ -143,6 +164,7 @@ A checkpoint records, among other fields:
 - agent;
 - status;
 - abort reason;
+- delegation retry state when applicable;
 - provider-reported cost;
 - start/activity/progress timestamps.
 
@@ -171,11 +193,13 @@ Expected behavior:
 - `429` / `5xx` -> bounded retry;
 - same root failure without new evidence -> stop;
 - same tool + same args + same result -> detectable loop;
-- child with no progress -> interrupt;
+- no progress **and** no heartbeat, confirmed on a second watchdog cycle -> interrupt;
+- active or in-flight work -> not a stall;
 - child over duration -> interrupt;
 - child over reported cost -> interrupt when telemetry exists;
 - `WAITING_PERMISSION` -> not a stall;
 - parallel limit reached -> wait in the runtime queue;
+- retryable watchdog abort -> preserve and reuse the known `task_id`;
 - blocked/aborted child -> consume its handoff/checkpoint before deciding on a replacement.
 
 ## Useful commands
