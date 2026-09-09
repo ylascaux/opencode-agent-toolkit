@@ -4,12 +4,15 @@ import { fileURLToPath } from "node:url"
 import {
   createCallIdTracker,
   createProgressAwareRepeatDetector,
+  delegationFailureClass,
+  delegationTaskKey,
   stableString,
 } from "./reliability-core.js"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const POLICY = JSON.parse(fs.readFileSync(path.join(ROOT, "reliability.json"), "utf8"))
 const TERMINAL = new Set(["COMPLETED", "FAILED", "ABORTED", "IDLE", "ERROR"])
+const DELEGATION_TOOLS = new Set(["task", "subagent"])
 const now = () => Date.now()
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -66,6 +69,10 @@ export const ReliabilityV1Plugin = async ({ client }) => {
   const stalledMs = intEnv("SUBAGENT_STALLED_TIMEOUT_SECONDS", Number(d.stalled_timeout_seconds)) * 1000
   const maxDurationMs = intEnv("SUBAGENT_MAX_DURATION_SECONDS", Number(d.max_agent_duration_seconds)) * 1000
   const maxSameError = intEnv("MAX_SAME_ERROR", Number(d.max_same_error))
+  const maxSubagentRetries = intEnv(
+    "MAX_SUBAGENT_RETRIES",
+    Number(d.max_subagent_retries ?? d.max_retries ?? 1),
+  )
   const watchMs = intEnv("SUBAGENT_WATCH_INTERVAL_SECONDS", Number(d.watch_interval_seconds)) * 1000
   const maxChildCost = numberEnv("MAX_CHILD_COST", Number(d.max_child_cost ?? 0))
   const maxRunCost = numberEnv("MAX_RUN_COST", Number(d.max_run_cost ?? 0))
@@ -77,6 +84,8 @@ export const ReliabilityV1Plugin = async ({ client }) => {
   const sessionAgents = new Map()
   const messageCosts = new Map()
   const inFlightTools = new Map()
+  const delegations = new Map()
+  const delegationByTaskID = new Map()
   const callIds = createCallIdTracker()
   const repeatDetector = createProgressAwareRepeatDetector()
 
@@ -114,13 +123,101 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     repeatDetector.markProgress(id)
   }
 
-  function consumeOldestReservation(parentID) {
+  const delegationForArgs = (parentID, args = {}) => {
+    const existingByTask = args?.task_id && delegationByTaskID.get(String(args.task_id))
+    if (existingByTask) return existingByTask
+    const key = delegationTaskKey({ parentID, args })
+    let item = delegations.get(key)
+    if (!item) {
+      item = {
+        key,
+        parentID,
+        taskID: undefined,
+        attempts: 0,
+        failures: 0,
+        status: "pending",
+        lastFailure: "",
+      }
+      delegations.set(key, item)
+    }
+    return item
+  }
+
+  const prepareDelegation = (parentID, args = {}) => {
+    const item = delegationForArgs(parentID, args)
+    if (item.status === "running" && !args.task_id) {
+      throw new Error(`Reliability guard: equivalent delegated task is already running (${item.key}).`)
+    }
+    if (item.status === "failed" || item.failures > maxSubagentRetries) {
+      throw new Error(
+        `Reliability guard: subagent retry budget exhausted for ${item.key} after ${item.failures} failure(s).`,
+      )
+    }
+    if (item.status === "retryable_failed" && item.taskID && !args.task_id) {
+      args.task_id = item.taskID
+    }
+    if (args.task_id) {
+      item.taskID = String(args.task_id)
+      delegationByTaskID.set(item.taskID, item)
+      const child = stateFor(item.taskID)
+      if (child) {
+        child.abortedByWatchdog = false
+        child.abortReason = undefined
+        child.status = "RUNNING"
+        child.createdAt = now()
+        markProgress(child.id)
+      }
+    }
+    item.attempts += 1
+    item.status = "running"
+    return item
+  }
+
+  const recordDelegationOutcome = (parentID, part) => {
+    if (!part || part.type !== "tool" || !DELEGATION_TOOLS.has(part.tool)) return
+    const toolState = part.state
+    if (!toolState || !["completed", "error"].includes(toolState.status)) return
+    const args = toolState.input ?? {}
+    const taskID =
+      toolState.metadata?.sessionId ??
+      toolState.metadata?.sessionID ??
+      toolState.metadata?.task_id ??
+      args?.task_id
+    const item = delegationForArgs(parentID, taskID ? { ...args, task_id: taskID } : args)
+    if (taskID) {
+      item.taskID = String(taskID)
+      delegationByTaskID.set(item.taskID, item)
+    }
+    if (toolState.status === "completed") {
+      item.status = "complete"
+      item.lastFailure = ""
+    } else {
+      const reason = normalizeError(toolState.error)
+      item.failures += 1
+      item.lastFailure = reason
+      item.status =
+        delegationFailureClass(reason) === "retryable" && item.failures <= maxSubagentRetries
+          ? "retryable_failed"
+          : "failed"
+    }
+    // Receiving a child terminal outcome is material progress for the parent,
+    // including cancellation/failure. It must get a fresh supervision window.
+    markProgress(parentID)
+  }
+
+  function consumeOldestReservation(parentID, childID) {
     let selected
     for (const [callID, reservation] of reservations.entries()) {
       if (reservation.parentID !== parentID) continue
       if (!selected || reservation.createdAt < selected[1].createdAt) selected = [callID, reservation]
     }
-    if (selected) reservations.delete(selected[0])
+    if (!selected) return
+    reservations.delete(selected[0])
+    const item = selected[1].taskKey && delegations.get(selected[1].taskKey)
+    if (item && childID) {
+      item.taskID = childID
+      delegationByTaskID.set(childID, item)
+    }
   }
 
   const registerChild = (id, parentID, status) => {
@@ -132,7 +229,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     if (status) state.status = statusName(status)
     if (!childrenByParent.has(parentID)) childrenByParent.set(parentID, new Set())
     childrenByParent.get(parentID).add(id)
-    if (!wasKnown) consumeOldestReservation(parentID)
+    if (!wasKnown) consumeOldestReservation(parentID, id)
     return !wasKnown
   }
 
@@ -150,6 +247,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     return envName ? intEnv(envName, globalParallel) : globalParallel
   }
   const usedSlots = (parentID) => activeChildren(parentID).length + reservationCount(parentID)
+  const hasDelegatedChildren = (parentID) => (childrenByParent.get(parentID)?.size ?? 0) > 0
 
   const reconcileChildren = async (parentID) => {
     try {
@@ -163,13 +261,13 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     }
   }
 
-  const acquireSlot = async (parentID, callID) => {
+  const acquireSlot = async (parentID, callID, taskKey) => {
     const startedAt = now()
     while (true) {
       await reconcileChildren(parentID)
       const limit = maxParallelFor(parentID)
       if (usedSlots(parentID) < limit) {
-        reservations.set(callID, { parentID, createdAt: now() })
+        reservations.set(callID, { parentID, createdAt: now(), taskKey })
         return
       }
       if (now() - startedAt >= queueTimeoutMs) {
@@ -191,12 +289,22 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     try {
       const dir = stateDirectory()
       fs.mkdirSync(dir, { recursive: true })
+      const delegation = delegationByTaskID.get(state.id)
       const payload = {
         sessionID: state.id,
         parentID: state.parentID,
         agent: sessionAgents.get(state.id),
         status: statusName(state.status),
         abortReason: state.abortReason,
+        delegation: delegation
+          ? {
+              key: delegation.key,
+              attempts: delegation.attempts,
+              failures: delegation.failures,
+              status: delegation.status,
+              lastFailure: delegation.lastFailure,
+            }
+          : undefined,
         providerReportedCost: state.cost,
         startedAt: new Date(state.createdAt).toISOString(),
         lastActivityAt: new Date(state.lastActivityAt).toISOString(),
@@ -295,11 +403,23 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     }
     for (const state of sessions.values()) {
       if (!state.parentID || TERMINAL.has(statusName(state.status)) || state.abortedByWatchdog || state.waitingPermission) continue
+
+      // A lead waiting for an active child is healthy supervision, not a stall.
+      // The leaf has its own watchdog. Killing the parent here would discard
+      // completed sibling handoffs and force the whole council to restart.
+      if (usedSlots(state.id) > 0) {
+        state.lastActivityAt = ts
+        continue
+      }
+
       if (maxChildCost > 0 && state.cost > maxChildCost) {
         await abortSession(state, `child provider-reported cost exceeded (${state.cost.toFixed(4)} > ${maxChildCost})`)
         continue
       }
-      if (ts - state.createdAt > maxDurationMs) {
+      // Absolute child duration remains useful for leaves. Leads that have
+      // delegated children are bounded by step caps + stall detection instead,
+      // so long-running councils are not killed immediately after a child ends.
+      if (!hasDelegatedChildren(state.id) && ts - state.createdAt > maxDurationMs) {
         await abortSession(state, "max-duration-exceeded")
         continue
       }
@@ -330,6 +450,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         state.lastActivityAt = now()
       }
       if (["file.edited", "session.diff", "todo.updated"].includes(type)) markProgress(id)
+      if (type === "message.part.updated") recordDelegationOutcome(id, eventProps(event).part)
       if (type === "permission.asked") {
         state.waitingPermission = true
         state.status = "WAITING_PERMISSION"
@@ -364,14 +485,18 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       if (!sessionID) return
       const state = stateFor(sessionID)
       state.lastActivityAt = now()
-      const args = output?.args ?? input?.args
+      const args = output?.args ?? input?.args ?? {}
       const callID = callIds.begin({
         nativeID: nativeCallID(input),
         sessionID,
         tool: input?.tool,
         args: input?.args,
       })
-      if (["task", "subagent"].includes(input?.tool)) await acquireSlot(sessionID, callID)
+      if (DELEGATION_TOOLS.has(input?.tool)) {
+        const delegation = prepareDelegation(sessionID, args)
+        markProgress(sessionID)
+        await acquireSlot(sessionID, callID, delegation.key)
+      }
       inFlightTools.set(callID, { sessionID, tool: input?.tool, args: stableString(args) })
     },
     "tool.execute.after": async (input, output) => {
@@ -383,7 +508,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         tool: input?.tool,
         args: input?.args,
       })
-      if (["task", "subagent"].includes(input?.tool)) reservations.delete(callID)
+      if (DELEGATION_TOOLS.has(input?.tool)) reservations.delete(callID)
       const state = stateFor(sessionID)
       state.lastActivityAt = now()
       const failed = Boolean(output?.error ?? output?.status === "error")
@@ -403,7 +528,8 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         failed,
       })
       inFlightTools.delete(callID)
-      if (!failed && !same) markStateProgress(sessionID)
+      if (DELEGATION_TOOLS.has(input?.tool)) markProgress(sessionID)
+      else if (!failed && !same) markStateProgress(sessionID)
       if (state.parentID && same && count >= maxSameError) {
         await abortSession(state, `same tool call produced the same result ${count} times`)
       }
