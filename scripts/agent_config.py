@@ -162,6 +162,8 @@ def _validate_graph(specs: dict[str, AgentSpec]) -> None:
     if len(primary) != 1:
         raise SystemExit(f"Expected exactly one primary agent, found: {primary}")
     root = primary[0]
+    if specs[root].parents:
+        raise SystemExit(f"Primary agent {root} cannot have parents")
 
     children = _children_by_parent(specs)
 
@@ -182,30 +184,25 @@ def _validate_graph(specs: dict[str, AgentSpec]) -> None:
     for name in specs:
         visit(name)
 
-    reachable: dict[str, int] = {root: 0}
-    queue = [root]
-    while queue:
-        parent = queue.pop(0)
-        depth = reachable[parent]
-        for child in children[parent]:
-            next_depth = depth + 1
-            current = reachable.get(child)
-            if current is None or next_depth < current:
-                reachable[child] = next_depth
-                queue.append(child)
+    reachable: set[str] = set()
+    max_depth: dict[str, int] = {}
 
-    unreachable = sorted(set(specs) - set(reachable))
+    def walk(name: str, depth: int) -> None:
+        reachable.add(name)
+        max_depth[name] = max(depth, max_depth.get(name, depth))
+        if depth > 2:
+            raise SystemExit(f"Delegation depth exceeds 2 on path ending at {name} (depth={depth})")
+        for child in children[name]:
+            walk(child, depth + 1)
+
+    walk(root, 0)
+    unreachable = sorted(set(specs) - reachable)
     if unreachable:
         raise SystemExit(
             "Agents are not reachable from the primary routing graph: "
             + ", ".join(unreachable)
             + ". Add a parent in each agent.json."
         )
-
-    too_deep = sorted(name for name, depth in reachable.items() if depth > 2)
-    if too_deep:
-        details = ", ".join(f"{name}={reachable[name]}" for name in too_deep)
-        raise SystemExit(f"Delegation depth exceeds 2: {details}")
 
 
 def load_agents() -> dict[str, AgentSpec]:
@@ -325,3 +322,22 @@ def model_tiers(specs: dict[str, AgentSpec] | None = None) -> dict[str, str]:
 def model_profiles(specs: dict[str, AgentSpec] | None = None) -> dict[str, str]:
     specs = specs or load_agents()
     return {spec.model_env: spec.model_profile for spec in specs.values()}
+
+
+def main() -> int:
+    specs = load_agents()
+    children = children_by_parent(specs)
+    print(f"{len(specs)} agents")
+    for name in sorted(specs):
+        spec = specs[name]
+        parents = ",".join(spec.parents) or "-"
+        delegated = ",".join(children[name]) or "-"
+        print(
+            f"{name:<24} tier={spec.tier:<6} model={spec.model_env:<28} "
+            f"parents={parents} children={delegated}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
