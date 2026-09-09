@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { Plugin } from "@opencode/plugin"
+import { Plugin } from "@opencode-ai/plugin"
 import { createPlanApprovalGate } from "./plan-approval-core.js"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
