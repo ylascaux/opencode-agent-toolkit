@@ -88,9 +88,12 @@ def build(specs, *, v2: bool) -> dict:
         return {
             "$schema": "https://opencode.ai/config.json",
             "default_agent": primary,
+            # V2 uses this shell for terminal and shell tool calls, including child sessions.
+            # The wrapper is a pass-through when sandboxing is disabled and fail-closed when enabled.
+            "shell": str(ROOT / "scripts" / "sandbox-shell-v2"),
             "agents": agents,
             "commands": commands,
-            "plugins": ["./runtime/plugins/sandbox-v2.ts"],
+            "plugins": [],
             "experimental": {"subagent_depth": 2},
         }
     return {
