@@ -1,0 +1,16 @@
+{
+  "description": "Use to audit whether completion or correctness claims are actually supported by reproducible evidence. Do not implement changes.",
+  "mode": "subagent",
+  "model_env": "MODEL_EVIDENCE_AUDITOR",
+  "tier": "medium",
+  "model_profile": "review",
+  "steps": 16,
+  "parents": [
+    "meta-router",
+    "orchestrator",
+    "review-lead",
+    "platform-architect",
+    "security-lead"
+  ],
+  "opencode": {}
+}

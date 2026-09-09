@@ -1,0 +1,12 @@
+{
+  "description": "Use only when isolation requires mocks, fakes, fixtures or builders. Do not mock behavior that should be integration-tested.",
+  "mode": "subagent",
+  "model_env": "MODEL_MOCK_GENERATOR",
+  "tier": "low",
+  "model_profile": "fast",
+  "steps": 16,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

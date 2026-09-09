@@ -1,0 +1,13 @@
+{
+  "description": "Use for Terraform/OpenTofu/Terragrunt implementation and review. Do not apply or destroy infrastructure.",
+  "mode": "subagent",
+  "model_env": "MODEL_TERRAFORM",
+  "tier": "medium",
+  "model_profile": "coding",
+  "steps": 24,
+  "parents": [
+    "orchestrator",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

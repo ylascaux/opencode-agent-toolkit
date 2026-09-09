@@ -1,0 +1,14 @@
+{
+  "description": "Use for Kubernetes/EKS workload, cluster and scheduling concerns. Do not use for generic AWS services unrelated to Kubernetes.",
+  "mode": "subagent",
+  "model_env": "MODEL_KUBERNETES",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 20,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

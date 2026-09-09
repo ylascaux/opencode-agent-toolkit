@@ -1,0 +1,13 @@
+{
+  "description": "Use for latency, throughput, concurrency, memory and cost-performance analysis. Do not use for generic correctness review.",
+  "mode": "subagent",
+  "model_env": "MODEL_PERFORMANCE",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead"
+  ],
+  "opencode": {}
+}

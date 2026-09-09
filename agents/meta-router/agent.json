@@ -1,0 +1,10 @@
+{
+  "description": "Use for every incoming task to classify risk/complexity and choose the minimum sufficient route. Do not implement changes directly.",
+  "mode": "primary",
+  "model_env": "MODEL_META_ROUTER",
+  "tier": "medium",
+  "model_profile": "general",
+  "steps": 20,
+  "parents": [],
+  "opencode": {}
+}

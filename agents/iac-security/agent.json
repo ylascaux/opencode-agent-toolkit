@@ -1,0 +1,15 @@
+{
+  "description": "Use for Terraform/Terragrunt/Kubernetes/AWS security posture. Do not duplicate generic application security review.",
+  "mode": "subagent",
+  "model_env": "MODEL_IAC_SECURITY",
+  "tier": "high",
+  "model_profile": "security",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect",
+    "security-lead"
+  ],
+  "opencode": {}
+}

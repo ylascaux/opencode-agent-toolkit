@@ -1,0 +1,12 @@
+{
+  "description": "Use for multi-step delivery, fixes, migrations and incidents that require several engineering specialists. Do not act as the final independent reviewer.",
+  "mode": "all",
+  "model_env": "MODEL_ORCHESTRATOR",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 32,
+  "parents": [
+    "meta-router"
+  ],
+  "opencode": {}
+}

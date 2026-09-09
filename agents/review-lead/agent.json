@@ -1,0 +1,12 @@
+{
+  "description": "Use for independent review of a change or branch when multiple review dimensions may matter. Do not implement fixes.",
+  "mode": "subagent",
+  "model_env": "MODEL_REVIEW_LEAD",
+  "tier": "medium",
+  "model_profile": "review",
+  "steps": 20,
+  "parents": [
+    "meta-router"
+  ],
+  "opencode": {}
+}

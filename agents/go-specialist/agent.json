@@ -1,0 +1,12 @@
+{
+  "description": "Use for Go services, CLIs and libraries. Do not use when the task is primarily Terraform, Python or generic architecture.",
+  "mode": "subagent",
+  "model_env": "MODEL_GO",
+  "tier": "medium",
+  "model_profile": "coding",
+  "steps": 22,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

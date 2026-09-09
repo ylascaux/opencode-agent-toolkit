@@ -1,0 +1,13 @@
+{
+  "description": "Use for HTTP/API/event/schema compatibility, versioning, idempotency, retries and consumer impact. Do not use for generic code style review.",
+  "mode": "subagent",
+  "model_env": "MODEL_API_CONTRACT",
+  "tier": "medium",
+  "model_profile": "review",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead"
+  ],
+  "opencode": {}
+}

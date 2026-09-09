@@ -1,0 +1,13 @@
+{
+  "description": "Use for independent read-only correctness review of code changes. Do not implement fixes or substitute for AppSec/IaC security specialists.",
+  "mode": "subagent",
+  "model_env": "MODEL_REVIEWER",
+  "tier": "medium",
+  "model_profile": "review",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead"
+  ],
+  "opencode": {}
+}

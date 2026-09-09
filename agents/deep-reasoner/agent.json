@@ -1,0 +1,16 @@
+{
+  "description": "Use for high-risk, high-complexity, irreversible or low-confidence decisions. Do not replace ordinary specialists for routine work.",
+  "mode": "subagent",
+  "model_env": "MODEL_DEEP_REASONER",
+  "tier": "high",
+  "model_profile": "deep",
+  "steps": 24,
+  "parents": [
+    "meta-router",
+    "orchestrator",
+    "review-lead",
+    "platform-architect",
+    "security-lead"
+  ],
+  "opencode": {}
+}

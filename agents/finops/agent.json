@@ -1,0 +1,14 @@
+{
+  "description": "Use for AWS/platform cost drivers, unit economics and cost-performance trade-offs. Do not reduce reliability or security silently to save cost.",
+  "mode": "subagent",
+  "model_env": "MODEL_FINOPS",
+  "tier": "medium",
+  "model_profile": "general",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

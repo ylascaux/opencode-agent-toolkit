@@ -1,0 +1,14 @@
+{
+  "description": "Use for reliability, SLOs, capacity, failure modes, DR and operational readiness. Do not use for ordinary code review.",
+  "mode": "subagent",
+  "model_env": "MODEL_SRE",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

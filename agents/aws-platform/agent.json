@@ -1,0 +1,14 @@
+{
+  "description": "Use for AWS architecture and managed-service trade-offs. Do not use for provider-agnostic application design.",
+  "mode": "subagent",
+  "model_env": "MODEL_AWS",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 20,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

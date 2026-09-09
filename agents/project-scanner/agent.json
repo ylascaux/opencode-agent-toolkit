@@ -1,0 +1,14 @@
+{
+  "description": "Use to discover architecture facts from repositories or normalized inventory JSON. Do not modify scanned projects or invent dependencies.",
+  "mode": "subagent",
+  "model_env": "MODEL_PROJECT_SCANNER",
+  "tier": "medium",
+  "model_profile": "fast",
+  "steps": 20,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

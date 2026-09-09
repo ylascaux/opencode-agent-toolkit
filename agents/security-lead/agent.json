@@ -1,0 +1,12 @@
+{
+  "description": "Use for defense-in-depth security assessment when more than one security surface may be affected. Do not perform exploitation or code changes itself.",
+  "mode": "subagent",
+  "model_env": "MODEL_SECURITY_LEAD",
+  "tier": "high",
+  "model_profile": "security",
+  "steps": 20,
+  "parents": [
+    "meta-router"
+  ],
+  "opencode": {}
+}

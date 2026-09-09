@@ -1,0 +1,14 @@
+{
+  "description": "Use for logs, metrics, traces, dashboards, alerting and telemetry design. Do not use as a substitute for root-cause debugging.",
+  "mode": "subagent",
+  "model_env": "MODEL_OBSERVABILITY",
+  "tier": "medium",
+  "model_profile": "general",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

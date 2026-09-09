@@ -1,0 +1,14 @@
+{
+  "description": "Use for PostgreSQL/Aurora schema, SQL, indexes, migrations, HA, backups and database runtime behavior. Do not use for DynamoDB or generic AWS architecture.",
+  "mode": "subagent",
+  "model_env": "MODEL_DATABASE",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

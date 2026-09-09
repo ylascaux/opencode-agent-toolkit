@@ -1,0 +1,14 @@
+{
+  "description": "Use for dependency, package, image, build and CI supply-chain risk. Do not use for unrelated application vulnerabilities.",
+  "mode": "subagent",
+  "model_env": "MODEL_SUPPLY_CHAIN",
+  "tier": "medium",
+  "model_profile": "review",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "security-lead"
+  ],
+  "opencode": {}
+}
