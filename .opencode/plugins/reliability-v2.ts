@@ -2,6 +2,12 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Plugin } from "@opencode/plugin"
+import {
+  createCallIdTracker,
+  createProgressAwareRepeatDetector,
+  providerRetryDecision,
+  stableString,
+} from "./reliability-core.js"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const POLICY = JSON.parse(fs.readFileSync(path.join(ROOT, "reliability.json"), "utf8"))
@@ -14,7 +20,6 @@ const profileName = () => {
   return POLICY.profiles?.[name] ? name : POLICY.default_profile || "normal"
 }
 const defaults = () => POLICY.profiles[profileName()]
-
 const intEnv = (name: string, fallback: number, min = 1) => {
   const raw = process.env[name]
   if (raw === undefined || raw === "") return fallback
@@ -27,7 +32,6 @@ const numberEnv = (name: string, fallback: number, min = 0) => {
   const value = Number(raw)
   return Number.isFinite(value) && value >= min ? value : fallback
 }
-
 const normalize = (value: any) =>
   String(value ?? "")
     .toLowerCase()
@@ -36,21 +40,6 @@ const normalize = (value: any) =>
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 500)
-
-const sorted = (value: any): any => {
-  if (Array.isArray(value)) return value.map(sorted)
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sorted(value[key])]))
-  }
-  return value
-}
-const stableString = (value: any) => {
-  try {
-    return JSON.stringify(sorted(value))
-  } catch {
-    return String(value)
-  }
-}
 const statusName = (value: any) => {
   if (!value) return "RUNNING"
   if (typeof value === "string") return value.toUpperCase()
@@ -93,7 +82,9 @@ export default Plugin.define({
     const reservations = new Map<string, { parentID: string; createdAt: number }>()
     const sessionAgents = new Map<string, string>()
     const messageCosts = new Map<string, number>()
-    const toolCalls = new Map<string, any>()
+    const inFlightTools = new Map<string, any>()
+    const callIds = createCallIdTracker()
+    const repeatDetector = createProgressAwareRepeatDetector()
 
     const ensure = (id?: string) => {
       if (!id) return undefined
@@ -114,6 +105,19 @@ export default Plugin.define({
         states.set(id, state)
       }
       return state
+    }
+
+    const markStateProgress = (id?: string) => {
+      const state = ensure(id)
+      if (!state) return
+      state.lastActivityAt = now()
+      state.lastProgressAt = now()
+      state.sameErrorCount = 0
+      state.lastError = ""
+    }
+    const markProgress = (id?: string) => {
+      markStateProgress(id)
+      repeatDetector.markProgress(id)
     }
 
     const consumeOldestReservation = (parentID: string) => {
@@ -147,7 +151,6 @@ export default Plugin.define({
     }
     const reservationCount = (parentID: string) =>
       [...reservations.values()].filter((reservation) => reservation.parentID === parentID).length
-
     const maxParallelFor = (parentID: string) => {
       const agent = sessionAgents.get(parentID)
       const envName = agent && POLICY.lead_parallel_env?.[agent]
@@ -183,7 +186,9 @@ export default Plugin.define({
           return
         }
         if (now() - startedAt >= queueTimeoutMs) {
-          throw new Error(`Reliability guard: subagent queue timed out after ${Math.floor(queueTimeoutMs / 1000)}s while waiting for one of ${limit} slots.`)
+          throw new Error(
+            `Reliability guard: subagent queue timed out after ${Math.floor(queueTimeoutMs / 1000)}s while waiting for one of ${limit} slots.`,
+          )
         }
         await sleep(queuePollMs)
       }
@@ -243,7 +248,6 @@ export default Plugin.define({
       }
       return id
     }
-
     const updateCost = (event: any) => {
       const p = event?.properties ?? event?.data ?? event ?? {}
       const info = p.info ?? p.message ?? p
@@ -256,7 +260,6 @@ export default Plugin.define({
       for (const [key, cost] of messageCosts.entries()) if (key.startsWith(`${sessionID}:`)) total += cost
       ensure(sessionID)!.cost = total
     }
-
     const enforceCost = async (sessionID: string) => {
       const state = ensure(sessionID)
       if (!state) return
@@ -268,9 +271,10 @@ export default Plugin.define({
       const family = [...states.values()].filter((candidate) => rootID(candidate.id) === root)
       const total = family.reduce((sum, candidate) => sum + (candidate.cost || 0), 0)
       if (total <= maxRunCost) return
-      for (const candidate of family) await abort(candidate, `run provider-reported cost exceeded (${total.toFixed(4)} > ${maxRunCost})`)
+      for (const candidate of family) {
+        await abort(candidate, `run provider-reported cost exceeded (${total.toFixed(4)} > ${maxRunCost})`)
+      }
     }
-
     const recordFailure = async (sessionID: string, value: any) => {
       const state = ensure(sessionID)
       if (!state) return
@@ -282,17 +286,11 @@ export default Plugin.define({
         state.sameErrorCount = 1
       }
       const fatalProvider = /\b(400|401|403|404)\b|unauth|forbidden|invalid[ -]?request|model.+not found|credential/i.test(signature)
-      if (state.parentID && fatalProvider) await abort(state, `non-retryable provider/configuration failure: ${signature}`)
-      else if (state.parentID && state.sameErrorCount >= maxSameError) await abort(state, `same failure repeated ${state.sameErrorCount} times`)
-    }
-
-    const markProgress = (id?: string) => {
-      const state = ensure(id)
-      if (!state) return
-      state.lastActivityAt = now()
-      state.lastProgressAt = now()
-      state.sameErrorCount = 0
-      state.lastError = ""
+      if (state.parentID && fatalProvider) {
+        await abort(state, `non-retryable provider/configuration failure: ${signature}`)
+      } else if (state.parentID && state.sameErrorCount >= maxSameError) {
+        await abort(state, `same failure repeated ${state.sameErrorCount} times`)
+      }
     }
 
     const controller = new AbortController()
@@ -307,8 +305,9 @@ export default Plugin.define({
         if (!state) continue
         if (info?.agent ?? p.agent) sessionAgents.set(id, info?.agent ?? p.agent)
         if (parentID) registerChild(id, parentID, p.status)
-
-        if (["message.updated", "message.part.updated", "session.updated", "session.status", "todo.updated"].includes(type)) state.lastActivityAt = now()
+        if (["message.updated", "message.part.updated", "session.updated", "session.status", "todo.updated"].includes(type)) {
+          state.lastActivityAt = now()
+        }
         if (["file.edited", "session.diff", "todo.updated"].includes(type)) markProgress(id)
         if (type === "permission.asked") {
           state.waitingPermission = true
@@ -343,7 +342,9 @@ export default Plugin.define({
 
     const timer = setInterval(async () => {
       const ts = now()
-      for (const [callID, reservation] of reservations.entries()) if (ts - reservation.createdAt > queueTimeoutMs) reservations.delete(callID)
+      for (const [callID, reservation] of reservations.entries()) {
+        if (ts - reservation.createdAt > queueTimeoutMs) reservations.delete(callID)
+      }
       for (const state of states.values()) {
         if (!state.parentID || TERMINAL.has(statusName(state.status)) || state.aborted || state.waitingPermission) continue
         if (maxChildCost > 0 && state.cost > maxChildCost) {
@@ -364,45 +365,57 @@ export default Plugin.define({
       if (!sessionID) return
       if (event.agent) sessionAgents.set(sessionID, event.agent)
       ensure(sessionID)!.lastActivityAt = now()
-      const callID = event.callID ?? event.callId ?? `${sessionID}:${event.tool}:${now()}`
+      const callID = callIds.begin({
+        nativeID: event.callID ?? event.callId ?? event.toolCallID,
+        sessionID,
+        tool: event.tool,
+        args: event.args,
+      })
       if (["subagent", "task"].includes(event.tool)) await acquireSlot(sessionID, callID)
-      toolCalls.set(callID, { sessionID, tool: event.tool, args: stableString(event.args) })
+      inFlightTools.set(callID, { sessionID, tool: event.tool, args: stableString(event.args) })
     })
 
     await (ctx as any).tool.hook("execute.after", async (event: any) => {
       const sessionID = event.sessionID ?? event.sessionId
       if (!sessionID) return
-      const callID = event.callID ?? event.callId ?? `${sessionID}:${event.tool}`
+      const callID = callIds.end({
+        nativeID: event.callID ?? event.callId ?? event.toolCallID,
+        sessionID,
+        tool: event.tool,
+        args: event.args,
+      })
       if (["subagent", "task"].includes(event.tool)) reservations.delete(callID)
       const state = ensure(sessionID)!
       state.lastActivityAt = now()
-      if (event.status === "error" || event.error) await recordFailure(sessionID, event.error ?? event)
-
-      const before = toolCalls.get(callID) ?? { sessionID, tool: event.tool, args: stableString(event.args) }
+      const failed = event.status === "error" || Boolean(event.error)
+      if (failed) await recordFailure(sessionID, event.error ?? event)
+      const before = inFlightTools.get(callID) ?? {
+        sessionID,
+        tool: event.tool,
+        args: stableString(event.args),
+      }
       const result = normalize(event.output ?? event.result ?? event.metadata ?? event.error ?? event)
-      const key = `${sessionID}:${before.tool}`
-      const previous = toolCalls.get(key)
-      const same = previous && previous.args === before.args && previous.result === result && result
-      const count = same ? previous.count + 1 : 1
-      toolCalls.set(key, { ...before, result, count })
-      toolCalls.delete(callID)
-      if (event.status !== "error" && !event.error && !same) markProgress(sessionID)
-      if (state.parentID && same && count >= maxSameError) await abort(state, `same tool call produced the same result ${count} times`)
+      const { same, count } = repeatDetector.observe({
+        sessionID,
+        tool: before.tool,
+        args: before.args,
+        result,
+        failed,
+      })
+      inFlightTools.delete(callID)
+      if (!failed && !same) markStateProgress(sessionID)
+      if (state.parentID && same && count >= maxSameError) {
+        await abort(state, `same tool call produced the same result ${count} times`)
+      }
     })
 
     await (ctx as any).session.hook("retry", (event: any) => {
-      const status = event.error?.status
-      if ([400, 401, 403, 404].includes(status ?? 0)) {
-        event.decision = { retry: false }
-        return
-      }
-      if (event.attempt > maxRetries + 1) {
-        event.decision = { retry: false }
-        return
-      }
-      if (status === 429 || (status !== undefined && status >= 500)) {
-        event.decision = { retry: true, delay: Math.min(10_000, 1000 * event.attempt) }
-      }
+      const decision = providerRetryDecision({
+        status: event.error?.status,
+        attempt: event.attempt,
+        maxRetries,
+      })
+      if (decision) event.decision = decision
     })
 
     return () => {
