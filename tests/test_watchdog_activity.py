@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class WatchdogActivityTests(unittest.TestCase):
     def test_active_wrappers_disable_heuristic_auto_kills(self):
         for relative in [
-            Path(".opencode/plugins/reliability-v1.js"),
-            Path(".opencode/plugins/reliability-v2.ts"),
+            Path("runtime/plugins/reliability-v1.js"),
+            Path("runtime/plugins/reliability-v2.ts"),
         ]:
             text = (ROOT / relative).read_text()
             for needle in [
