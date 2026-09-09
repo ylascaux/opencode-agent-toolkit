@@ -1,42 +1,65 @@
-# Agent architecture
+# Agents
 
-The toolkit has **37 agents**, but they are not peers. The hierarchy is intentional.
+The toolkit currently defines 37 agents. Each agent is a self-contained component under `agents/<name>/`.
 
-## Control plane
+For the complete configuration format, see [AGENT_CONFIGURATION.md](./AGENT_CONFIGURATION.md).
 
-| Agent | Purpose |
-|---|---|
-| `meta-router` | classifies work and selects one top-level path |
-| `orchestrator` | multi-step delivery/incident execution |
-| `review-lead` | selects independent review dimensions |
-| `security-lead` | selects security gates |
-| `platform-architect` | leads the architecture council |
-| `arbiter` | resolves material disagreement |
-| `deep-reasoner` | escalates high-risk/low-confidence decisions |
-| `evidence-auditor` | verifies completion claims |
+## Directory layout
 
-`meta-router` can invoke only the four execution/lead doors plus the three escalation/audit agents. It does not get a flat catalogue of every specialist.
+```text
+agents/<name>/
+├── agent.json
+├── prompt.md
+└── permissions.json
+```
 
-## Delivery leaves
+Shared defaults live under:
 
-`brainstorm`, `planner`, `builder`, `tester`, `mock-generator`, `debugger`, `python-specialist`, `go-specialist`, `terraform-terragrunt`, `cicd`.
+```text
+agents/_defaults/
+├── agent.json
+├── prompt.md
+└── permissions.json
+```
 
-## Review leaves
+The runtime config is generated; do not edit `.generated/`, `opencode.jsonc`, or `opencode.v2.jsonc` as source files.
 
-`reviewer`, `api-contract`, `performance`, plus domain/security leaves selected by `review-lead`.
+## Responsibilities
 
-## Architecture/platform leaves
+`meta-router` is the primary control-plane agent. It classifies each request and routes to the minimum sufficient lead or specialist.
 
-`project-scanner`, `architecture-designer`, `aws-platform`, `terraform-terragrunt`, `kubernetes`, `cicd`, `sre`, `observability`, `finops`, `database`, `networking`, `threat-model`, `iac-security`.
+The normal hierarchy remains deliberately shallow:
 
-## Security leaves
+```text
+meta-router
+  -> lead/orchestrator
+      -> leaf specialist
+```
 
-`threat-model`, `appsec`, `iac-security`, `supply-chain`, `secrets`, `pentest`.
+The maximum delegation depth is two.
 
-## Leaf invariant
+Topology is declared by the child through `agent.json.parents`. This lets a new agent join one or more leads without modifying a central map.
 
-Every leaf has an explicit deny-all `task`/`subagent` policy. Only the five routing/orchestration agents have exceptions. This prevents bypassing the control plane.
+## Common lead agents
 
-## Prompt contract
+- `orchestrator`: delivery, fixes, migrations and incidents
+- `review-lead`: independent review
+- `platform-architect`: platform-wide architecture
+- `security-lead`: defense-in-depth security assessment
 
-Every generated prompt contains Role, Operating method, Non-negotiables, Evidence discipline, Stop conditions and Handoff sections. Agent-specific behavior remains defined in `agents/manifest.json`.
+Escalation/evidence specialists such as `arbiter`, `deep-reasoner`, and `evidence-auditor` can be reachable from several leads.
+
+## Add an agent
+
+```bash
+just new-agent cloudflare --parent platform-architect --tier medium --model-profile reasoning
+```
+
+Then edit the generated directory and validate with:
+
+```bash
+just config
+just check
+```
+
+`just agents` shows the discovered catalog, models, parents and children.
