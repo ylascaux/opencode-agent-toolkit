@@ -38,6 +38,28 @@ Override for one command with `just v1` or `just v2`.
 
 The generator translates the same logical policy to both formats.
 
+## Native V2 context compaction
+
+OpenCode V2 provides built-in context compaction, so the toolkit does not install or depend on third-party DCP/context-compression plugins.
+
+The generated `opencode.v2.jsonc` explicitly enables the documented V2 defaults:
+
+```jsonc
+{
+  "compaction": {
+    "auto": true,
+    "keep": {
+      "tokens": 15000
+    },
+    "buffer": 20000
+  }
+}
+```
+
+This keeps automatic preflight compaction and one-shot context-overflow recovery enabled while preserving approximately 15k recent tokens and a 20k safety buffer. The values are intentionally explicit in the generated configuration so toolkit behavior stays deterministic across installations.
+
+Do not add V1-only context-pruning plugins such as DCP to the V2 configuration unless they gain explicit V2 compatibility and provide a capability that native compaction does not cover.
+
 ## Nested delegation
 
 The intended hierarchy includes two delegation levels:
