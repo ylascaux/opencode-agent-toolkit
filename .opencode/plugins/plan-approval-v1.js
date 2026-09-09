@@ -38,19 +38,21 @@ const blockedMessage = (decision) => [
 export const PlanApprovalV1Plugin = async () => {
   const gate = createPlanApprovalGate({ mode: effectiveMode() })
   const messageRoles = new Map()
-  const pendingText = new Map()
+  const pendingAssistantText = new Map()
 
-  const processMessageText = (messageID, sessionID, text) => {
+  const processAssistantText = (messageID, sessionID, text) => {
     const role = messageRoles.get(messageID)
     if (!role) {
-      pendingText.set(messageID, { sessionID, text })
+      pendingAssistantText.set(messageID, { sessionID, text })
       return
     }
-    if (role === "user") gate.onUserMessage(sessionID, text, messageID)
     if (role === "assistant") gate.onAssistantText(sessionID, text, messageID)
   }
 
   return {
+    // V1 exposes the complete user turn here. Keep this as the single source of
+    // root-user approval/rejection so message events cannot process the same
+    // short approval twice under a different deduplication key.
     "chat.message": async (input, output) => {
       const sessionID = hookSessionID(input)
       if (!sessionID) return
@@ -70,20 +72,22 @@ export const PlanApprovalV1Plugin = async () => {
         const role = String(info?.role ?? "")
         if (messageID && role) {
           messageRoles.set(messageID, role)
-          const pending = pendingText.get(messageID)
+          const pending = pendingAssistantText.get(messageID)
           if (pending) {
-            processMessageText(messageID, pending.sessionID || sessionID, pending.text)
-            pendingText.delete(messageID)
+            processAssistantText(messageID, pending.sessionID || sessionID, pending.text)
+            pendingAssistantText.delete(messageID)
           }
         }
       }
 
+      // Events are used only to observe assistant plan/reapproval markers.
+      // User turns are deliberately ignored here; chat.message owns them.
       if (type === "message.part.updated") {
         const part = p.part
         if (part?.type !== "text" || typeof part?.text !== "string") return
         const messageID = String(part.messageID ?? p.messageID ?? "")
         const sessionID = String(part.sessionID ?? p.sessionID ?? id ?? "")
-        if (messageID && sessionID) processMessageText(messageID, sessionID, part.text)
+        if (messageID && sessionID) processAssistantText(messageID, sessionID, part.text)
       }
     },
     "tool.execute.before": async (input, output) => {
