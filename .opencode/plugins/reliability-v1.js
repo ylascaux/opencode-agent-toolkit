@@ -1,3 +1,4 @@
+import { applyNonInteractiveShellEnv } from "./non-interactive-shell.js"
 import { ReliabilityV1Plugin as LegacyReliabilityV1Plugin } from "./reliability-v1-legacy.js"
 
 const FAIL_OPEN_OVERRIDES = {
@@ -28,5 +29,18 @@ const withFailOpenWatchdog = async (run) => {
   }
 }
 
-export const ReliabilityV1Plugin = async (input) =>
-  withFailOpenWatchdog(() => LegacyReliabilityV1Plugin(input))
+export const ReliabilityV1Plugin = async (input) => {
+  const hooks = await withFailOpenWatchdog(() => LegacyReliabilityV1Plugin(input))
+  const inheritedShellEnv = hooks?.["shell.env"]
+
+  return {
+    ...hooks,
+    "shell.env": async (shellInput, output = {}) => {
+      if (typeof inheritedShellEnv === "function") {
+        await inheritedShellEnv(shellInput, output)
+      }
+      output.env ??= {}
+      applyNonInteractiveShellEnv(output.env)
+    },
+  }
+}
