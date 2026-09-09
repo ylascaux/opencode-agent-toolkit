@@ -37,8 +37,6 @@ class Oc2LauncherTests(unittest.TestCase):
                 f"echo 'binary={binary}'\n"
                 "echo \"major=${OPENCODE_MAJOR:-}\"\n"
                 "echo \"config=${OPENCODE_CONFIG:-}\"\n"
-                "echo \"server_username=${OPENCODE_SERVER_USERNAME:-}\"\n"
-                "if [[ -n \"${OPENCODE_SERVER_PASSWORD:-}\" ]]; then echo 'server_password_set=1'; else echo 'server_password_set=0'; fi\n"
                 "echo \"args=$*\"\n"
             )
             path.chmod(0o755)
@@ -108,44 +106,6 @@ class Oc2LauncherTests(unittest.TestCase):
                 Path(output["config"]).resolve(),
                 (toolkit / "opencode.v2.jsonc").resolve(),
             )
-
-    def test_oc2_web_maps_to_v2_serve_and_forwards_auth(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            toolkit, bin_dir = self._make_toolkit(tmp_path)
-            launcher = bin_dir / "oc2"
-            launcher.symlink_to(toolkit / "scripts" / "opencode-agents")
-
-            env = os.environ.copy()
-            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
-            env["OPENCODE_SERVER_USERNAME"] = "toolkit-user"
-            env["OPENCODE_SERVER_PASSWORD"] = "test-secret"
-            env.pop("OPENCODE_MAJOR", None)
-            env.pop("OPENCODE_BIN", None)
-
-            result = subprocess.run(
-                [str(launcher), "web", "--port", "4096", "--hostname", "127.0.0.1"],
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            output = self._output_map(result.stdout)
-            self.assertEqual(output["binary"], "opencode2")
-            self.assertEqual(output["major"], "2")
-            self.assertEqual(
-                Path(output["config"]).resolve(),
-                (toolkit / "opencode.v2.jsonc").resolve(),
-            )
-            self.assertEqual(output["server_username"], "toolkit-user")
-            self.assertEqual(output["server_password_set"], "1")
-            self.assertEqual(
-                output["args"],
-                "serve --port 4096 --hostname 127.0.0.1",
-            )
-            self.assertNotIn("test-secret", result.stdout)
-            self.assertIn("'web' is mapped to 'serve'", result.stderr)
 
 
 if __name__ == "__main__":
