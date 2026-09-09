@@ -134,4 +134,4 @@ refresh:
     bash ./scripts/bootstrap --refresh
 
 clean:
-    rm -rf .venv .generated architecture-inventory.json security-findings.json
+    rm -rf .venv .generated architecture-inventory.json

@@ -13,7 +13,7 @@ just models
 just doctor
 ```
 
-`just install` creates `.env` only when absent, creates `.venv`, installs scanner/API dependencies, generates both OpenCode configs, validates them, runs the tests and validates model-tier resolution.
+`just install` creates `.env` only when absent, creates `.venv`, installs scanner/API dependencies, generates both OpenCode configs, validates them, runs the Python tests and validates model-tier resolution. For complete validation, including the Node runtime tests, use `just check`.
 
 It does **not** install global packages, use `sudo`, edit shell startup files or modify `~/.config`.
 
@@ -103,7 +103,6 @@ LiteLLM is not required for normal usage. Future gateway-based discovery remains
 just configure-litellm
 ```
 
-The `just configure` alias remains for compatibility.
 
 ## Daily recipes
 

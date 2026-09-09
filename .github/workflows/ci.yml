@@ -29,17 +29,15 @@ jobs:
           node --check runtime/plugins/non-interactive-shell.js
           node --check runtime/plugins/plan-approval-core.js
           node --check runtime/plugins/sandbox-v1.js
-      - name: V1 watchdog and plan gate JavaScript syntax
+      - name: V1 watchdog JavaScript syntax
         run: |
           node --check runtime/plugins/reliability-v1.js
           node --check runtime/plugins/reliability-v1-legacy.js
-          node --check runtime/plugins/plan-approval-v1.js
-      - name: V2 watchdog, plan gate and sandbox TypeScript syntax
+      - name: V2 watchdog and plan gate TypeScript syntax
         run: |
           node --experimental-strip-types --check runtime/plugins/reliability-v2.ts
           node --experimental-strip-types --check runtime/plugins/reliability-v2-legacy.ts
           node --experimental-strip-types --check runtime/plugins/plan-approval-v2.ts
-          node --experimental-strip-types --check runtime/plugins/sandbox-v2.ts
           node --experimental-strip-types --check plugins/reliability-approval/rpc.ts
           node --experimental-strip-types --check plugins/reliability-approval/index.ts
           node --experimental-strip-types --check plugins/reliability-approval/tui.ts

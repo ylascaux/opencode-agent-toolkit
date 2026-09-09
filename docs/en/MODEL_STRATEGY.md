@@ -95,4 +95,4 @@ Tiers keep cost/quality policy stable while providers evolve. You can change thr
 
 ## LiteLLM
 
-LiteLLM is optional and not part of the default setup. `just configure` and `just configure-litellm` remain available for future gateway-based discovery. Credentials used for discovery are not persisted by the configurator.
+LiteLLM is optional and not part of the default setup. `just configure-litellm` remains available for future gateway-based discovery. Credentials used for discovery are not persisted by the configurator.
