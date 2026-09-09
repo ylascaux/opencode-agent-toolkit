@@ -21,24 +21,26 @@ jobs:
         run: python3 -m compileall -q scripts tests
       - name: Reliability, plan and sandbox core JavaScript syntax
         run: |
-          node --check .opencode/plugins/reliability-core.js
-          node --check .opencode/plugins/non-interactive-shell.js
-          node --check .opencode/plugins/plan-approval-core.js
-          node --check .opencode/plugins/sandbox-v1.js
+          node --check runtime/plugins/reliability-core.js
+          node --check runtime/plugins/non-interactive-shell.js
+          node --check runtime/plugins/plan-approval-core.js
+          node --check runtime/plugins/sandbox-v1.js
       - name: V1 watchdog and plan gate JavaScript syntax
         run: |
-          node --check .opencode/plugins/reliability-v1.js
-          node --check .opencode/plugins/reliability-v1-legacy.js
-          node --check .opencode/plugins/plan-approval-v1.js
+          node --check runtime/plugins/reliability-v1.js
+          node --check runtime/plugins/reliability-v1-legacy.js
+          node --check runtime/plugins/plan-approval-v1.js
       - name: V2 watchdog, plan gate and sandbox TypeScript syntax
         run: |
-          node --experimental-strip-types --check .opencode/plugins/reliability-v2.ts
-          node --experimental-strip-types --check .opencode/plugins/reliability-v2-legacy.ts
-          node --experimental-strip-types --check .opencode/plugins/plan-approval-v2.ts
-          node --experimental-strip-types --check .opencode/plugins/sandbox-v2.ts
+          node --experimental-strip-types --check runtime/plugins/reliability-v2.ts
+          node --experimental-strip-types --check runtime/plugins/reliability-v2-legacy.ts
+          node --experimental-strip-types --check runtime/plugins/plan-approval-v2.ts
+          node --experimental-strip-types --check runtime/plugins/sandbox-v2.ts
           node --experimental-strip-types --check plugins/reliability-approval/rpc.ts
           node --experimental-strip-types --check plugins/reliability-approval/index.ts
           node --experimental-strip-types --check plugins/reliability-approval/tui.ts
+      - name: Ensure runtime internals are not auto-discovered as V2 plugins
+        run: test ! -d .opencode/plugins
       - name: Generate configs and run tests
         run: just check
 
