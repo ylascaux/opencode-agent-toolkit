@@ -1,5 +1,8 @@
 {
   "default_profile": "normal",
+  "plan_approval": {
+    "default_mode": "changes"
+  },
   "profiles": {
     "cheap": {
       "max_parallel_subagents": 2,
