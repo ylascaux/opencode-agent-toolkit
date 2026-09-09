@@ -1,6 +1,0 @@
-{
-  "external_directory": {
-    "*": "ask",
-    "~/Projects/**": "allow"
-  }
-}
