@@ -96,3 +96,30 @@ export const providerRetryDecision = ({ status, attempt, maxRetries }) => {
   }
   return undefined
 }
+
+export const delegationFailureClass = (value) => {
+  const text = String(value ?? "").toLowerCase()
+  if (
+    /\b(400|401|403|404)\b|unauth|forbidden|invalid[ -]?request|model.+not found|credential|permission denied|not permitted|unknown agent|depth limit/.test(
+      text,
+    )
+  ) {
+    return "terminal"
+  }
+  if (
+    /task cancel(?:led|ed)|\bcancel(?:led|ed)\b|\babort(?:ed)?\b|no-material-progress|max-duration-exceeded|timed? out|timeout|child disappeared|session ended unexpectedly|connection reset|temporar/.test(
+      text,
+    )
+  ) {
+    return "retryable"
+  }
+  return "unknown"
+}
+
+export const delegationTaskKey = ({ parentID, args }) => {
+  const type = String(args?.subagent_type ?? args?.agent ?? args?.type ?? "subagent").trim().toLowerCase()
+  const description = String(args?.description ?? "").trim().toLowerCase()
+  const prompt = String(args?.prompt ?? "").trim().toLowerCase().replace(/\s+/g, " ")
+  const scope = description || prompt.slice(0, 240) || "unnamed"
+  return `${parentID ?? "unknown"}:${type}:${scope}`
+}
