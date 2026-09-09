@@ -1,6 +1,14 @@
 # Interface Web OpenCode
 
-Le launcher du toolkit supporte directement `web` et `serve`. Il n'existe pas de configuration OpenCode séparée pour le Web : `oc2 web` utilise la même configuration V2 générée, les mêmes agents, plugins, modèles et permissions que le TUI.
+Le toolkit conserve une commande pratique `oc2 web`, mais OpenCode 2 bêta ne possède actuellement **pas** de sous-commande native `web`. Dans la CLI V2, `web` serait sinon interprété comme un répertoire de projet. Le launcher traduit donc automatiquement :
+
+```text
+oc2 web ...
+        ↓
+opencode2 serve ...
+```
+
+Le serveur V2 expose l'API et sert l'interface navigateur. Il utilise la même configuration V2 générée, les mêmes agents, plugins, modèles, permissions et garde-fous que le TUI.
 
 ## Démarrage rapide
 
@@ -8,58 +16,68 @@ Depuis le projet sur lequel OpenCode doit travailler :
 
 ```bash
 cd ~/Projects/my-project
-oc2 web
-```
-
-Pour fixer le port :
-
-```bash
 oc2 web --port 4096
 ```
 
-Le launcher sélectionne automatiquement `opencode2` et exporte `OPENCODE_CONFIG` vers `opencode.v2.jsonc`.
+Le launcher sélectionne `opencode2`, exporte `OPENCODE_CONFIG` vers `opencode.v2.jsonc`, puis traduit `web` en `serve`.
 
-Depuis le repository du toolkit, les raccourcis équivalents sont :
+Tu peux aussi appeler la commande V2 native directement :
+
+```bash
+oc2 serve --hostname 127.0.0.1 --port 4096
+```
+
+Depuis le repository du toolkit :
 
 ```bash
 just web-v2 --port 4096
 just serve-v2 --port 4096
 ```
 
-`just web` et `just serve` utilisent la version OpenCode active définie par le toolkit.
+`just web` utilise la version OpenCode active. En V1 il appelle le vrai `opencode web`; en V2 le launcher applique l'alias `web -> serve`.
 
-## Authentification
+## Ouvrir l'interface
 
-OpenCode protège `web` et `serve` avec une authentification HTTP Basic lorsque `OPENCODE_SERVER_PASSWORD` est défini. Le nom d'utilisateur par défaut est `opencode`; il peut être remplacé avec `OPENCODE_SERVER_USERNAME`.
-
-Définis les variables dans ton shell avant de lancer le serveur :
-
-```bash
-export OPENCODE_SERVER_USERNAME="yoann"
-export OPENCODE_SERVER_PASSWORD="change-me"
-
-oc2 web --port 4096
-```
-
-Le launcher transmet naturellement ces variables au processus OpenCode. Il ne les copie pas dans la configuration générée et ne les écrit pas dans le repository.
-
-Évite de committer un mot de passe dans `.env`, `.env.local`, `opencode.v2.jsonc` ou tout autre fichier versionné. Pour un secret durable, utilise de préférence un gestionnaire de secrets ou le trousseau système, puis exporte la valeur au démarrage du shell.
-
-## Accès local uniquement
-
-Pour une utilisation uniquement sur le Mac :
+Contrairement à `opencode web` V1, `opencode2 serve` n'est pas une commande `web` dédiée. Avec un port fixe :
 
 ```bash
 oc2 web --hostname 127.0.0.1 --port 4096
 ```
 
-Puis ouvre :
+ouvre ensuite dans ton navigateur :
 
 ```text
 http://127.0.0.1:4096
 ```
 
-Même avec une écoute locale, garder `OPENCODE_SERVER_PASSWORD` défini est raisonnable si tu veux un comportement identique entre tes différents modes d'exécution.
+## Authentification
+
+Les variables d'environnement sont héritées par le launcher et ne sont jamais copiées dans la configuration générée :
+
+```bash
+export OPENCODE_SERVER_USERNAME="yoann"
+export OPENCODE_SERVER_PASSWORD="change-me"
+
+oc2 web --hostname 127.0.0.1 --port 4096
+```
+
+Ne committe pas le mot de passe dans `.env`, `.env.local`, `opencode.v2.jsonc` ou un autre fichier versionné. Pour un secret durable, préfère le trousseau système ou un gestionnaire de secrets puis exporte la valeur au démarrage.
+
+Attention : OpenCode 2 est encore en bêta et son mécanisme d'authentification serveur évolue. Si une version bêta refuse des identifiants pourtant corrects, vérifie d'abord la version installée et les issues V2 avant de modifier le toolkit.
+
+## Accès local uniquement
+
+Configuration recommandée sur ton Mac :
+
+```bash
+oc2 web --hostname 127.0.0.1 --port 4096
+```
+
+Puis :
+
+```text
+http://127.0.0.1:4096
+```
 
 ## Accès depuis le réseau local
 
@@ -72,35 +90,39 @@ export OPENCODE_SERVER_PASSWORD="change-me"
 oc2 web --hostname 0.0.0.0 --port 4096
 ```
 
-Ne publie pas un serveur OpenCode sur `0.0.0.0` sans mot de passe.
+N'expose pas le serveur sur `0.0.0.0` sans authentification fonctionnelle.
 
 ## Web UI et TUI en même temps
 
-Lance d'abord le serveur Web :
+Lance le serveur :
 
 ```bash
 oc2 web --port 4096
 ```
 
-Puis, dans un autre terminal :
+Puis ouvre le navigateur sur :
 
-```bash
-opencode2 attach http://127.0.0.1:4096
+```text
+http://127.0.0.1:4096
 ```
 
-Si l'authentification est activée, `attach` réutilise `OPENCODE_SERVER_USERNAME` et `OPENCODE_SERVER_PASSWORD` présents dans l'environnement.
+Pour connecter également le TUI V2 au même serveur, utilise l'option V2 `--server` :
 
-Les deux clients utilisent alors le même serveur et les mêmes sessions.
+```bash
+opencode2 --server http://127.0.0.1:4096
+```
 
-## Serveur headless
+Cela remplace l'ancien workflow V1 basé sur `attach`, qui n'est pas une sous-commande V2 actuelle.
 
-Pour exposer uniquement l'API OpenCode, sans ouvrir l'interface Web :
+## API
+
+La commande native V2 est :
 
 ```bash
 oc2 serve --hostname 127.0.0.1 --port 4096
 ```
 
-Le endpoint OpenAPI est disponible sous `/doc` sur le serveur.
+Elle expose le serveur HTTP V2 utilisé par les clients OpenCode. Le toolkit garde `oc2 web` comme alias ergonomique afin d'éviter que `web` soit interprété comme un répertoire.
 
 ## Vérification
 
@@ -108,7 +130,7 @@ Après modification du toolkit :
 
 ```bash
 just test
-just web-v2 --help
+just web-v2 --port 4096
 ```
 
-Les tests du launcher vérifient que `oc2 web` sélectionne bien OpenCode V2, utilise `opencode.v2.jsonc`, conserve les arguments Web et transmet les variables d'authentification sans afficher le mot de passe.
+Les tests du launcher vérifient que `oc2 web` sélectionne OpenCode V2, utilise `opencode.v2.jsonc`, traduit `web` en `serve`, conserve les arguments et transmet les variables d'authentification sans afficher le mot de passe.
