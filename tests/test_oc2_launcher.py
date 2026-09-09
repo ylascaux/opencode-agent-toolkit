@@ -109,7 +109,7 @@ class Oc2LauncherTests(unittest.TestCase):
                 (toolkit / "opencode.v2.jsonc").resolve(),
             )
 
-    def test_oc2_web_forwards_server_auth_and_web_arguments(self):
+    def test_oc2_web_maps_to_v2_serve_and_forwards_auth(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             toolkit, bin_dir = self._make_toolkit(tmp_path)
@@ -142,8 +142,10 @@ class Oc2LauncherTests(unittest.TestCase):
             self.assertEqual(output["server_password_set"], "1")
             self.assertEqual(
                 output["args"],
-                "web --port 4096 --hostname 127.0.0.1",
+                "serve --port 4096 --hostname 127.0.0.1",
             )
+            self.assertNotIn("test-secret", result.stdout)
+            self.assertIn("'web' is mapped to 'serve'", result.stderr)
 
 
 if __name__ == "__main__":
