@@ -1,6 +1,6 @@
 # Durcissement du runtime watchdog
 
-Ce document résume les invariants techniques ajoutés autour du watchdog afin d'éviter les faux blocages, les faux positifs anti-loop et les budgets appliqués à la mauvaise session.
+Ce document résume les invariants techniques ajoutés autour du watchdog afin d'éviter les faux blocages, les faux positifs anti-loop, les budgets appliqués à la mauvaise session et les agents délégués bloqués dans des programmes de terminal interactifs.
 
 ## Call IDs de fallback
 
@@ -22,6 +22,28 @@ Les événements de message contiennent à la fois un ID de message et un ID de 
 
 Cela garantit notamment que `MAX_CHILD_COST` et `MAX_RUN_COST` s'appliquent à la session agent concernée et non à un objet message éphémère.
 
+## Invariant shell non interactif
+
+L'exécution shell des agents est non interactive par construction, pas seulement par convention dans le prompt.
+
+La politique partagée `.opencode/plugins/non-interactive-shell.js` injecte :
+
+- `PAGER=cat` ;
+- `GIT_PAGER=cat` ;
+- `GH_PAGER=cat` ;
+- `SYSTEMD_PAGER=cat` ;
+- `BAT_PAGER=cat` ;
+- `AWS_PAGER=` ;
+- `GIT_TERMINAL_PROMPT=0` ;
+- `GH_PROMPT_DISABLED=1` ;
+- `TF_INPUT=0` ;
+- `TF_IN_AUTOMATION=1` ;
+- `CI=1`.
+
+OpenCode V1 applique cette politique via le hook plugin `shell.env`. OpenCode V2 l'applique via le hook shell `create.before` avant la création de chaque shell agent. V2 échoue volontairement en mode fermé si ce hook shell n'est pas disponible : ignorer silencieusement cet invariant pourrait laisser un sous-agent attendre indéfiniment une saisie clavier.
+
+Cette couche runtime complète la politique de permissions par défaut, qui refuse les pagers/TUI/éditeurs courants et les modes Git interactifs, ainsi que le prompt commun, qui impose de terminer en `BLOCKED` lorsqu'aucune méthode sûre et non interactive n'est connue.
+
 ## Tests comportementaux
 
 `just runtime-test` exécute des tests Node qui vérifient :
@@ -31,6 +53,9 @@ Cela garantit notamment que `MAX_CHILD_COST` et `MAX_RUN_COST` s'appliquent à l
 - politique de retry provider (`401/404` terminaux, `429/5xx` bornés) ;
 - libération d'une réservation de sous-agent après `execute.after` ;
 - application du budget de coût au child réel ;
-- exemption de `WAITING_PERMISSION` du stall timeout puis reprise de la détection après réponse.
+- exemption de `WAITING_PERMISSION` du stall timeout puis reprise de la détection après réponse ;
+- injection de l'environnement shell non interactif partagé, y compris le comportement `shell.env` de V1.
 
-`just check` inclut désormais ces tests en plus des tests Python et de la génération/validation des configurations.
+Les tests Python vérifient également que chaque prompt d'agent généré contient le contrat non interactif et que sa carte de capacités `ALLOW`/`ASK`/`DENY` correspond à l'arbre de permissions V1 effectif généré.
+
+`just check` inclut ces tests en plus de la validation de la configuration générée.
