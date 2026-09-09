@@ -3,6 +3,7 @@ import test from "node:test"
 import {
   createCallIdTracker,
   createProgressAwareRepeatDetector,
+  createStallDetector,
   delegationFailureClass,
   delegationTaskKey,
   providerRetryDecision,
@@ -67,6 +68,53 @@ test("repeat detection resets after material progress", () => {
   detector.markProgress("child")
   assert.deepEqual(detector.observe(sample), { same: false, count: 1 })
   assert.deepEqual(detector.observe(sample), { same: true, count: 2 })
+})
+
+test("stall detection requires expired heartbeat and progress plus a confirmation cycle", () => {
+  const detector = createStallDetector()
+  const base = {
+    sessionID: "child",
+    heartbeatMs: 1000,
+    stalledMs: 5000,
+    confirmationMs: 1000,
+    busy: false,
+  }
+
+  assert.deepEqual(
+    detector.observe({ ...base, timestamp: 10_000, lastActivityAt: 9_500, lastProgressAt: 0 }),
+    { stalled: false, suspect: false },
+  )
+  assert.deepEqual(
+    detector.observe({ ...base, timestamp: 12_000, lastActivityAt: 10_000, lastProgressAt: 0 }),
+    { stalled: false, suspect: true },
+  )
+  assert.deepEqual(
+    detector.observe({ ...base, timestamp: 13_000, lastActivityAt: 10_000, lastProgressAt: 0 }),
+    { stalled: true, suspect: false },
+  )
+})
+
+test("stall suspicion resets when activity resumes or a tool is still in flight", () => {
+  const detector = createStallDetector()
+  const base = {
+    sessionID: "child",
+    heartbeatMs: 1000,
+    stalledMs: 5000,
+    confirmationMs: 1000,
+  }
+
+  assert.deepEqual(
+    detector.observe({ ...base, timestamp: 10_000, lastActivityAt: 0, lastProgressAt: 0, busy: false }),
+    { stalled: false, suspect: true },
+  )
+  assert.deepEqual(
+    detector.observe({ ...base, timestamp: 10_500, lastActivityAt: 10_400, lastProgressAt: 0, busy: false }),
+    { stalled: false, suspect: false },
+  )
+  assert.deepEqual(
+    detector.observe({ ...base, timestamp: 20_000, lastActivityAt: 10_400, lastProgressAt: 0, busy: true }),
+    { stalled: false, suspect: false },
+  )
 })
 
 test("provider retry policy stops terminal errors and bounds transient retries", () => {
@@ -282,6 +330,7 @@ test("WAITING_PERMISSION is exempt from stall timeout, then stall protection res
     {
       MAX_CHILD_COST: 0,
       MAX_RUN_COST: 0,
+      SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS: 1,
       SUBAGENT_STALLED_TIMEOUT_SECONDS: 1,
       SUBAGENT_MAX_DURATION_SECONDS: 30,
       SUBAGENT_WATCH_INTERVAL_SECONDS: 1,
@@ -298,7 +347,7 @@ test("WAITING_PERMISSION is exempt from stall timeout, then stall protection res
       assert.deepEqual(aborts, [], "permission wait must not be treated as a stall")
 
       await hooks.event({ event: { type: "permission.replied", properties: { sessionID: "child" } } })
-      await sleep(2200)
+      await sleep(3200)
       assert.deepEqual(aborts, ["child"], "stall protection must resume after permission is answered")
     },
   )
