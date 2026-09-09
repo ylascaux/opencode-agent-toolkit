@@ -16,6 +16,26 @@ The toolkit combines deterministic runtime safeguards with supervision rules inj
 
 Provider-reported monetary budgets are deliberately **not** part of the runtime anymore. `MAX_CHILD_COST` and `MAX_RUN_COST` were removed because provider cost telemetry is not reliable enough to justify destructive session control. Old local values are ignored by the active watchdog wrappers.
 
+## Plan approval gate
+
+`reliability.json` also defines `plan_approval.default_mode`, which defaults to `changes`. The effective mode can be overridden with `PLAN_APPROVAL_MODE`:
+
+```bash
+PLAN_APPROVAL_MODE=changes   # default: discovery first, approval before mutation
+# PLAN_APPROVAL_MODE=off     # no plan gate
+# PLAN_APPROVAL_MODE=always  # also gate delegated execution beyond direct discovery
+```
+
+The gate is runtime-enforced in both OpenCode V1 and V2. It tracks the root session and child-session parentage so approval granted by the root user applies to the approved request's delegated leaves, but does not leak into later user turns.
+
+Before approval, direct read/search/discovery remains available. In `changes` mode the runtime blocks mutating tools, mutating/unknown shell commands, and implementation-oriented delegation. Read-only planning agents remain available so the toolkit can produce an evidence-backed plan without entering a deadlock.
+
+A plan awaiting approval ends with `PLAN_APPROVAL_REQUIRED`. Explicit short replies such as `go`, `approve`, `oui`, or `valide` approve only a currently waiting plan. Rejection words keep mutation blocked. Any other root-user response is treated as changed scope and resets the plan state.
+
+If the agent detects a material scope/dependency/trust-boundary/destructive-step/rollback change after approval, it must stop before further mutation and emit `PLAN_REAPPROVAL_REQUIRED`. The runtime then revokes the current approval until the root user explicitly approves the revised plan.
+
+The runtime guard is authoritative: a model cannot bypass a missing approval merely by skipping the planning prompt. A blocked mutating tool is converted into a waiting plan state and the agent is instructed to present the plan instead of retrying.
+
 ## Global and per-lead parallelism
 
 The global limit remains:
@@ -101,6 +121,8 @@ effective steps = min(generated steps, reliability cap)
 
 ## Expected stop policy
 
+- unapproved mutation -> stop and request plan approval;
+- material approved-scope deviation -> stop and request reapproval;
 - missing heartbeat/progress -> suspect only, never automatic kill;
 - maximum duration -> suspect only, never automatic kill;
 - V2 suspected child -> ask user before interrupting;
@@ -121,4 +143,4 @@ just doctor
 just check
 ```
 
-`just reliability` shows the effective timing/parallelism policy and the active approval mode.
+`just reliability` shows the effective timing/parallelism policy and the active plan-approval mode.
