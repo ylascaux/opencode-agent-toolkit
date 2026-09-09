@@ -2,6 +2,7 @@
 .env.local
 .env.model-overrides.backup
 .venv/
+node_modules/
 __pycache__/
 *.pyc
 .generated/
