@@ -89,6 +89,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             (toolkit / ".env").write_text(
                 "OPENCODE_MAJOR=1\n"
                 "OPENCODE_PREFLIGHT=1\n"
+                "OAT_SANDBOX_ENABLED=0\n"
                 "MODEL_PROFILE=test\n"
                 "MODEL_LOW=test/low\n"
                 "MODEL_MEDIUM=test/medium\n"
