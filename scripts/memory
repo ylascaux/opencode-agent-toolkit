@@ -7,7 +7,7 @@ import re
 import shlex
 from pathlib import Path
 
-from memory_context import MemorySettings, prepare_memory_context
+from memory_context import MemorySettings, env_bool, prepare_memory_context
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,8 +38,10 @@ def _apply_updates(updates: dict[str, str]) -> None:
 
 def _summary_text(summary: dict) -> str:
     enabled = "on" if summary["enabled"] else "off"
+    capture = "on" if env_bool("OAT_MEMORY_CAPTURE_ENABLED", False) else "off"
     lines = [
         f"memory={enabled}",
+        f"capture={capture}",
         f"directory={summary['directory']}",
         f"project_name={summary['project_name'] or '-'}",
         f"project_remote={summary['project_remote'] or '-'}",
@@ -72,12 +74,30 @@ def cmd_enable(args: argparse.Namespace) -> int:
 
 
 def cmd_disable(_args: argparse.Namespace) -> int:
-    _apply_updates({"OAT_MEMORY_ENABLED": "0"})
+    _apply_updates({"OAT_MEMORY_ENABLED": "0", "OAT_MEMORY_CAPTURE_ENABLED": "0"})
     summary = prepare_memory_context(
         ROOT,
         workdir=Path.cwd(),
         settings=MemorySettings.from_env(),
     )
+    print(_summary_text(summary))
+    return 0
+
+
+def cmd_capture_enable(_args: argparse.Namespace) -> int:
+    settings = MemorySettings.from_env()
+    if not settings.enabled:
+        raise SystemExit("Long-term memory must be enabled before automatic candidate capture")
+    _apply_updates({"OAT_MEMORY_CAPTURE_ENABLED": "1"})
+    summary = prepare_memory_context(ROOT, workdir=Path.cwd(), settings=MemorySettings.from_env())
+    print(_summary_text(summary))
+    print("Automatic candidate extraction will run on OpenCode V2 idle session events.")
+    return 0
+
+
+def cmd_capture_disable(_args: argparse.Namespace) -> int:
+    _apply_updates({"OAT_MEMORY_CAPTURE_ENABLED": "0"})
+    summary = prepare_memory_context(ROOT, workdir=Path.cwd(), settings=MemorySettings.from_env())
     print(_summary_text(summary))
     return 0
 
@@ -134,8 +154,14 @@ def parser() -> argparse.ArgumentParser:
     enable.add_argument("repo", nargs="?", default="")
     enable.set_defaults(func=cmd_enable)
 
-    disable = sub.add_parser("disable", help="disable memory and clear generated context")
+    disable = sub.add_parser("disable", help="disable memory and automatic capture")
     disable.set_defaults(func=cmd_disable)
+
+    capture_enable = sub.add_parser("capture-enable", help="enable V2 session-idle candidate extraction")
+    capture_enable.set_defaults(func=cmd_capture_enable)
+
+    capture_disable = sub.add_parser("capture-disable", help="disable automatic candidate extraction")
+    capture_disable.set_defaults(func=cmd_capture_disable)
 
     status = sub.add_parser("status", help="show effective memory configuration and project match")
     status.set_defaults(func=cmd_status)

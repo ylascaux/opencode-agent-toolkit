@@ -23,21 +23,23 @@ jobs:
         run: npm ls @opencode/plugin --depth=0
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
-      - name: Reliability, plan and sandbox core JavaScript syntax
+      - name: Reliability, plan, sandbox and memory core JavaScript syntax
         run: |
           node --check runtime/plugins/reliability-core.js
           node --check runtime/plugins/non-interactive-shell.js
           node --check runtime/plugins/plan-approval-core.js
           node --check runtime/plugins/sandbox-v1.js
+          node --check runtime/plugins/memory-capture-core.js
       - name: V1 watchdog JavaScript syntax
         run: |
           node --check runtime/plugins/reliability-v1.js
           node --check runtime/plugins/reliability-v1-legacy.js
-      - name: V2 watchdog and plan gate TypeScript syntax
+      - name: V2 watchdog, plan gate and memory capture TypeScript syntax
         run: |
           node --experimental-strip-types --check runtime/plugins/reliability-v2.ts
           node --experimental-strip-types --check runtime/plugins/reliability-v2-legacy.ts
           node --experimental-strip-types --check runtime/plugins/plan-approval-v2.ts
+          node --experimental-strip-types --check runtime/plugins/memory-capture-v2.ts
           node --experimental-strip-types --check plugins/reliability-approval/rpc.ts
           node --experimental-strip-types --check plugins/reliability-approval/index.ts
           node --experimental-strip-types --check plugins/reliability-approval/tui.ts

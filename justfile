@@ -59,9 +59,17 @@ doctor:
 memory-on repo="":
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory enable "{{repo}}"
 
-# Disable long-term memory and remove rendered context from .generated.
+# Disable long-term memory, automatic capture and rendered context.
 memory-off:
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory disable
+
+# Enable conservative automatic candidate extraction from completed OpenCode V2 sessions.
+memory-capture-on:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory capture-enable
+
+# Disable automatic candidate extraction without disabling read-only memory injection.
+memory-capture-off:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory capture-disable
 
 # Show effective memory settings and the current project match.
 memory-status:
@@ -74,6 +82,34 @@ memory-sync:
 # Render the exact common + hat memory context for one agent.
 memory-show agent="orchestrator":
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory show "{{agent}}"
+
+# List local pending memory candidates. Use status=accepted/rejected/promoted for another bucket.
+memory-candidates status="candidates":
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory_candidates.py list --status "{{status}}"
+
+# Show one candidate by its short id/fingerprint prefix.
+memory-candidate id:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory_candidates.py show "{{id}}"
+
+# Add a manual candidate (useful with V1 or when automatic capture is disabled).
+memory-add kind title statement *args:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory_candidates.py add "{{kind}}" "{{title}}" "{{statement}}" {{args}}
+
+# Reject a pending local candidate. No Git write occurs.
+memory-reject id:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory_candidates.py reject "{{id}}"
+
+# Accept a candidate into inbox/accepted in the Git memory repo. Set push=true to publish immediately.
+memory-accept id push="false":
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; flag=""; [[ "{{push}}" == "true" ]] && flag="--push"; python3 ./scripts/memory_candidates.py accept "{{id}}" $$flag
+
+# Promote an accepted candidate into curated memory. Empty target uses suggested_target. Set push=true to publish.
+memory-promote id target="" push="false":
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; flag=""; [[ "{{push}}" == "true" ]] && flag="--push"; python3 ./scripts/memory_candidates.py promote "{{id}}" "{{target}}" $$flag
+
+# Push already committed memory curation changes to the configured remote.
+memory-push:
+    @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/memory_candidates.py push
 
 # Build the hardened Nix development sandbox image using Docker or Podman.
 sandbox-build:
