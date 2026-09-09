@@ -19,18 +19,21 @@ jobs:
           python-version: "3.12"
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
-      - name: Reliability core JavaScript syntax
+      - name: Reliability and plan core JavaScript syntax
         run: |
           node --check .opencode/plugins/reliability-core.js
           node --check .opencode/plugins/non-interactive-shell.js
-      - name: V1 watchdog JavaScript syntax
+          node --check .opencode/plugins/plan-approval-core.js
+      - name: V1 watchdog and plan gate JavaScript syntax
         run: |
           node --check .opencode/plugins/reliability-v1.js
           node --check .opencode/plugins/reliability-v1-legacy.js
-      - name: V2 watchdog TypeScript syntax
+          node --check .opencode/plugins/plan-approval-v1.js
+      - name: V2 watchdog and plan gate TypeScript syntax
         run: |
           node --experimental-strip-types --check .opencode/plugins/reliability-v2.ts
           node --experimental-strip-types --check .opencode/plugins/reliability-v2-legacy.ts
+          node --experimental-strip-types --check .opencode/plugins/plan-approval-v2.ts
           node --experimental-strip-types --check plugins/reliability-approval/rpc.ts
           node --experimental-strip-types --check plugins/reliability-approval/index.ts
           node --experimental-strip-types --check plugins/reliability-approval/tui.ts

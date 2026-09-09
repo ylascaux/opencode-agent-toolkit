@@ -10,20 +10,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 COMMANDS = {
     "auto": (
-        "Automatically classify and route a task",
-        "Route and execute $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement, and finish with evidence and residual risk.",
+        "Automatically classify, plan and route a task",
+        "Route $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement. If the task can mutate state, gather only enough evidence to produce a concrete plan, surface it to the user, end with PLAN_APPROVAL_REQUIRED, and stop until explicit approval. After approval, execute the approved path and finish with evidence and residual risk.",
+    ),
+    "plan": (
+        "Create a user-approvable execution plan without implementing it",
+        "Plan $ARGUMENTS. Route read-only discovery/planning through the minimum sufficient path, include goal/scope, affected files/components, ordered steps, validation/tests, rollback, and delegated agents/gates. Do not mutate state. End with PLAN_APPROVAL_REQUIRED.",
     ),
     "ship": (
-        "Implement with tests, independent review and adaptive security gates",
-        "Ship $ARGUMENTS. Classify risk first, delegate delivery to orchestrator, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence.",
+        "Plan first, then implement with tests, independent review and adaptive security gates",
+        "Ship $ARGUMENTS. Classify risk first and delegate planning/delivery to orchestrator. Before any mutation, surface the concrete implementation plan and end with PLAN_APPROVAL_REQUIRED. Only after explicit user approval may orchestrator execute the approved scope, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence. Material scope deviations require PLAN_REAPPROVAL_REQUIRED.",
     ),
     "review": (
         "Run independent adaptive review",
         "Review $ARGUMENTS via review-lead. Select only review dimensions touched by the change, deduplicate findings, arbitrate material disagreement, and audit weak completion claims.",
     ),
     "architecture": (
-        "Run architecture design, independent review and adaptive security gates",
-        "Design $ARGUMENTS via platform-architect. If durable documentation is requested, have platform-architect delegate writing to docs-writer after the design is stable. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
+        "Design architecture with approval before artifact mutation",
+        "Design $ARGUMENTS via platform-architect. Gather evidence and stabilize the design first. If durable documentation or another artifact will be created/updated, surface the write/migration plan and end with PLAN_APPROVAL_REQUIRED before mutation. After explicit approval, have platform-architect delegate writing to docs-writer. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
     ),
     "architecture-review": (
         "Independently review an existing architecture artifact",
@@ -34,12 +38,12 @@ COMMANDS = {
         "Security-review $ARGUMENTS via security-lead. Select only relevant threat-model/AppSec/IaC/supply-chain/secrets gates; pentest only explicitly authorized runtime scope. Deduplicate, rank and verify findings.",
     ),
     "debug": (
-        "Evidence-first debugging workflow",
-        "Debug $ARGUMENTS via orchestrator. Start with reproduction/evidence, use the affected specialist, add regression coverage, independently review the fix and add security gates if a trust boundary changes.",
+        "Evidence-first debugging with approval before fixes",
+        "Debug $ARGUMENTS via orchestrator. Start with read-only reproduction/evidence and the affected specialist. Before applying a fix, surface the proposed fix/regression-test plan and end with PLAN_APPROVAL_REQUIRED. After explicit approval, implement the approved fix, add regression coverage, independently review it and add security gates if a trust boundary changes. Material deviations require PLAN_REAPPROVAL_REQUIRED.",
     ),
     "incident": (
-        "Investigate an incident with SRE and observability",
-        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses, identify blast radius, mitigation/rollback and follow-up evidence.",
+        "Investigate an incident and gate remediation behind a plan",
+        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses and identify blast radius. Investigation may stay read-only; before remediation or rollback mutation, surface the mitigation plan and end with PLAN_APPROVAL_REQUIRED. Execute only after explicit approval and re-request approval for material scope changes.",
     ),
     "cost": (
         "Analyze platform cost and cost-performance trade-offs",

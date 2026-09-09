@@ -9,6 +9,7 @@ from agent_config import GENERATED_PROMPTS_DIR, children_by_parent, load_agents
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = json.loads((ROOT / "reliability.json").read_text())
+PLAN_APPROVAL_MODES = {"off", "changes", "always"}
 
 
 def profile() -> tuple[str, dict]:
@@ -18,6 +19,15 @@ def profile() -> tuple[str, dict]:
         allowed = ", ".join(sorted(profiles))
         raise SystemExit(f"RELIABILITY_PROFILE must be one of: {allowed} (got {name!r})")
     return name, profiles[name]
+
+
+def plan_approval_mode() -> str:
+    default = str(POLICY.get("plan_approval", {}).get("default_mode", "changes")).strip().lower()
+    raw = os.getenv("PLAN_APPROVAL_MODE", default).strip().lower()
+    if raw not in PLAN_APPROVAL_MODES:
+        allowed = ", ".join(sorted(PLAN_APPROVAL_MODES))
+        raise SystemExit(f"PLAN_APPROVAL_MODE must be one of: {allowed} (got {raw!r})")
+    return raw
 
 
 def env_int(name: str, default: int) -> int:
@@ -61,6 +71,14 @@ def patch_config(path: Path, *, v2: bool) -> None:
     )
     if runtime_plugin not in plugins:
         plugins.append(runtime_plugin)
+
+    plan_approval_plugin = (
+        "./.opencode/plugins/plan-approval-v2.ts"
+        if v2
+        else "./.opencode/plugins/plan-approval-v1.js"
+    )
+    if plan_approval_plugin not in plugins:
+        plugins.append(plan_approval_plugin)
 
     # V2 exposes a TUI plugin surface. A suspected stall is surfaced to the
     # user and can only become destructive after explicit confirmation.
@@ -123,12 +141,46 @@ def append_prompt_policy() -> None:
         path.write_text(text.rstrip() + block + "\n")
 
 
+def append_effective_plan_policy() -> None:
+    mode = plan_approval_mode()
+    marker = "## Effective plan approval mode"
+    mode_rules = {
+        "off": (
+            "Plan approval is disabled for this run. Do not pause solely for PLAN_APPROVAL_REQUIRED; "
+            "follow the requested workflow normally while preserving all other permissions and safety rules."
+        ),
+        "changes": (
+            "Read-only discovery/planning may proceed. Root/lead mutation requires a root-user-approved plan. "
+            "Delegated leaves executing an explicitly approved scope do not request a second approval."
+        ),
+        "always": (
+            "Direct read-only discovery may proceed, but delegated execution and mutation require a root-user-approved plan. "
+            "After approval, delegated leaves execute the handed-off approved scope without asking again."
+        ),
+    }
+    block = f"""
+
+## Effective plan approval mode
+- Effective `PLAN_APPROVAL_MODE`: `{mode}`.
+- {mode_rules[mode]}
+- The runtime gate is authoritative; never retry around a blocked mutating/delegation tool.
+"""
+
+    for path in GENERATED_PROMPTS_DIR.glob("*.md"):
+        text = path.read_text()
+        if marker in text:
+            text = text[: text.index(marker)].rstrip() + "\n"
+        path.write_text(text.rstrip() + block + "\n")
+
+
 def main() -> None:
     profile()  # validate before mutating generated files
+    plan_approval_mode()
     patch_config(ROOT / "opencode.jsonc", v2=False)
     patch_config(ROOT / "opencode.v2.jsonc", v2=True)
     append_prompt_policy()
-    print("Reliability policy applied to generated OpenCode configs")
+    append_effective_plan_policy()
+    print("Reliability and plan-approval policies applied to generated OpenCode configs")
 
 
 if __name__ == "__main__":
