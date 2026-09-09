@@ -62,6 +62,14 @@ def patch_config(path: Path, *, v2: bool) -> None:
     if runtime_plugin not in plugins:
         plugins.append(runtime_plugin)
 
+    plan_approval_plugin = (
+        "./.opencode/plugins/plan-approval-v2.ts"
+        if v2
+        else "./.opencode/plugins/plan-approval-v1.js"
+    )
+    if plan_approval_plugin not in plugins:
+        plugins.append(plan_approval_plugin)
+
     # V2 exposes a TUI plugin surface. A suspected stall is surfaced to the
     # user and can only become destructive after explicit confirmation.
     if v2:
@@ -128,7 +136,7 @@ def main() -> None:
     patch_config(ROOT / "opencode.jsonc", v2=False)
     patch_config(ROOT / "opencode.v2.jsonc", v2=True)
     append_prompt_policy()
-    print("Reliability policy applied to generated OpenCode configs")
+    print("Reliability and plan-approval policies applied to generated OpenCode configs")
 
 
 if __name__ == "__main__":
