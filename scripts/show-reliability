@@ -24,7 +24,8 @@ def effective(env: str, key: str):
 
 
 print("profile =", profile_name)
-print("plan_approval_mode =", plan_mode)
+print("plan_approval_mode_v1 = off")
+print("plan_approval_mode_v2 =", plan_mode)
 print("max_parallel_subagents =", effective("MAX_PARALLEL_SUBAGENTS", "max_parallel_subagents"))
 for lead, env_name in policy.get("lead_parallel_env", {}).items():
     print(f"max_parallel_{lead} =", os.getenv(env_name, os.getenv("MAX_PARALLEL_SUBAGENTS", profile["max_parallel_subagents"])))
