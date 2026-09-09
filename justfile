@@ -65,9 +65,10 @@ test:
     python3 -m unittest discover -s tests -v
 
 # Behavioral tests for queue/call tracking, progress-aware loop detection,
-# provider retry decisions, cost enforcement, and permission/stall handling.
+# provider retry decisions, cost enforcement, permission/stall handling,
+# and non-interactive shell invariants.
 runtime-test:
-    node --test tests/runtime_guardrails.test.mjs
+    node --test tests/*.test.mjs
 
 run *args:
     bash ./scripts/opencode-agents {{args}}
