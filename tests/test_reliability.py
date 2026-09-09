@@ -93,6 +93,8 @@ class ReliabilityPolicyTests(unittest.TestCase):
             "writeCheckpoint",
             "same tool call produced the same result",
             "WAITING_PERMISSION",
+            "createCallIdTracker",
+            "createProgressAwareRepeatDetector",
         ]:
             self.assertIn(needle, text)
 
@@ -109,10 +111,18 @@ class ReliabilityPolicyTests(unittest.TestCase):
             "RELIABILITY_STATE_DIR",
             "writeCheckpoint",
             "same tool call produced the same result",
-            "[400, 401, 403, 404]",
             "MAX_PROVIDER_RETRIES",
+            "createCallIdTracker",
+            "createProgressAwareRepeatDetector",
+            "providerRetryDecision",
         ]:
             self.assertIn(needle, text)
+
+    def test_shared_runtime_core_contains_terminal_retry_policy(self):
+        text = (ROOT / ".opencode" / "plugins" / "reliability-core.js").read_text()
+        self.assertIn("[400, 401, 403, 404]", text)
+        self.assertIn("createCallIdTracker", text)
+        self.assertIn("createProgressAwareRepeatDetector", text)
 
     def test_env_exposes_new_reliability_controls(self):
         text = (ROOT / ".env.example").read_text()
