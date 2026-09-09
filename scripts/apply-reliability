@@ -8,6 +8,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = json.loads((ROOT / "reliability.json").read_text())
 LEADS = ("meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead")
+READ_ONLY_GIT = (
+    "git status*",
+    "git diff*",
+    "git show*",
+    "git log*",
+    "git rev-parse*",
+    "git rev-list*",
+    "git ls-files*",
+    "git ls-tree*",
+    "git grep*",
+    "git blame*",
+    "git describe*",
+    "git merge-base*",
+    "git remote -v*",
+    "git remote get-url*",
+    "git branch --show-current*",
+    "git tag --list*",
+    "git config --get*",
+    "git config --list*",
+)
 
 
 def profile() -> tuple[str, dict]:
@@ -32,6 +52,31 @@ def env_int(name: str, default: int) -> int:
     return value
 
 
+def patch_permissions(agent: dict, *, v2: bool) -> None:
+    """Keep research and read-only Git available to every generated agent."""
+    if v2:
+        rules = agent.setdefault("permissions", [])
+        rules.append({"action": "websearch", "resource": "*", "effect": "allow"})
+        for pattern in READ_ONLY_GIT:
+            rules.append({"action": "shell", "resource": pattern, "effect": "allow"})
+        return
+
+    permission = agent.setdefault("permission", {})
+    permission["websearch"] = "allow"
+    bash = permission.get("bash", "deny")
+    if isinstance(bash, str):
+        bash_rules: dict[str, str] = {"*": bash}
+    else:
+        bash_rules = dict(bash)
+        if "*" not in bash_rules:
+            bash_rules = {"*": "deny", **bash_rules}
+    # OpenCode uses last matching rule wins. Read-only Git exceptions therefore
+    # stay available without widening mutating shell/Git operations.
+    for pattern in READ_ONLY_GIT:
+        bash_rules[pattern] = "allow"
+    permission["bash"] = bash_rules
+
+
 def patch_config(path: Path, *, v2: bool) -> None:
     data = json.loads(path.read_text())
     agents_key = "agents" if v2 else "agent"
@@ -51,6 +96,7 @@ def patch_config(path: Path, *, v2: bool) -> None:
         # Both reliability.json and env overrides are ceilings only. Neither
         # may increase the generator's original safety boundary.
         agent["steps"] = min(current, cap)
+        patch_permissions(agent, v2=v2)
 
     plugin = (
         "./.opencode/plugins/reliability-v2.ts"
@@ -73,6 +119,10 @@ def lead_parallel(lead: str, default: int) -> int:
 def append_prompt_policy() -> None:
     profile_name, defaults = profile()
     max_same_error = env_int("MAX_SAME_ERROR", int(defaults["max_same_error"]))
+    max_subagent_retries = env_int(
+        "MAX_SUBAGENT_RETRIES",
+        int(defaults.get("max_subagent_retries", defaults.get("max_retries", 1))),
+    )
     stalled = env_int("SUBAGENT_STALLED_TIMEOUT_SECONDS", int(defaults["stalled_timeout_seconds"]))
 
     prompt_dir = ROOT / "prompts"
@@ -88,12 +138,35 @@ def append_prompt_policy() -> None:
 - Reliability profile: `{profile_name}`. Never have more than {max_parallel} delegated child agents RUNNING for this lead at the same time. Queue additional independent work until a runtime slot is free.
 - Treat CONFIG/AUTH/PERMISSION/PROVIDER failures differently from code/test failures. Do not repeatedly reason around a deterministic environment failure.
 - If the same root cause is observed {max_same_error} times without new evidence, stop retrying that path and return BLOCKED or ESCALATION_REQUIRED.
-- A child that has activity but no material progress for about {stalled} seconds must be treated as STALLED: preserve its evidence/checkpoint and choose a different specialist or return the blocker.
+- A child that has activity but no material progress for about {stalled} seconds must be treated as STALLED. Preserve its evidence/checkpoint before recovery.
+- A lead with one or more active child delegations is WAITING_ON_CHILD, not STALLED. Do not cancel or restart the lead merely because its own tool/file progress is quiet while a child is running.
 - WAITING_PERMISSION is not STALLED. Do not duplicate a child merely because it is waiting for a human permission decision.
 - Before delegating, check whether an equivalent child task is already running or already returned COMPLETE. Reuse completed handoffs instead of paying for duplicate work.
+- If a child is cancelled/aborted for a retryable runtime reason, retry only that failed child up to {max_subagent_retries} time(s). Never restart the parent lead or already COMPLETE sibling tasks solely because one leaf failed.
+- When OpenCode exposes a previous `task_id`/child session id, resume that same child session on retry instead of creating a fresh child. Keep the same narrow task scope and add only the context needed to continue.
 - Prefer checkpoints between discovery, implementation, tests and review so a later failure does not force successful phases to be repeated.
-- When a child is BLOCKED or aborted by runtime cost/time/stall guards, consume its checkpoint and decide once: fix the prerequisite, route to a distinct specialist, or stop. Never create an unbounded retry chain.
+- After retries are exhausted, consume the failed child's checkpoint/handoff and decide once: continue with partial evidence, route to a distinct specialist, or return BLOCKED/ESCALATION_REQUIRED. Never create an unbounded retry chain.
 """
+        text = path.read_text()
+        if marker in text:
+            text = text[: text.index(marker)].rstrip() + "\n"
+        path.write_text(text.rstrip() + block + "\n")
+
+
+def append_research_policy() -> None:
+    prompt_dir = ROOT / "prompts"
+    marker = "## External research"
+    block = """
+
+## External research
+- `websearch` is available to every agent. Use it whenever current, external, niche, version-specific, compatibility, security, provider, or product facts could materially affect the answer.
+- Prefer primary sources: official vendor documentation, upstream repositories/releases, standards, advisories, and provider changelogs. Use secondary sources only to supplement or cross-check.
+- Repository evidence remains authoritative for what this project actually does. Web research must not override direct local evidence without explaining the discrepancy.
+- Cite or record the exact external source used for material claims, and distinguish verified current facts from assumptions.
+"""
+    if not prompt_dir.exists():
+        return
+    for path in prompt_dir.glob("*.md"):
         text = path.read_text()
         if marker in text:
             text = text[: text.index(marker)].rstrip() + "\n"
@@ -105,6 +178,7 @@ def main() -> None:
     patch_config(ROOT / "opencode.jsonc", v2=False)
     patch_config(ROOT / "opencode.v2.jsonc", v2=True)
     append_prompt_policy()
+    append_research_policy()
     print("Reliability policy applied")
 
 
