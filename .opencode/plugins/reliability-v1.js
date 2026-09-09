@@ -44,7 +44,7 @@ const eventSession = (event) => {
   const p = eventProps(event)
   const info = p.info ?? p.session ?? p
   return {
-    id: info?.id ?? info?.sessionID ?? p.sessionID ?? p.sessionId ?? event?.sessionID,
+    id: info?.sessionID ?? p.sessionID ?? p.sessionId ?? event?.sessionID ?? info?.id,
     parentID: info?.parentID ?? info?.parentId ?? info?.parent?.id ?? p.parentID ?? p.parentId,
     agent: info?.agent ?? p.agent,
   }
