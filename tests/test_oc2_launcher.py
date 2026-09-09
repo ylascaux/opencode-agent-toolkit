@@ -24,6 +24,7 @@ class Oc2LauncherTests(unittest.TestCase):
         (toolkit / ".env").write_text(
             "OPENCODE_MAJOR=1\n"
             "OPENCODE_PREFLIGHT=0\n"
+            "OAT_SANDBOX_ENABLED=0\n"
         )
 
         bin_dir = tmp_path / "bin"
