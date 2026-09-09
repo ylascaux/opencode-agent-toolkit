@@ -112,14 +112,6 @@ v1 *args:
 v2 *args:
     OPENCODE_MAJOR=2 bash ./scripts/opencode-agents {{args}}
 
-# Start the OpenCode web UI with the active toolkit version/config.
-web *args:
-    bash ./scripts/opencode-agents web {{args}}
-
-# Start the OpenCode 2 web UI explicitly.
-web-v2 *args:
-    OPENCODE_MAJOR=2 bash ./scripts/opencode-agents web {{args}}
-
 # Start a headless OpenCode server with the active toolkit version/config.
 serve *args:
     bash ./scripts/opencode-agents serve {{args}}
