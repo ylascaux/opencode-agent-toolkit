@@ -13,7 +13,7 @@ Use `/auto` when routing should be decided automatically.
 
 ## Plan approval
 
-The default runtime policy is `PLAN_APPROVAL_MODE=changes`. Read-only discovery and analysis can run immediately, but the toolkit must show a concrete plan and wait for explicit approval before it mutates files, repository state, infrastructure, configuration, or another external system.
+In OpenCode V1, plan approval is disabled: tasks can continue the requested execution without a `PLAN_APPROVAL_REQUIRED` pause. In V2, the default runtime policy is `PLAN_APPROVAL_MODE=changes`. Read-only discovery and analysis can run immediately, but the toolkit must show a concrete plan and wait for explicit approval before it mutates files, repository state, infrastructure, configuration, or another external system.
 
 A normal change therefore looks like this:
 
@@ -51,7 +51,7 @@ PLAN_APPROVAL_MODE=changes   # default
 # PLAN_APPROVAL_MODE=always  # also gate delegated execution beyond direct discovery
 ```
 
-The plan boundary is enforced by runtime plugins for both OpenCode V1 and V2. Agent prompts improve the workflow, but a mutating tool is still blocked when no approved plan exists.
+The plan boundary is enforced by the OpenCode V2 runtime plugin. Agent prompts improve the V2 workflow, but a mutating tool is still blocked when no approved plan exists. V1 does not load this plugin.
 
 ## Delivery
 

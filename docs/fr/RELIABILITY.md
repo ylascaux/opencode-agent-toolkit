@@ -26,7 +26,7 @@ PLAN_APPROVAL_MODE=changes   # défaut : découverte puis validation avant mutat
 # PLAN_APPROVAL_MODE=always  # gate aussi la délégation au-delà de la découverte directe
 ```
 
-Le gate est imposé par le runtime en OpenCode V1 et V2. Il suit la session racine et les relations parent/enfant afin qu'une validation donnée par l'utilisateur racine s'applique aux leaf agents de la demande approuvée, sans se propager aux demandes suivantes.
+Le gate est imposé par le runtime OpenCode V2. Il suit la session racine et les relations parent/enfant afin qu'une validation donnée par l'utilisateur racine s'applique aux leaf agents de la demande approuvée, sans se propager aux demandes suivantes. En V1, le plugin et les pauses d'approbation sont désactivés.
 
 Avant validation, les opérations de lecture, recherche et découverte restent disponibles. En mode `changes`, le runtime bloque les outils mutateurs, les commandes shell mutatrices ou inconnues et la délégation orientée implémentation. Les agents de planification en lecture seule restent disponibles afin de produire un plan fondé sur des preuves sans créer de deadlock.
 

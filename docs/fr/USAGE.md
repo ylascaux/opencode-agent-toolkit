@@ -13,7 +13,7 @@ Utilise `/auto` pour laisser le routage choisir automatiquement.
 
 ## Validation du plan
 
-La politique runtime par défaut est `PLAN_APPROVAL_MODE=changes`. La découverte et l’analyse en lecture seule peuvent démarrer immédiatement, mais le toolkit doit présenter un plan concret et attendre une validation explicite avant de modifier des fichiers, l’état Git, l’infrastructure, la configuration ou un autre système externe.
+En OpenCode V1, l'approbation de plan est désactivée : les tâches peuvent poursuivre l'exécution demandée sans pause `PLAN_APPROVAL_REQUIRED`. En V2, la politique runtime par défaut est `PLAN_APPROVAL_MODE=changes`. La découverte et l’analyse en lecture seule peuvent démarrer immédiatement, mais le toolkit doit présenter un plan concret et attendre une validation explicite avant de modifier des fichiers, l’état Git, l’infrastructure, la configuration ou un autre système externe.
 
 Une modification normale ressemble donc à ceci :
 
@@ -51,7 +51,7 @@ PLAN_APPROVAL_MODE=changes   # défaut
 # PLAN_APPROVAL_MODE=always  # gate aussi la délégation au-delà de la découverte directe
 ```
 
-La frontière plan/exécution est imposée par des plugins runtime pour OpenCode V1 et V2. Les prompts améliorent le workflow, mais un outil mutateur reste bloqué lorsqu’aucun plan approuvé n’existe.
+La frontière plan/exécution est imposée par le plugin runtime OpenCode V2. Les prompts améliorent le workflow V2, mais un outil mutateur reste bloqué lorsqu’aucun plan approuvé n’existe. V1 ne charge pas ce plugin.
 
 ## Delivery
 

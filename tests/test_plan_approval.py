@@ -20,20 +20,29 @@ class PlanApprovalTests(unittest.TestCase):
         policy = json.loads((ROOT / "reliability.json").read_text())
         self.assertEqual(policy["plan_approval"]["default_mode"], "changes")
 
-    def test_generated_configs_load_plan_gates(self):
+    def test_only_v2_loads_the_plan_gate(self):
         v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
-        self.assertIn("./runtime/plugins/plan-approval-v1.js", v1["plugin"])
+        self.assertNotIn("./runtime/plugins/plan-approval-v1.js", v1["plugin"])
         self.assertIn("./runtime/plugins/plan-approval-v2.ts", v2["plugins"])
 
-    def test_plan_command_exists_in_both_runtime_configs(self):
+    def test_plan_approval_markers_are_v2_only(self):
         v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
-        for commands in [v1["command"], v2["commands"]]:
-            self.assertIn("plan", commands)
-            self.assertIn("PLAN_APPROVAL_REQUIRED", commands["plan"]["template"])
-            self.assertIn("PLAN_APPROVAL_REQUIRED", commands["ship"]["template"])
-            self.assertIn("PLAN_REAPPROVAL_REQUIRED", commands["ship"]["template"])
+        self.assertIn("plan", v1["command"])
+        for command in v1["command"].values():
+            self.assertNotIn("PLAN_APPROVAL_REQUIRED", command["template"])
+            self.assertNotIn("PLAN_REAPPROVAL_REQUIRED", command["template"])
+        self.assertIn("PLAN_APPROVAL_REQUIRED", v2["commands"]["plan"]["template"])
+        self.assertIn("PLAN_APPROVAL_REQUIRED", v2["commands"]["ship"]["template"])
+        self.assertIn("PLAN_REAPPROVAL_REQUIRED", v2["commands"]["ship"]["template"])
+
+    def test_v1_prompts_disable_plan_approval(self):
+        v1_prompts = ROOT / ".generated" / "prompts-v1"
+        for name in ["meta-router", "orchestrator", "planner", "builder", "tester"]:
+            text = (v1_prompts / f"{name}.md").read_text()
+            self.assertIn("Effective `PLAN_APPROVAL_MODE`: `off`", text, name)
+            self.assertIn("Do not pause solely for PLAN_APPROVAL_REQUIRED", text, name)
 
     def test_generated_prompts_include_global_plan_contract(self):
         for name in ["meta-router", "orchestrator", "planner", "builder", "tester"]:

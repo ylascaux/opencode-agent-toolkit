@@ -26,7 +26,7 @@ PLAN_APPROVAL_MODE=changes   # default: discovery first, approval before mutatio
 # PLAN_APPROVAL_MODE=always  # also gate delegated execution beyond direct discovery
 ```
 
-The gate is runtime-enforced in both OpenCode V1 and V2. It tracks the root session and child-session parentage so approval granted by the root user applies to the approved request's delegated leaves, but does not leak into later user turns.
+The gate is runtime-enforced in OpenCode V2. It tracks the root session and child-session parentage so approval granted by the root user applies to the approved request's delegated leaves, but does not leak into later user turns. In V1, the plugin and approval pauses are disabled.
 
 Before approval, direct read/search/discovery remains available. In `changes` mode the runtime blocks mutating tools, mutating/unknown shell commands, and implementation-oriented delegation. Read-only planning agents remain available so the toolkit can produce an evidence-backed plan without entering a deadlock.
 

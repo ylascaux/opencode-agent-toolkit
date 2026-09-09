@@ -10,6 +10,7 @@ from agent_config import GENERATED_PROMPTS_DIR, children_by_parent, load_agents
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = json.loads((ROOT / "reliability.json").read_text())
 PLAN_APPROVAL_MODES = {"off", "changes", "always"}
+GENERATED_V1_PROMPTS_DIR = ROOT / ".generated" / "prompts-v1"
 
 
 def profile() -> tuple[str, dict]:
@@ -70,15 +71,10 @@ def patch_config(path: Path, *, v2: bool) -> None:
     if runtime_plugin not in plugins:
         plugins.append(runtime_plugin)
 
-    plan_approval_plugin = (
-        "./runtime/plugins/plan-approval-v2.ts"
-        if v2
-        else "./runtime/plugins/plan-approval-v1.js"
-    )
-    if plan_approval_plugin not in plugins:
-        plugins.append(plan_approval_plugin)
-
     if v2:
+        plan_approval_plugin = "./runtime/plugins/plan-approval-v2.ts"
+        if plan_approval_plugin not in plugins:
+            plugins.append(plan_approval_plugin)
         approval_plugin = "./plugins/reliability-approval"
         if approval_plugin not in plugins:
             plugins.append(approval_plugin)
@@ -90,6 +86,14 @@ def lead_parallel(lead: str, default: int) -> int:
     global_limit = env_int("MAX_PARALLEL_SUBAGENTS", default)
     env_name = POLICY.get("lead_parallel_env", {}).get(lead)
     return env_int(env_name, global_limit) if env_name else global_limit
+
+
+def prepare_v1_prompts() -> None:
+    GENERATED_V1_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+    for old in GENERATED_V1_PROMPTS_DIR.glob("*.md"):
+        old.unlink()
+    for source in GENERATED_PROMPTS_DIR.glob("*.md"):
+        (GENERATED_V1_PROMPTS_DIR / source.name).write_text(source.read_text())
 
 
 def append_prompt_policy() -> None:
@@ -108,14 +112,15 @@ def append_prompt_policy() -> None:
     children = children_by_parent(specs)
     marker = "## Reliability and child supervision"
 
-    for name, delegated_children in children.items():
-        if not delegated_children:
-            continue
-        path = GENERATED_PROMPTS_DIR / f"{name}.md"
-        if not path.exists():
-            raise SystemExit(f"Missing generated prompt: {path.relative_to(ROOT)}")
-        max_parallel = lead_parallel(name, int(defaults["max_parallel_subagents"]))
-        block = f"""
+    for prompt_dir in (GENERATED_PROMPTS_DIR, GENERATED_V1_PROMPTS_DIR):
+        for name, delegated_children in children.items():
+            if not delegated_children:
+                continue
+            path = prompt_dir / f"{name}.md"
+            if not path.exists():
+                raise SystemExit(f"Missing generated prompt: {path.relative_to(ROOT)}")
+            max_parallel = lead_parallel(name, int(defaults["max_parallel_subagents"]))
+            block = f"""
 
 ## Reliability and child supervision
 - Reliability profile: `{profile_name}`. Never have more than {max_parallel} delegated child agents RUNNING for this lead at the same time. Queue additional independent work until a runtime slot is free.
@@ -131,14 +136,13 @@ def append_prompt_policy() -> None:
 - Prefer checkpoints between discovery, implementation, tests and review so a later failure does not force successful phases to be repeated.
 - After retries are exhausted, consume the failed child's checkpoint/handoff and decide once: continue with partial evidence, route to a distinct specialist, or return BLOCKED/ESCALATION_REQUIRED. Never create an unbounded retry chain.
 """
-        text = path.read_text()
-        if marker in text:
-            text = text[: text.index(marker)].rstrip() + "\n"
-        path.write_text(text.rstrip() + block + "\n")
+            text = path.read_text()
+            if marker in text:
+                text = text[: text.index(marker)].rstrip() + "\n"
+            path.write_text(text.rstrip() + block + "\n")
 
 
-def append_effective_plan_policy() -> None:
-    mode = plan_approval_mode()
+def append_effective_plan_policy(prompt_dir: Path, mode: str) -> None:
     marker = "## Effective plan approval mode"
     mode_rules = {
         "off": (
@@ -162,7 +166,7 @@ def append_effective_plan_policy() -> None:
 - The runtime gate is authoritative; never retry around a blocked mutating/delegation tool.
 """
 
-    for path in GENERATED_PROMPTS_DIR.glob("*.md"):
+    for path in prompt_dir.glob("*.md"):
         text = path.read_text()
         if marker in text:
             text = text[: text.index(marker)].rstrip() + "\n"
@@ -171,12 +175,14 @@ def append_effective_plan_policy() -> None:
 
 def main() -> None:
     profile()
-    plan_approval_mode()
+    v2_plan_approval_mode = plan_approval_mode()
     patch_config(ROOT / "opencode.jsonc", v2=False)
     patch_config(ROOT / "opencode.v2.jsonc", v2=True)
+    prepare_v1_prompts()
     append_prompt_policy()
-    append_effective_plan_policy()
-    print("Reliability and plan-approval policies applied to generated OpenCode configs")
+    append_effective_plan_policy(GENERATED_V1_PROMPTS_DIR, "off")
+    append_effective_plan_policy(GENERATED_PROMPTS_DIR, v2_plan_approval_mode)
+    print("Reliability policies applied; plan approval is disabled in V1 and configured in V2")
 
 
 if __name__ == "__main__":

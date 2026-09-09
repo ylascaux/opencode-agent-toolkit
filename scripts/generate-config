@@ -51,6 +51,35 @@ COMMANDS = {
     ),
 }
 
+# V1 intentionally has no plan-approval workflow. Keep command wording aligned
+# with the V1 prompt/runtime configuration so commands do not recreate a pause.
+V1_COMMANDS = {
+    "auto": (
+        "Automatically classify, plan and route a task",
+        "Route $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement. Execute the requested path and finish with evidence and residual risk.",
+    ),
+    "plan": (
+        "Create an execution plan without implementing it",
+        "Plan $ARGUMENTS. Route discovery/planning through the minimum sufficient path, include goal/scope, affected files/components, ordered steps, validation/tests, rollback, and delegated agents/gates. Do not implement the plan.",
+    ),
+    "ship": (
+        "Implement with tests, independent review and adaptive security gates",
+        "Ship $ARGUMENTS. Classify risk first and delegate delivery to orchestrator, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence.",
+    ),
+    "architecture": (
+        "Design architecture and produce durable artifacts when requested",
+        "Design $ARGUMENTS via platform-architect. Gather evidence and stabilize the design, then have platform-architect delegate durable writing to docs-writer when requested. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
+    ),
+    "debug": (
+        "Evidence-first debugging with regression coverage",
+        "Debug $ARGUMENTS via orchestrator. Start with read-only reproduction/evidence and the affected specialist, then apply the fix, add regression coverage, independently review it and add security gates if a trust boundary changes.",
+    ),
+    "incident": (
+        "Investigate and remediate an incident",
+        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses, identify blast radius, then execute the required remediation or rollback and report the evidence.",
+    ),
+}
+
 GENERATED_AGENT_KEYS = {
     "description", "mode", "model", "prompt", "system", "steps", "permission", "permissions",
 }
@@ -67,7 +96,7 @@ def agent_entry(name: str, specs, *, v2: bool) -> dict:
         "description": spec.description,
         "mode": spec.mode,
         "model": f"{{env:{spec.model_env}}}",
-        ("system" if v2 else "prompt"): f"{{file:./.generated/prompts/{name}.md}}",
+        ("system" if v2 else "prompt"): f"{{file:./.generated/prompts{'-v1' if not v2 else ''}/{name}.md}}",
         "steps": spec.steps,
         ("permissions" if v2 else "permission"): (
             v2_permissions(name, specs) if v2 else v1_permissions(name, specs)
@@ -80,9 +109,10 @@ def agent_entry(name: str, specs, *, v2: bool) -> dict:
 def build(specs, *, v2: bool) -> dict:
     primary = next(name for name, spec in specs.items() if spec.mode == "primary")
     agents = {name: agent_entry(name, specs, v2=v2) for name in sorted(specs)}
+    command_specs = COMMANDS if v2 else {**COMMANDS, **V1_COMMANDS}
     commands = {
         name: {"description": desc, "template": template, "agent": primary}
-        for name, (desc, template) in COMMANDS.items()
+        for name, (desc, template) in command_specs.items()
     }
     if v2:
         return {
