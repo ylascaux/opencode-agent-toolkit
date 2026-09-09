@@ -2,6 +2,16 @@
 set -euo pipefail
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+# Keep direct `scripts/preflight` invocations consistent with `just preflight`
+# and the launcher. Local overrides intentionally win over the base .env.
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  source "$ROOT/.env"
+  [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
+  set +a
+fi
+
 major="${OPENCODE_MAJOR:-1}"
 
 case "$major" in
@@ -54,6 +64,14 @@ command -v "$bin" >/dev/null 2>&1 && ok "binary: $bin" || error "binary not foun
 if [[ "$config" == *"opencode.v2.jsonc" ]]; then
   [[ -f "$ROOT/plugins/reliability-approval/index.ts" ]] && ok "V2 approval server plugin present" || error "V2 approval server plugin missing"
   [[ -f "$ROOT/plugins/reliability-approval/tui.ts" ]] && ok "V2 approval TUI plugin present" || error "V2 approval TUI plugin missing"
+
+  if ! command -v npm >/dev/null 2>&1; then
+    error "npm is required to resolve the OpenCode V2 plugin SDK"
+  elif npm --prefix "$ROOT" ls @opencode/plugin --depth=0 >/dev/null 2>&1; then
+    ok "V2 plugin SDK installed: @opencode/plugin"
+  else
+    error "@opencode/plugin is missing; run 'just install'"
+  fi
 fi
 
 if [[ -f "$ROOT/reliability.json" ]]; then
