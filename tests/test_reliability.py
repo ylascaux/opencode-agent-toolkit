@@ -37,8 +37,8 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertEqual(normal["max_same_error"], 2)
         self.assertEqual(normal["max_subagent_retries"], 2)
         self.assertGreater(normal["heartbeat_timeout_seconds"], 0)
-        self.assertGreater(normal["max_child_cost"], 0)
-        self.assertGreater(normal["max_run_cost"], normal["max_child_cost"])
+        self.assertNotIn("max_child_cost", normal)
+        self.assertNotIn("max_run_cost", normal)
         self.assertLessEqual(policy["step_caps"]["orchestrator"], 16)
         self.assertLessEqual(policy["step_caps"]["builder"], 16)
 
@@ -75,11 +75,12 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertLessEqual(config["agent"]["builder"]["steps"], 16)
         self.assertIn("./.opencode/plugins/reliability-v1.js", config["plugin"])
 
-    def test_v2_config_is_step_capped_and_loads_watchdog(self):
+    def test_v2_config_is_step_capped_and_loads_watchdog_and_approval(self):
         config = json.loads((ROOT / "opencode.v2.jsonc").read_text())
         self.assertLessEqual(config["agents"]["orchestrator"]["steps"], 16)
         self.assertLessEqual(config["agents"]["builder"]["steps"], 16)
         self.assertIn("./.opencode/plugins/reliability-v2.ts", config["plugins"])
+        self.assertIn("./plugins/reliability-approval", config["plugins"])
 
     def test_every_agent_can_websearch_webfetch_and_use_read_only_git_v1(self):
         config = json.loads((ROOT / "opencode.jsonc").read_text())
@@ -144,6 +145,8 @@ class ReliabilityPolicyTests(unittest.TestCase):
             self.assertIn("runtime slot", text, name)
             self.assertIn("waiting_permission is not stalled", text, name)
             self.assertIn("waiting_on_child", text, name)
+            self.assertIn("stall_suspected", text, name)
+            self.assertIn("user explicitly approves", text, name)
             self.assertIn("retry only that failed child", text, name)
             self.assertIn("task_id", text, name)
             self.assertIn("checkpoint", text, name)
@@ -157,31 +160,57 @@ class ReliabilityPolicyTests(unittest.TestCase):
             self.assertIn("webfetch", text, name)
             self.assertIn("primary sources", text, name)
 
-    def test_v1_watchdog_has_advanced_runtime_guards(self):
-        text = (ROOT / ".opencode" / "plugins" / "reliability-v1.js").read_text()
+    def test_legacy_v1_watchdog_keeps_runtime_guards_for_compatibility(self):
+        text = (ROOT / ".opencode" / "plugins" / "reliability-v1-legacy.js").read_text()
         for needle in [
             "client.session.children", "client.session.abort", "reservations",
-            "consumeOldestReservation", "lead_parallel_env", "MAX_CHILD_COST",
-            "MAX_RUN_COST", "MAX_SUBAGENT_RETRIES", "RELIABILITY_STATE_DIR",
-            "writeCheckpoint", "same tool call produced the same result",
-            "WAITING_PERMISSION", "retryable_failed", "task_id",
-            "usedSlots(state.id) > 0", "createCallIdTracker",
-            "createProgressAwareRepeatDetector",
+            "consumeOldestReservation", "lead_parallel_env", "MAX_SUBAGENT_RETRIES",
+            "RELIABILITY_STATE_DIR", "writeCheckpoint",
+            "same tool call produced the same result", "WAITING_PERMISSION",
+            "retryable_failed", "task_id", "usedSlots(state.id) > 0",
+            "createCallIdTracker", "createProgressAwareRepeatDetector",
         ]:
             self.assertIn(needle, text)
 
-    def test_v2_watchdog_keeps_parity_and_retry_policy(self):
-        text = (ROOT / ".opencode" / "plugins" / "reliability-v2.ts").read_text()
+    def test_legacy_v2_watchdog_keeps_retry_and_task_identity_logic(self):
+        text = (ROOT / ".opencode" / "plugins" / "reliability-v2-legacy.ts").read_text()
         for needle in [
             "session.interrupt", "reconcileChildren", "reservations",
-            "consumeOldestReservation", "lead_parallel_env", "MAX_CHILD_COST",
-            "MAX_RUN_COST", "MAX_SUBAGENT_RETRIES", "RELIABILITY_STATE_DIR",
-            "writeCheckpoint", "same tool call produced the same result",
-            "MAX_PROVIDER_RETRIES", "retryable_failed", "task_id",
-            "usedSlots(state.id) > 0", "createCallIdTracker",
-            "createProgressAwareRepeatDetector", "providerRetryDecision",
+            "consumeOldestReservation", "lead_parallel_env", "MAX_SUBAGENT_RETRIES",
+            "RELIABILITY_STATE_DIR", "writeCheckpoint",
+            "same tool call produced the same result", "MAX_PROVIDER_RETRIES",
+            "retryable_failed", "task_id", "usedSlots(state.id) > 0",
+            "createCallIdTracker", "createProgressAwareRepeatDetector",
+            "providerRetryDecision",
         ]:
             self.assertIn(needle, text)
+
+    def test_active_wrappers_disable_heuristic_auto_kills(self):
+        for relative in [
+            Path(".opencode/plugins/reliability-v1.js"),
+            Path(".opencode/plugins/reliability-v2.ts"),
+        ]:
+            text = (ROOT / relative).read_text()
+            for needle in [
+                'MAX_CHILD_COST: "0"', 'MAX_RUN_COST: "0"',
+                'SUBAGENT_STALLED_TIMEOUT_SECONDS: "2147483647"',
+                'SUBAGENT_MAX_DURATION_SECONDS: "2147483647"',
+                'MAX_SAME_ERROR: "2147483647"',
+            ]:
+                self.assertIn(needle, text, f"{relative}: {needle}")
+
+    def test_v2_approval_plugin_is_user_gated_and_fail_open(self):
+        server = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
+        tui = (ROOT / "plugins" / "reliability-approval" / "tui.ts").read_text()
+        rpc = (ROOT / "plugins" / "reliability-approval" / "rpc.ts").read_text()
+        self.assertIn('events.emit("suspected"', server)
+        self.assertIn('if (!pending.has(sessionID)) return { status: "stale" }', server)
+        self.assertIn('ctx.session.interrupt({ sessionID, continue: false })', server)
+        self.assertIn("no destructive fallback", server)
+        self.assertIn("context.ui.dialog.confirm", tui)
+        self.assertIn('confirm: "Kill"', tui)
+        self.assertIn('cancel: "Keep running"', tui)
+        self.assertIn('enum: ["kill", "keep"]', rpc)
 
     def test_shared_runtime_core_contains_terminal_and_delegation_retry_policy(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-core.js").read_text()
@@ -192,14 +221,16 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertIn("delegationTaskKey", text)
         self.assertIn("task cancel", text)
 
-    def test_env_exposes_new_reliability_controls(self):
+    def test_env_exposes_reliability_controls_without_cost_kill_budgets(self):
         text = (ROOT / ".env.example").read_text()
         for key in [
             "RELIABILITY_PROFILE=", "OPENCODE_PREFLIGHT_AUTH=",
             "OPENCODE_PREFLIGHT_MODELS=", "MAX_PARALLEL_SUBAGENTS=",
-            "MAX_SUBAGENT_RETRIES=", "MAX_CHILD_COST=", "MAX_RUN_COST=",
+            "MAX_SUBAGENT_RETRIES=", "SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS=",
         ]:
             self.assertIn(key, text)
+        self.assertNotIn("MAX_CHILD_COST=", text)
+        self.assertNotIn("MAX_RUN_COST=", text)
         self.assertIn("MAX_PARALLEL_ORCHESTRATOR", text)
         self.assertIn("RELIABILITY_STATE_DIR", text)
 
@@ -209,6 +240,8 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertIn("configured_models=()", text)
         self.assertIn("OPENCODE_PREFLIGHT_AUTH", text)
         self.assertIn("OPENCODE_PREFLIGHT_MODELS", text)
+        self.assertNotIn("MAX_CHILD_COST", text)
+        self.assertNotIn("MAX_RUN_COST", text)
 
 
 if __name__ == "__main__":

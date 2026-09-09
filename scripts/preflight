@@ -51,6 +51,11 @@ command -v "$bin" >/dev/null 2>&1 && ok "binary: $bin" || error "binary not foun
 [[ -f "$ROOT/reliability.json" ]] && ok "reliability policy present" || error "reliability.json missing"
 [[ -f "$plugin_file" ]] && ok "watchdog plugin: $plugin_file" || error "watchdog plugin missing: $plugin_file"
 
+if [[ "$config" == *"opencode.v2.jsonc" ]]; then
+  [[ -f "$ROOT/plugins/reliability-approval/index.ts" ]] && ok "V2 approval server plugin present" || error "V2 approval server plugin missing"
+  [[ -f "$ROOT/plugins/reliability-approval/tui.ts" ]] && ok "V2 approval TUI plugin present" || error "V2 approval TUI plugin missing"
+fi
+
 if [[ -f "$ROOT/reliability.json" ]]; then
   if profile_values="$(python3 - "$ROOT/reliability.json" "${RELIABILITY_PROFILE:-}" <<'PY'
 import json, shlex, sys
@@ -63,9 +68,9 @@ if name not in profiles:
 p = profiles[name]
 print("PROFILE_NAME=" + shlex.quote(name))
 for key in (
-    "max_parallel_subagents", "queue_timeout_seconds", "stalled_timeout_seconds",
-    "max_agent_duration_seconds", "max_same_error", "max_retries",
-    "watch_interval_seconds", "max_child_cost", "max_run_cost",
+    "max_parallel_subagents", "queue_timeout_seconds", "heartbeat_timeout_seconds",
+    "stalled_timeout_seconds", "max_agent_duration_seconds", "max_same_error", "max_retries",
+    "max_subagent_retries", "watch_interval_seconds",
 ):
     print("PROFILE_" + key.upper() + "=" + shlex.quote(str(p[key])))
 PY
@@ -76,13 +81,13 @@ PY
     error "invalid RELIABILITY_PROFILE=${RELIABILITY_PROFILE:-<default>}"
     PROFILE_MAX_PARALLEL_SUBAGENTS=3
     PROFILE_QUEUE_TIMEOUT_SECONDS=600
+    PROFILE_HEARTBEAT_TIMEOUT_SECONDS=60
     PROFILE_STALLED_TIMEOUT_SECONDS=180
     PROFILE_MAX_AGENT_DURATION_SECONDS=900
     PROFILE_MAX_SAME_ERROR=2
     PROFILE_MAX_RETRIES=2
+    PROFILE_MAX_SUBAGENT_RETRIES=2
     PROFILE_WATCH_INTERVAL_SECONDS=15
-    PROFILE_MAX_CHILD_COST=0
-    PROFILE_MAX_RUN_COST=0
   fi
 fi
 
@@ -104,6 +109,20 @@ PY
   else
     error "watchdog plugin is not wired in selected config"
   fi
+
+  if [[ "$config" == *"opencode.v2.jsonc" ]]; then
+    if python3 - "$config" <<'PY' >/dev/null 2>&1
+import json, sys
+from pathlib import Path
+config = json.loads(Path(sys.argv[1]).read_text())
+raise SystemExit(0 if "./plugins/reliability-approval" in config.get("plugins", []) else 1)
+PY
+    then
+      ok "V2 approval plugin wired in selected config"
+    else
+      error "V2 approval plugin is not wired in selected config"
+    fi
+  fi
 fi
 
 for var in MODEL_LOW MODEL_MEDIUM MODEL_HIGH; do
@@ -115,22 +134,6 @@ validate_positive_int() {
   local name="$1" value="$2"
   [[ "$value" =~ ^[1-9][0-9]*$ ]] && ok "$name: $value" || error "$name must be >= 1"
 }
-validate_nonnegative_number() {
-  local name="$1" value="$2"
-  if python3 - "$value" <<'PY' >/dev/null 2>&1
-import math, sys
-try:
-    value = float(sys.argv[1])
-except ValueError:
-    raise SystemExit(1)
-raise SystemExit(0 if math.isfinite(value) and value >= 0 else 1)
-PY
-  then
-    ok "$name: $value"
-  else
-    error "$name must be a finite number >= 0"
-  fi
-}
 
 max_parallel="${MAX_PARALLEL_SUBAGENTS:-${PROFILE_MAX_PARALLEL_SUBAGENTS:-3}}"
 validate_positive_int "max parallel subagents" "$max_parallel"
@@ -138,13 +141,13 @@ for var in MAX_PARALLEL_META_ROUTER MAX_PARALLEL_ORCHESTRATOR MAX_PARALLEL_REVIE
   [[ -z "${!var:-}" ]] || validate_positive_int "$var" "${!var}"
 done
 validate_positive_int "subagent queue timeout seconds" "${SUBAGENT_QUEUE_TIMEOUT_SECONDS:-${PROFILE_QUEUE_TIMEOUT_SECONDS:-600}}"
+validate_positive_int "heartbeat timeout seconds" "${SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS:-${PROFILE_HEARTBEAT_TIMEOUT_SECONDS:-60}}"
 validate_positive_int "stalled timeout seconds" "${SUBAGENT_STALLED_TIMEOUT_SECONDS:-${PROFILE_STALLED_TIMEOUT_SECONDS:-180}}"
 validate_positive_int "max agent duration seconds" "${SUBAGENT_MAX_DURATION_SECONDS:-${PROFILE_MAX_AGENT_DURATION_SECONDS:-900}}"
 validate_positive_int "same error limit" "${MAX_SAME_ERROR:-${PROFILE_MAX_SAME_ERROR:-2}}"
 validate_positive_int "provider retries" "${MAX_PROVIDER_RETRIES:-${PROFILE_MAX_RETRIES:-2}}"
+validate_positive_int "subagent retries" "${MAX_SUBAGENT_RETRIES:-${PROFILE_MAX_SUBAGENT_RETRIES:-2}}"
 validate_positive_int "watch interval seconds" "${SUBAGENT_WATCH_INTERVAL_SECONDS:-${PROFILE_WATCH_INTERVAL_SECONDS:-15}}"
-validate_nonnegative_number "max child provider-reported cost" "${MAX_CHILD_COST:-${PROFILE_MAX_CHILD_COST:-0}}"
-validate_nonnegative_number "max run provider-reported cost" "${MAX_RUN_COST:-${PROFILE_MAX_RUN_COST:-0}}"
 
 if command -v git >/dev/null 2>&1; then
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then

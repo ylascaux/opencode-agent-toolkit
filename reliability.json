@@ -10,9 +10,7 @@
       "max_same_error": 2,
       "max_retries": 1,
       "max_subagent_retries": 1,
-      "watch_interval_seconds": 10,
-      "max_child_cost": 0.25,
-      "max_run_cost": 1.0
+      "watch_interval_seconds": 10
     },
     "normal": {
       "max_parallel_subagents": 3,
@@ -23,9 +21,7 @@
       "max_same_error": 2,
       "max_retries": 2,
       "max_subagent_retries": 2,
-      "watch_interval_seconds": 15,
-      "max_child_cost": 0.5,
-      "max_run_cost": 2.0
+      "watch_interval_seconds": 15
     },
     "premium": {
       "max_parallel_subagents": 4,
@@ -36,9 +32,7 @@
       "max_same_error": 3,
       "max_retries": 2,
       "max_subagent_retries": 2,
-      "watch_interval_seconds": 15,
-      "max_child_cost": 1.5,
-      "max_run_cost": 5.0
+      "watch_interval_seconds": 15
     }
   },
   "lead_parallel_env": {
