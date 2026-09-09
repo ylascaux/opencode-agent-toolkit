@@ -5,6 +5,7 @@ import { Plugin } from "@opencode/plugin"
 import {
   createCallIdTracker,
   createProgressAwareRepeatDetector,
+  createStallDetector,
   delegationFailureClass,
   delegationTaskKey,
   providerRetryDecision,
@@ -80,6 +81,7 @@ export default Plugin.define({
     const d = defaults()
     const globalParallel = intEnv("MAX_PARALLEL_SUBAGENTS", Number(d.max_parallel_subagents))
     const queueTimeoutMs = intEnv("SUBAGENT_QUEUE_TIMEOUT_SECONDS", Number(d.queue_timeout_seconds)) * 1000
+    const heartbeatMs = intEnv("SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS", Number(d.heartbeat_timeout_seconds)) * 1000
     const stalledMs = intEnv("SUBAGENT_STALLED_TIMEOUT_SECONDS", Number(d.stalled_timeout_seconds)) * 1000
     const maxDurationMs = intEnv("SUBAGENT_MAX_DURATION_SECONDS", Number(d.max_agent_duration_seconds)) * 1000
     const watchMs = intEnv("SUBAGENT_WATCH_INTERVAL_SECONDS", Number(d.watch_interval_seconds)) * 1000
@@ -127,6 +129,7 @@ export default Plugin.define({
     const delegationByTaskID = new Map<string, Delegation>()
     const callIds = createCallIdTracker()
     const repeatDetector = createProgressAwareRepeatDetector()
+    const stallDetector = createStallDetector()
 
     const ensure = (id?: string) => {
       if (!id) return undefined
@@ -285,6 +288,8 @@ export default Plugin.define({
     }
     const usedSlots = (parentID: string) => activeCount(parentID) + reservationCount(parentID)
     const hasDelegatedChildren = (parentID: string) => (children.get(parentID)?.size ?? 0) > 0
+    const hasInFlightTool = (sessionID: string) =>
+      [...inFlightTools.values()].some((call) => call.sessionID === sessionID)
 
     const reconcileChildren = async (parentID: string) => {
       const api: any = (ctx as any).session
@@ -362,8 +367,20 @@ export default Plugin.define({
       }
     }
 
+    const preserveRetryableDelegation = (state: State, reason: string) => {
+      const delegation = delegationByTaskID.get(state.id)
+      if (!delegation || delegation.status === "complete" || delegation.status === "failed") return
+      if (delegationFailureClass(reason) !== "retryable") return
+      delegation.taskID = state.id
+      delegation.status = "retryable_failed"
+      delegation.lastFailure = normalize(reason)
+      delegationByTaskID.set(state.id, delegation)
+    }
+
     const abort = async (state: State, reason: string) => {
       if (state.aborted || TERMINAL.has(statusName(state.status))) return
+      preserveRetryableDelegation(state, reason)
+      stallDetector.clear(state.id)
       state.aborted = true
       state.abortReason = reason
       state.status = "ABORTED"
@@ -502,6 +519,7 @@ export default Plugin.define({
         // sibling results and force the whole orchestration branch to restart.
         if (usedSlots(state.id) > 0) {
           state.lastActivityAt = ts
+          stallDetector.clear(state.id)
           continue
         }
 
@@ -513,7 +531,17 @@ export default Plugin.define({
           await abort(state, "max-duration-exceeded")
           continue
         }
-        if (ts - state.lastProgressAt > stalledMs) await abort(state, "no-material-progress")
+        const stall = stallDetector.observe({
+          sessionID: state.id,
+          timestamp: ts,
+          lastActivityAt: state.lastActivityAt,
+          lastProgressAt: state.lastProgressAt,
+          heartbeatMs,
+          stalledMs,
+          confirmationMs: watchMs,
+          busy: hasInFlightTool(state.id),
+        })
+        if (stall.stalled) await abort(state, "no-material-progress")
       }
     }, watchMs)
     timer.unref?.()
