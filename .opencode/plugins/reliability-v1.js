@@ -159,18 +159,16 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     if (args.task_id) {
       item.taskID = String(args.task_id)
       delegationByTaskID.set(item.taskID, item)
-      const child = stateFor(item.taskID)
-      if (child) {
-        child.abortedByWatchdog = false
-        child.abortReason = undefined
-        child.status = "RUNNING"
-        child.createdAt = now()
-        markProgress(child.id)
-      }
     }
     item.attempts += 1
     item.status = "running"
     return item
+  }
+
+  const releaseDelegationReservations = (parentID, taskKey) => {
+    for (const [callID, reservation] of reservations.entries()) {
+      if (reservation.parentID === parentID && reservation.taskKey === taskKey) reservations.delete(callID)
+    }
   }
 
   const recordDelegationOutcome = (parentID, part) => {
@@ -188,6 +186,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       item.taskID = String(taskID)
       delegationByTaskID.set(item.taskID, item)
     }
+    releaseDelegationReservations(parentID, item.key)
     if (toolState.status === "completed") {
       item.status = "complete"
       item.lastFailure = ""
@@ -465,7 +464,16 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         markProgress(id)
         writeCheckpoint(state)
       }
-      if (type === "session.status") state.status = statusName(eventProps(event).status)
+      if (type === "session.status") {
+        const nextStatus = statusName(eventProps(event).status)
+        state.status = nextStatus
+        if (!TERMINAL.has(nextStatus) && state.abortedByWatchdog) {
+          state.abortedByWatchdog = false
+          state.abortReason = undefined
+          state.createdAt = now()
+          markProgress(id)
+        }
+      }
       if (type === "message.updated") {
         const p = eventProps(event)
         const info = p.info ?? p.message ?? p
