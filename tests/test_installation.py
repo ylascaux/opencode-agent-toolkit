@@ -15,21 +15,32 @@ class InstallationSurfaceTests(unittest.TestCase):
             "install:",
             'profile name="copilot":',
             "profiles:",
+            "agents:",
+            "new-agent name *args:",
             'install-user command="oc":',
             'uninstall-user command="oc":',
             'user-status command="oc":',
-            "configure *args:",
             "configure-litellm *args:",
             "doctor:",
             "preflight:",
             "reliability:",
             "check:",
+            "config:",
             "run *args:",
             "scan *args:",
             "api:",
             "models:",
         ]:
             self.assertIn(recipe, text)
+        self.assertNotIn("\nconfigure *args:", text)
+
+    def test_config_recipe_never_invokes_litellm_or_interactive_configurator(self):
+        text = (ROOT / "justfile").read_text()
+        config_block = text.split("\nconfig:\n", 1)[1].split("\ntest:\n", 1)[0]
+        self.assertIn("generate-config", config_block)
+        self.assertIn("apply-reliability", config_block)
+        self.assertNotIn("configure-models", config_block)
+        self.assertNotIn("litellm", config_block.lower())
 
     def test_makefile_is_not_required(self):
         self.assertFalse((ROOT / "Makefile").exists())
@@ -38,7 +49,7 @@ class InstallationSurfaceTests(unittest.TestCase):
         for name in [
             "bootstrap", "doctor", "configure-models", "generate-config", "opencode-agents",
             "user-link", "apply-profile", "resolve-models", "apply-reliability", "preflight",
-            "show-reliability",
+            "show-reliability", "agent_config.py", "new-agent",
         ]:
             self.assertTrue((ROOT / "scripts" / name).exists(), name)
 
@@ -65,22 +76,16 @@ class InstallationSurfaceTests(unittest.TestCase):
             tmp_path = Path(tmp)
             toolkit = tmp_path / "toolkit"
             scripts = toolkit / "scripts"
-            agents = toolkit / "agents"
-            profiles = toolkit / "profiles"
             plugins = toolkit / ".opencode" / "plugins"
             scripts.mkdir(parents=True)
-            agents.mkdir()
-            profiles.mkdir()
             plugins.mkdir(parents=True)
 
             for name in [
                 "opencode-agents", "generate-config", "user-link", "resolve-models",
-                "apply-reliability", "preflight",
+                "apply-reliability", "preflight", "agent_config.py",
             ]:
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
-            shutil.copy2(ROOT / "agents" / "manifest.json", agents / "manifest.json")
-            shutil.copytree(ROOT / "agents" / "permissions", agents / "permissions")
-            shutil.copy2(ROOT / "profiles" / "agent-tiers.json", profiles / "agent-tiers.json")
+            shutil.copytree(ROOT / "agents", toolkit / "agents")
             shutil.copy2(ROOT / "reliability.json", toolkit / "reliability.json")
             shutil.copy2(
                 ROOT / ".opencode" / "plugins" / "reliability-v1.js",
