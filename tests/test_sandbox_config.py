@@ -19,8 +19,18 @@ class SandboxConfigTests(unittest.TestCase):
         cls.v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
 
     def test_sandbox_plugins_are_generated_for_both_runtimes(self):
-        self.assertIn("./.opencode/plugins/sandbox-v1.js", self.v1["plugin"])
-        self.assertIn("./.opencode/plugins/sandbox-v2.ts", self.v2["plugins"])
+        self.assertIn("./runtime/plugins/sandbox-v1.js", self.v1["plugin"])
+        self.assertIn("./runtime/plugins/sandbox-v2.ts", self.v2["plugins"])
+
+    def test_runtime_internals_are_outside_v2_auto_discovery_directory(self):
+        self.assertFalse((ROOT / ".opencode" / "plugins").exists())
+        runtime = ROOT / "runtime" / "plugins"
+        for filename in [
+            "sandbox-v1.js", "sandbox-v2.ts", "plan-approval-core.js",
+            "plan-approval-v1.js", "plan-approval-v2.ts", "reliability-core.js",
+            "reliability-v1.js", "reliability-v2.ts",
+        ]:
+            self.assertTrue((runtime / filename).is_file(), filename)
 
     def test_aws_and_kubectl_are_manual_only(self):
         permissions = json.loads((ROOT / "agents" / "_defaults" / "permissions.json").read_text())
@@ -35,17 +45,9 @@ class SandboxConfigTests(unittest.TestCase):
         permissions = json.loads((ROOT / "agents" / "_defaults" / "permissions.json").read_text())
         bash = permissions["bash"]
         for command in [
-            "git fetch*",
-            "git pull*",
-            "git push*",
-            "git clone*",
-            "git ls-remote*",
-            "git remote update*",
-            "git submodule update*",
-            "git archive --remote*",
-            "ssh *",
-            "scp *",
-            "sftp *",
+            "git fetch*", "git pull*", "git push*", "git clone*", "git ls-remote*",
+            "git remote update*", "git submodule update*", "git archive --remote*",
+            "ssh *", "scp *", "sftp *",
         ]:
             self.assertEqual(bash[command], "deny", command)
         prompt = (ROOT / "agents" / "_defaults" / "prompt.md").read_text()
@@ -61,38 +63,21 @@ class SandboxConfigTests(unittest.TestCase):
         permissions = json.loads((ROOT / "agents" / "_defaults" / "permissions.json").read_text())
         reads = permissions["read"]
         for pattern in [
-            "**/.ssh/**",
-            "**/.aws/**",
-            "**/.kube/**",
-            "**/.azure/**",
-            "**/.config/gcloud/**",
-            "**/.config/gh/**",
+            "**/.ssh/**", "**/.aws/**", "**/.kube/**", "**/.azure/**",
+            "**/.config/gcloud/**", "**/.config/gh/**",
         ]:
             self.assertEqual(reads[pattern], "deny", pattern)
 
     def test_cloud_mutations_remain_denied_defense_in_depth(self):
         permissions = json.loads((ROOT / "agents" / "_defaults" / "permissions.json").read_text())
         bash = permissions["bash"]
-        for command in [
-            "kubectl apply*",
-            "kubectl delete*",
-            "helm upgrade*",
-            "aws * delete*",
-            "aws * terminate*",
-        ]:
+        for command in ["kubectl apply*", "kubectl delete*", "helm upgrade*", "aws * delete*", "aws * terminate*"]:
             self.assertEqual(bash[command], "deny", command)
 
     def test_policy_never_mounts_host_credentials_or_docker_socket(self):
         policy = json.loads((ROOT / "sandbox" / "policy.json").read_text())
         denied = set(policy["filesystem"]["never_mount"])
-        for value in [
-            "~/.aws",
-            "~/.ssh",
-            "~/.kube",
-            "~/.config/gh",
-            "/var/run/docker.sock",
-            "$SSH_AUTH_SOCK",
-        ]:
+        for value in ["~/.aws", "~/.ssh", "~/.kube", "~/.config/gh", "/var/run/docker.sock", "$SSH_AUTH_SOCK"]:
             self.assertIn(value, denied)
         self.assertEqual(policy["cloud"]["mode"], "manual_only")
         self.assertFalse(policy["cloud"]["agent_execution"])

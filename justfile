@@ -62,7 +62,7 @@ sandbox-build:
 # Enable sandboxed agent shell execution persistently in .env.local.
 sandbox-on: sandbox-build
     python3 ./scripts/sandbox-toggle on
-    @echo "Sandbox enabled. Configure OAT_AWS_PROFILE/OAT_KUBE_CONTEXT in .env.local for brokered cloud debugging."
+    @echo "Sandbox enabled. AWS, kubectl and remote Git remain manual-only on the trusted host."
 
 # Disable sandboxed shell execution without deleting the image.
 sandbox-off:

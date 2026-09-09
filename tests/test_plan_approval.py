@@ -23,8 +23,8 @@ class PlanApprovalTests(unittest.TestCase):
     def test_generated_configs_load_plan_gates(self):
         v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
-        self.assertIn("./.opencode/plugins/plan-approval-v1.js", v1["plugin"])
-        self.assertIn("./.opencode/plugins/plan-approval-v2.ts", v2["plugins"])
+        self.assertIn("./runtime/plugins/plan-approval-v1.js", v1["plugin"])
+        self.assertIn("./runtime/plugins/plan-approval-v2.ts", v2["plugins"])
 
     def test_plan_command_exists_in_both_runtime_configs(self):
         v1 = json.loads((ROOT / "opencode.jsonc").read_text())
@@ -60,9 +60,9 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertIn("always", text)
 
     def test_runtime_gate_is_fail_closed_for_mutation(self):
-        core = (ROOT / ".opencode" / "plugins" / "plan-approval-core.js").read_text()
-        v1 = (ROOT / ".opencode" / "plugins" / "plan-approval-v1.js").read_text()
-        v2 = (ROOT / ".opencode" / "plugins" / "plan-approval-v2.ts").read_text()
+        core = (ROOT / "runtime" / "plugins" / "plan-approval-core.js").read_text()
+        v1 = (ROOT / "runtime" / "plugins" / "plan-approval-v1.js").read_text()
+        v2 = (ROOT / "runtime" / "plugins" / "plan-approval-v2.ts").read_text()
         self.assertIn("toolRequiresPlanApproval", core)
         self.assertIn("runtime-blocked-unapproved-change", core)
         self.assertIn('"tool.execute.before"', v1)

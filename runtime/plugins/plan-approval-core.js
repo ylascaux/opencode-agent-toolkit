@@ -28,6 +28,15 @@ const READ_ONLY_SIMPLE = [
   /^test(?:\s|$)/,
   /^\[(?:\s|$)/,
   /^fd(?:\s|$)/,
+  /^echo(?:\s|$)/,
+  /^printf(?:\s|$)/,
+  /^hostname(?:\s|$)/,
+  /^printenv(?:\s|$)/,
+  /^env(?:\s|$)/,
+  /^id(?:\s|$)/,
+  /^uname(?:\s|$)/,
+  /^whoami(?:\s|$)/,
+  /^true(?:\s|$)/,
   /^find(?:\s|$)/,
   /^git\s+(?:--no-pager\s+)?(?:status|diff|show|log|rev-parse|rev-list|ls-files|ls-tree|grep|blame|describe|merge-base)(?:\s|$)/,
   /^git\s+(?:--no-pager\s+)?remote\s+(?:-v|get-url)(?:\s|$)/,
@@ -87,6 +96,70 @@ export function containsPlanReapprovalMarker(text) {
   return String(text ?? "").includes(PLAN_REAPPROVAL_MARKER)
 }
 
+function shellWords(command) {
+  const words = []
+  let current = ""
+  let quote = null
+  let escaped = false
+  let started = false
+
+  for (const char of String(command ?? "")) {
+    if (escaped) {
+      current += char
+      escaped = false
+      started = true
+      continue
+    }
+    if (quote === "'") {
+      if (char === "'") quote = null
+      else current += char
+      started = true
+      continue
+    }
+    if (quote === '"') {
+      if (char === '"') quote = null
+      else if (char === "\\") escaped = true
+      else current += char
+      started = true
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      started = true
+      continue
+    }
+    if (char === "\\") {
+      escaped = true
+      started = true
+      continue
+    }
+    if (/\s/.test(char)) {
+      if (started) {
+        words.push(current)
+        current = ""
+        started = false
+      }
+      continue
+    }
+    current += char
+    started = true
+  }
+
+  if (quote || escaped) return null
+  if (started) words.push(current)
+  return words
+}
+
+function unwrapSandboxCommand(command) {
+  const words = shellWords(command)
+  if (!words) return { matched: false, command: null }
+  if (words.length !== 6) return { matched: false, command: null }
+  if (words[0] !== "bash") return { matched: false, command: null }
+  if (!/(?:^|\/)scripts\/sandbox-run$/.test(words[1])) return { matched: false, command: null }
+  if (words[2] !== "--cwd" || words[4] !== "--command") return { matched: false, command: null }
+  return { matched: true, command: words[5] }
+}
+
 function isReadOnlySimpleCommand(command) {
   const value = command.trim()
   if (!value) return true
@@ -95,11 +168,16 @@ function isReadOnlySimpleCommand(command) {
 }
 
 export function isReadOnlyShellCommand(command) {
-  const value = String(command ?? "").trim()
+  const raw = String(command ?? "").trim()
+  if (!raw) return true
+
+  const sandbox = unwrapSandboxCommand(raw)
+  const value = sandbox.matched ? String(sandbox.command ?? "").trim() : raw
   if (!value) return true
 
   // Redirections, command substitution and multi-command control operators can
-  // hide writes even when the visible prefix looks read-only.
+  // hide writes even when the visible prefix looks read-only. The sandbox
+  // wrapper itself is trusted and removed before applying this classification.
   if (/[<>`\n]/.test(value) || /\$\(/.test(value) || /(?:&&|\|\||;)/.test(value)) return false
 
   // Read-only pipelines are allowed only when every stage is independently

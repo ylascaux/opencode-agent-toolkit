@@ -76,9 +76,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             tmp_path = Path(tmp)
             toolkit = tmp_path / "toolkit"
             scripts = toolkit / "scripts"
-            plugins = toolkit / ".opencode" / "plugins"
             scripts.mkdir(parents=True)
-            plugins.mkdir(parents=True)
 
             for name in [
                 "opencode-agents", "generate-config", "user-link", "resolve-models",
@@ -86,11 +84,8 @@ class InstallationSurfaceTests(unittest.TestCase):
             ]:
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
             shutil.copytree(ROOT / "agents", toolkit / "agents")
+            shutil.copytree(ROOT / "runtime", toolkit / "runtime")
             shutil.copy2(ROOT / "reliability.json", toolkit / "reliability.json")
-            shutil.copy2(
-                ROOT / ".opencode" / "plugins" / "reliability-v1.js",
-                plugins / "reliability-v1.js",
-            )
             (toolkit / ".env").write_text(
                 "OPENCODE_MAJOR=1\n"
                 "OPENCODE_PREFLIGHT=1\n"
@@ -140,14 +135,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            output = dict(
-                line.split("=", 1)
-                for line in result.stdout.splitlines()
-                if "=" in line
-            )
-            # macOS exposes /var as a symlink to /private/var. Bash `cd -P`
-            # intentionally canonicalizes paths, so compare filesystem identity
-            # instead of the lexical spelling returned by tempfile.
+            output = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
             self.assertEqual(Path(output["cwd"]).resolve(), project.resolve())
             self.assertEqual(Path(output["config"]).resolve(), (toolkit / "opencode.jsonc").resolve())
             self.assertEqual(output["args"], "run hello")

@@ -90,7 +90,7 @@ def build(specs, *, v2: bool) -> dict:
             "default_agent": primary,
             "agents": agents,
             "commands": commands,
-            "plugins": ["./.opencode/plugins/sandbox-v2.ts"],
+            "plugins": ["./runtime/plugins/sandbox-v2.ts"],
             "experimental": {"subagent_depth": 2},
         }
     return {
@@ -99,7 +99,7 @@ def build(specs, *, v2: bool) -> dict:
         "subagent_depth": 2,
         "agent": agents,
         "command": commands,
-        "plugin": ["./.opencode/plugins/sandbox-v1.js"],
+        "plugin": ["./runtime/plugins/sandbox-v1.js"],
     }
 
 

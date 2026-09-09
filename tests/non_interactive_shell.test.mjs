@@ -3,8 +3,8 @@ import test from "node:test"
 import {
   NON_INTERACTIVE_SHELL_ENV,
   applyNonInteractiveShellEnv,
-} from "../.opencode/plugins/non-interactive-shell.js"
-import { ReliabilityV1Plugin } from "../.opencode/plugins/reliability-v1.js"
+} from "../runtime/plugins/non-interactive-shell.js"
+import { ReliabilityV1Plugin } from "../runtime/plugins/reliability-v1.js"
 
 const makeClient = () => ({
   session: {

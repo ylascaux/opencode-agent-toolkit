@@ -10,7 +10,7 @@ import {
   isRejectionMessage,
   normalizePlanApprovalMode,
   toolRequiresPlanApproval,
-} from "../.opencode/plugins/plan-approval-core.js"
+} from "../runtime/plugins/plan-approval-core.js"
 
 test("approval mode normalization is conservative", () => {
   assert.equal(normalizePlanApprovalMode("changes"), "changes")
@@ -38,6 +38,10 @@ test("shell classifier allows read-only evidence and blocks hidden mutation", ()
     "terraform plan",
     "kubectl get pods",
     "pytest -q",
+    "echo sandbox",
+    "hostname",
+    "printenv OAT_SANDBOX",
+    "whoami",
   ]) {
     assert.equal(isReadOnlyShellCommand(command), true, command)
   }
@@ -50,6 +54,19 @@ test("shell classifier allows read-only evidence and blocks hidden mutation", ()
   ]) {
     assert.equal(isReadOnlyShellCommand(command), false, command)
   }
+})
+
+test("shell classifier unwraps the trusted sandbox runner before classifying", () => {
+  const prefix = "bash '/Users/yoann.lascaux/perso/opencode-agent-toolkit/scripts/sandbox-run' --cwd '/Users/yoann.lascaux/Projects/poc-replace-cloudflare' --command "
+  assert.equal(isReadOnlyShellCommand(`${prefix}'pwd'`), true)
+  assert.equal(isReadOnlyShellCommand(`${prefix}'hostname'`), true)
+  assert.equal(isReadOnlyShellCommand(`${prefix}'echo \"sandbox=$OAT_SANDBOX\"'`), true)
+  assert.equal(isReadOnlyShellCommand(`${prefix}'git add .'`), false)
+  assert.equal(isReadOnlyShellCommand(`${prefix}'printf x > file.txt'`), false)
+})
+
+test("compound shell programs remain gated even when individual commands are read-only", () => {
+  assert.equal(isReadOnlyShellCommand('echo "sandbox=$OAT_SANDBOX"; pwd; hostname'), false)
 })
 
 test("changes mode blocks mutators and implementation delegation but keeps planning available", () => {
@@ -72,7 +89,6 @@ test("approved plan propagates to children and resets on the next root user turn
   const gate = createPlanApprovalGate({ mode: "changes" })
   gate.onUserMessage("root", "fix the bug", "u1")
   gate.onAssistantText("child", `Plan\n${PLAN_REQUIRED_MARKER}`, "a1")
-  // Parent relation can arrive after the child produced its plan; state must merge upward.
   gate.rememberParent("child", "root")
   assert.equal(gate.state("root").status, "waiting")
 
@@ -100,7 +116,7 @@ test("runtime block creates a waiting gate and rejection cannot be bypassed", ()
 test("scope deviation revokes an existing approval until reapproved", () => {
   const gate = createPlanApprovalGate({ mode: "changes" })
   gate.onUserMessage("root", "change it", "u1")
-  gate.onAssistantText("root", `Plan\n${PLAN_REQUIRED_MARKER}`, "a1")
+  gate.onAssistantText("root", `New dependency found\n${PLAN_REQUIRED_MARKER}`, "a1")
   gate.onUserMessage("root", "approve", "u2")
   assert.equal(gate.beforeTool("root", "write", {}).allowed, true)
 

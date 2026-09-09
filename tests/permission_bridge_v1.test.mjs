@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { ReliabilityV1Plugin } from "../.opencode/plugins/reliability-v1.js"
+import { ReliabilityV1Plugin } from "../runtime/plugins/reliability-v1.js"
 
 const withEnv = async (values, fn) => {
   const previous = new Map()
@@ -103,7 +103,6 @@ test("V1 permission bridge surfaces a delegated ASK without auto-approving it", 
       assert.match(toasts[0].body.message, /bash: rg -n TODO \./)
       assert.equal(toasts[0].body.variant, "warning")
 
-      // Replaying the exact same event must not spam the TUI.
       await hooks.event({ event: ask })
       assert.equal(toasts.length, 1)
       assert.equal(openedSessions.length, 1)

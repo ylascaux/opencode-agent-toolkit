@@ -7,8 +7,8 @@ import {
   delegationFailureClass,
   delegationTaskKey,
   providerRetryDecision,
-} from "../.opencode/plugins/reliability-core.js"
-import { ReliabilityV1Plugin } from "../.opencode/plugins/reliability-v1.js"
+} from "../runtime/plugins/reliability-core.js"
+import { ReliabilityV1Plugin } from "../runtime/plugins/reliability-v1.js"
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
