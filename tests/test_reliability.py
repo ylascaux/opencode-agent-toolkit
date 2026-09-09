@@ -37,6 +37,28 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertEqual(set(policy["lead_parallel_env"]), set(LEADS))
         self.assertEqual(policy["lead_parallel_env"]["orchestrator"], "MAX_PARALLEL_ORCHESTRATOR")
 
+    def test_every_manifest_agent_has_an_editable_permission_file(self):
+        manifest = json.loads((ROOT / "agents" / "manifest.json").read_text())
+        permission_dir = ROOT / "agents" / "permissions"
+        self.assertTrue((permission_dir / "_default.json").exists())
+        self.assertTrue((permission_dir / "README.md").exists())
+        actual = {path.stem for path in permission_dir.glob("*.json") if path.name != "_default.json"}
+        self.assertEqual(actual, set(manifest))
+        for name in manifest:
+            data = json.loads((permission_dir / f"{name}.json").read_text())
+            self.assertIsInstance(data, dict, name)
+
+    def test_default_permission_policy_is_open_but_destructive_safe(self):
+        default = json.loads((ROOT / "agents" / "permissions" / "_default.json").read_text())
+        self.assertEqual(default["websearch"], "allow")
+        self.assertEqual(default["webfetch"], "allow")
+        self.assertEqual(default["edit"], "ask")
+        self.assertEqual(default["bash"]["*"], "ask")
+        self.assertEqual(default["read"]["*.env"], "ask")
+        self.assertEqual(default["external_directory"]["*"], "ask")
+        for command in ["rm -rf*", "git reset --hard*", "git push --force*", "terraform apply*", "kubectl delete*"]:
+            self.assertEqual(default["bash"][command], "deny", command)
+
     def test_v1_config_is_step_capped_and_loads_watchdog(self):
         config = json.loads((ROOT / "opencode.jsonc").read_text())
         self.assertLessEqual(config["agent"]["orchestrator"]["steps"], 16)
@@ -49,23 +71,29 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertLessEqual(config["agents"]["builder"]["steps"], 16)
         self.assertIn("./.opencode/plugins/reliability-v2.ts", config["plugins"])
 
-    def test_every_agent_can_websearch_and_use_read_only_git_v1(self):
+    def test_every_agent_can_websearch_webfetch_and_use_read_only_git_v1(self):
         config = json.loads((ROOT / "opencode.jsonc").read_text())
         for name, agent in config["agent"].items():
             permission = agent["permission"]
             self.assertEqual(permission["websearch"], "allow", name)
+            self.assertEqual(permission["webfetch"], "allow", name)
             bash = permission["bash"]
             self.assertIsInstance(bash, dict, name)
+            self.assertEqual(bash["*"], "ask", name)
             for pattern in READ_ONLY_GIT:
                 self.assertEqual(bash.get(pattern), "allow", f"{name}: {pattern}")
 
-    def test_every_agent_can_websearch_and_use_read_only_git_v2(self):
+    def test_every_agent_can_websearch_webfetch_and_use_read_only_git_v2(self):
         config = json.loads((ROOT / "opencode.v2.jsonc").read_text())
         for name, agent in config["agents"].items():
             rules = agent["permissions"]
-            web = [r for r in rules if r.get("action") == "websearch" and r.get("resource") == "*"]
-            self.assertTrue(web, name)
-            self.assertEqual(web[-1]["effect"], "allow", name)
+            for action in ["websearch", "webfetch"]:
+                web = [r for r in rules if r.get("action") == action and r.get("resource") == "*"]
+                self.assertTrue(web, f"{name}: {action}")
+                self.assertEqual(web[-1]["effect"], "allow", f"{name}: {action}")
+            shell_default = [r for r in rules if r.get("action") == "shell" and r.get("resource") == "*"]
+            self.assertTrue(shell_default, name)
+            self.assertEqual(shell_default[-1]["effect"], "ask", name)
             for pattern in READ_ONLY_GIT:
                 git_rules = [
                     r
@@ -117,6 +145,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
             text = (ROOT / "prompts" / f"{name}.md").read_text().lower()
             self.assertIn("## external research", text, name)
             self.assertIn("websearch", text, name)
+            self.assertIn("webfetch", text, name)
             self.assertIn("primary sources", text, name)
 
     def test_v1_watchdog_has_advanced_runtime_guards(self):

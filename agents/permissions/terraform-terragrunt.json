@@ -1,0 +1,19 @@
+{
+  "edit": "allow",
+  "bash": {
+    "terraform fmt*": "allow",
+    "tofu fmt*": "allow",
+    "terragrunt hclfmt*": "allow",
+    "terraform validate*": "allow",
+    "tofu validate*": "allow",
+    "terragrunt validate*": "allow",
+    "terraform providers*": "allow",
+    "tofu providers*": "allow",
+    "terragrunt state list*": "allow",
+    "terraform plan*": "ask",
+    "tofu plan*": "ask",
+    "terragrunt plan*": "ask",
+    "* apply*": "deny",
+    "* destroy*": "deny"
+  }
+}

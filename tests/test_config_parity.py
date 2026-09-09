@@ -15,16 +15,31 @@ WRITERS = {
     "builder", "tester", "mock-generator", "debugger", "python-specialist",
     "go-specialist", "cicd", "docs-writer", "terraform-terragrunt",
 }
-SECRET_PATTERNS = {
+SENSITIVE_PATTERNS = {
     "*.env", "*.env.*", "**/.env", "**/.env.*", "*.pem", "*.key",
     "**/.ssh/**", "**/.aws/credentials", "*id_rsa*", "*id_ed25519*",
 }
+READ_ONLY_GIT = {
+    "git status*", "git diff*", "git show*", "git log*", "git rev-parse*",
+    "git rev-list*", "git ls-files*", "git ls-tree*", "git grep*", "git blame*",
+}
+
+
+def last_v2_effect(agent: dict, action: str, resource: str) -> str | None:
+    effect = None
+    for rule in agent["permissions"]:
+        if rule.get("action") != action:
+            continue
+        if rule.get("resource") in {"*", resource}:
+            effect = rule.get("effect")
+    return effect
 
 
 class ConfigPolicyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], check=True, capture_output=True, text=True)
+        subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], check=True, capture_output=True, text=True)
         cls.v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         cls.v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
 
@@ -67,7 +82,7 @@ class ConfigPolicyTests(unittest.TestCase):
         self.assertIn("github-copilot/gpt-5.6-terra", env_text)
         self.assertIn("github-copilot/gpt-5.6-sol", env_text)
 
-    def test_leaf_agents_cannot_delegate(self):
+    def test_leaf_agents_cannot_delegate_unattended(self):
         for name, agent in self.v1["agent"].items():
             task = agent["permission"]["task"]
             self.assertEqual(task["*"], "deny", name)
@@ -78,7 +93,7 @@ class ConfigPolicyTests(unittest.TestCase):
             self.assertTrue(rules, name)
             self.assertEqual(rules[0], {"action": "subagent", "resource": "*", "effect": "deny"})
             if name not in LEADS:
-                self.assertEqual(len(rules), 1, name)
+                self.assertEqual(last_v2_effect(agent, "subagent", "arbitrary-agent"), "deny", name)
 
     def test_meta_router_catalog_is_small_and_hierarchical(self):
         task = self.v1["agent"]["meta-router"]["permission"]["task"]
@@ -86,41 +101,58 @@ class ConfigPolicyTests(unittest.TestCase):
         self.assertEqual(allowed, EXPECTED_META_CHILDREN)
         self.assertLessEqual(len(allowed), 8)
 
-    def test_every_agent_has_explicit_web_and_skill_policy(self):
+    def test_every_agent_has_open_web_and_prompted_skill_policy(self):
         for name, agent in self.v1["agent"].items():
             p = agent["permission"]
-            self.assertIn(p["webfetch"], {"allow", "ask", "deny"}, name)
-            self.assertIn(p["websearch"], {"allow", "ask", "deny"}, name)
-            self.assertIn(p["skill"], {"allow", "ask", "deny"}, name)
+            self.assertEqual(p["webfetch"], "allow", name)
+            self.assertEqual(p["websearch"], "allow", name)
+            self.assertEqual(p["skill"], "ask", name)
+        for name, agent in self.v2["agents"].items():
+            self.assertEqual(last_v2_effect(agent, "webfetch", "*"), "allow", name)
+            self.assertEqual(last_v2_effect(agent, "websearch", "*"), "allow", name)
+            self.assertEqual(last_v2_effect(agent, "skill", "*"), "ask", name)
 
-    def test_sensitive_reads_are_denied_everywhere(self):
+    def test_sensitive_reads_require_approval_instead_of_hard_deny(self):
         for name, agent in self.v1["agent"].items():
             read = agent["permission"]["read"]
-            for pattern in SECRET_PATTERNS:
-                self.assertEqual(read[pattern], "deny", f"{name}: {pattern}")
+            for pattern in SENSITIVE_PATTERNS:
+                self.assertEqual(read[pattern], "ask", f"{name}: {pattern}")
+        for name, agent in self.v2["agents"].items():
+            for pattern in SENSITIVE_PATTERNS:
+                self.assertEqual(last_v2_effect(agent, "read", pattern), "ask", f"{name}: {pattern}")
 
-    def test_only_expected_agents_can_edit(self):
+    def test_edit_is_allow_for_writers_and_ask_for_everyone_else(self):
         for name, agent in self.v1["agent"].items():
-            expected = "allow" if name in WRITERS else "deny"
+            expected = "allow" if name in WRITERS else "ask"
             self.assertEqual(agent["permission"]["edit"], expected, name)
+        for name, agent in self.v2["agents"].items():
+            expected = "allow" if name in WRITERS else "ask"
+            self.assertEqual(last_v2_effect(agent, "edit", "*"), expected, name)
 
-    def test_reviewers_can_collect_safe_git_evidence_without_editing(self):
-        for name in ["reviewer", "evidence-auditor"]:
-            agent = self.v1["agent"][name]
-            self.assertEqual(agent["permission"]["edit"], "deny")
+    def test_non_destructive_shell_defaults_to_ask_and_safe_git_is_allowed(self):
+        for name, agent in self.v1["agent"].items():
             bash = agent["permission"]["bash"]
-            self.assertEqual(bash["*"], "ask")
-            for command in ["git status*", "git diff*", "git show*", "git log*", "git rev-parse*"]:
-                self.assertEqual(bash[command], "allow")
+            self.assertEqual(bash["*"], "ask", name)
+            for command in READ_ONLY_GIT:
+                self.assertEqual(bash[command], "allow", f"{name}: {command}")
+        for name, agent in self.v2["agents"].items():
+            self.assertEqual(last_v2_effect(agent, "shell", "some harmless custom command"), "ask", name)
+            for command in READ_ONLY_GIT:
+                self.assertEqual(last_v2_effect(agent, "shell", command), "allow", f"{name}: {command}")
 
     def test_platform_architect_can_delegate_durable_document_writing(self):
         agent = self.v1["agent"]["platform-architect"]
-        self.assertEqual(agent["permission"]["edit"], "deny")
+        self.assertEqual(agent["permission"]["edit"], "ask")
         self.assertEqual(agent["permission"]["task"]["docs-writer"], "allow")
+
+    def test_project_scanner_can_read_projects_without_prompt(self):
+        agent = self.v1["agent"]["project-scanner"]
+        external = agent["permission"]["external_directory"]
+        self.assertEqual(external["*"], "ask")
+        self.assertEqual(external["~/Projects/**"], "allow")
 
     def test_review_lead_can_independently_recheck_architecture_evidence(self):
         agent = self.v1["agent"]["review-lead"]
-        self.assertEqual(agent["permission"]["edit"], "deny")
         task = agent["permission"]["task"]
         for child in [
             "reviewer", "project-scanner", "aws-platform", "kubernetes", "sre",
@@ -143,10 +175,16 @@ class ConfigPolicyTests(unittest.TestCase):
         self.assertIn("project-scanner", template)
         self.assertIn("producer handoff", template)
 
-    def test_terraform_destructive_commands_denied(self):
-        bash = self.v1["agent"]["terraform-terragrunt"]["permission"]["bash"]
-        for command in ["terraform apply*", "terraform destroy*", "tofu apply*", "tofu destroy*", "terragrunt apply*", "terragrunt destroy*"]:
-            self.assertEqual(bash[command], "deny")
+    def test_destructive_commands_stay_denied(self):
+        for name, agent in self.v1["agent"].items():
+            bash = agent["permission"]["bash"]
+            for command in [
+                "rm -rf*", "git reset --hard*", "git push --force*",
+                "terraform apply*", "terraform destroy*", "tofu apply*",
+                "tofu destroy*", "terragrunt apply*", "terragrunt destroy*",
+                "kubectl delete*", "helm uninstall*",
+            ]:
+                self.assertEqual(bash[command], "deny", f"{name}: {command}")
 
 
 if __name__ == "__main__":
