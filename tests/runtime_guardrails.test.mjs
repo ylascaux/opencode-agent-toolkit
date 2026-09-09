@@ -124,6 +124,24 @@ test("V1 fallback task reservation is released after execute.after", async () =>
 
       await hooks["tool.execute.before"](input, { args: input.args })
       await hooks["tool.execute.after"](input, { output: "done" })
+      await hooks.event({
+        event: {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "parent",
+            part: {
+              type: "tool",
+              tool: "task",
+              state: {
+                status: "completed",
+                input: { prompt: "same" },
+                metadata: { sessionId: "completed-child" },
+                output: "done",
+              },
+            },
+          },
+        },
+      })
 
       const started = Date.now()
       await hooks["tool.execute.before"](input, { args: input.args })
