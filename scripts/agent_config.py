@@ -19,6 +19,7 @@ VALID_TIERS = {"low", "medium", "high"}
 VALID_MODEL_PROFILES = {"fast", "general", "coding", "reasoning", "deep", "review", "security"}
 VALID_PERMISSION_EFFECTS = {"allow", "ask", "deny"}
 ACTION_MAP = {"bash": "shell", "task": "subagent"}
+PROMPT_ACTION_LABELS = {"bash": "bash / shell", "task": "task / subagent"}
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 RESERVED_AGENT_KEYS = {
@@ -279,13 +280,43 @@ def v2_permissions(name: str, specs: dict[str, AgentSpec]) -> list[dict]:
     return rules
 
 
-def render_prompt(spec: AgentSpec) -> str:
+def render_capabilities(name: str, specs: dict[str, AgentSpec]) -> str:
+    grouped: dict[str, dict[str, list[str]]] = {
+        effect: {} for effect in ("allow", "ask", "deny")
+    }
+    for action, value in v1_permissions(name, specs).items():
+        label = PROMPT_ACTION_LABELS.get(action, action)
+        rules = {"*": value} if isinstance(value, str) else value
+        for resource, effect in rules.items():
+            grouped[effect].setdefault(label, []).append(resource)
+
+    lines = [
+        "## Effective capabilities",
+        "This capability map is generated from the same effective permissions used to build the OpenCode configuration; do not maintain a separate manual tool list.",
+        "`ALLOW` may be used without approval, `ASK` requires runtime/user approval, and `DENY` must never be attempted. Resource-specific rules refine wildcard baselines; obey the most specific runtime rule.",
+        "The runtime may expose fewer tools than this permission map. Never invent, probe, or assume an undeclared tool exists, and never bypass a denied capability through another command or tool.",
+        "Delegation is limited to the explicitly allowed `task / subagent` resources below.",
+    ]
+    for effect, heading in (("allow", "ALLOW"), ("ask", "ASK"), ("deny", "DENY")):
+        lines.extend(["", f"### {heading}"])
+        actions = grouped[effect]
+        if not actions:
+            lines.append("- None.")
+            continue
+        for action, resources in actions.items():
+            rendered = ", ".join(f"`{resource}`" for resource in resources)
+            lines.append(f"- `{action}`: {rendered}")
+    return "\n".join(lines)
+
+
+def render_prompt(spec: AgentSpec, specs: dict[str, AgentSpec]) -> str:
     default_prompt = (DEFAULTS_DIR / "prompt.md").read_text().strip()
     parts = [f"# Role\n{spec.description}"]
     if spec.prompt:
         parts.append(spec.prompt)
     if default_prompt:
         parts.append(default_prompt)
+    parts.append(render_capabilities(spec.name, specs))
     return "\n\n".join(parts).rstrip() + "\n"
 
 
@@ -294,7 +325,7 @@ def write_generated_sources(specs: dict[str, AgentSpec]) -> None:
     for old in GENERATED_PROMPTS_DIR.glob("*.md"):
         old.unlink()
     for name, spec in specs.items():
-        (GENERATED_PROMPTS_DIR / f"{name}.md").write_text(render_prompt(spec))
+        (GENERATED_PROMPTS_DIR / f"{name}.md").write_text(render_prompt(spec, specs))
 
     children = children_by_parent(specs)
     manifest = {}
