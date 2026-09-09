@@ -79,7 +79,7 @@ V1 et V2 gardent les mêmes capacités fonctionnelles :
 - distinction `lastActivityAt` / `lastProgressAt` ;
 - `WAITING_PERMISSION` exclu du stall ;
 - durée maximale ;
-- absence de progrès ;
+- détection de stall tenant compte de l'activité ;
 - erreurs répétées ;
 - queue et plafond de parallélisme ;
 - réconciliation `session.children()` quand disponible ;
@@ -93,6 +93,27 @@ V2 conserve en plus le hook de retry provider :
 429                  -> retry borné
 5xx                  -> retry borné
 ```
+
+## Détection de stall tenant compte de l'activité
+
+Un child n'est plus considéré comme bloqué uniquement parce qu'il n'a pas produit récemment de modification de fichier, de diff, de todo ou d'autre événement qualifié de progrès matériel. Le watchdog exige maintenant simultanément :
+
+1. aucun progrès matériel depuis plus de `SUBAGENT_STALLED_TIMEOUT_SECONDS` ;
+2. aucun heartbeat runtime/message depuis plus de `SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS` ;
+3. aucun appel de tool encore en cours ;
+4. la même situation toujours présente au cycle de watchdog suivant.
+
+Valeurs par défaut du profil `normal` :
+
+```bash
+SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS=60
+SUBAGENT_STALLED_TIMEOUT_SECONDS=180
+SUBAGENT_WATCH_INTERVAL_SECONDS=15
+```
+
+Cela protège les longues phases de réflexion, lecture, analyse ou génération de message contre les annulations à tort, tout en conservant une récupération déterministe des vrais stalls.
+
+Lorsqu'un child doit malgré tout être interrompu pour une raison retryable, le watchdog persiste d'abord la délégation existante et son `task_id` avec le statut `retryable_failed`, **avant** d'envoyer l'interruption. Une nouvelle tentative de la même délégation reprend donc la task connue au lieu de recréer silencieusement un child vide et de perdre le contexte déjà produit.
 
 ## Détection de boucle outil
 
@@ -143,6 +164,7 @@ Un checkpoint contient notamment :
 - agent ;
 - statut ;
 - raison d'abort ;
+- état de retry de la délégation si applicable ;
 - coût remonté ;
 - timestamps de démarrage, activité et progrès.
 
@@ -171,11 +193,13 @@ Comportement attendu :
 - `429` / `5xx` -> retry borné ;
 - même erreur racine sans nouvelle preuve -> arrêt ;
 - même tool + mêmes args + même résultat -> boucle détectable ;
-- child sans progrès -> interruption ;
+- absence de progrès **et** de heartbeat, confirmée au cycle suivant -> interruption ;
+- activité ou tool encore en cours -> pas considéré comme stall ;
 - child trop long -> interruption ;
 - child au-dessus du coût remonté -> interruption si télémétrie disponible ;
 - `WAITING_PERMISSION` -> pas considéré comme stall ;
 - limite parallèle atteinte -> attente dans la queue ;
+- abort watchdog retryable -> conservation et réutilisation du `task_id` connu ;
 - child bloqué/aborté -> consommer handoff/checkpoint avant de décider d'un remplacement.
 
 ## Commandes utiles
