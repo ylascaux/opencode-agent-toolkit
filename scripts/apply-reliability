@@ -59,29 +59,25 @@ def patch_config(path: Path, *, v2: bool) -> None:
         requested_cap = env_int(env_name, policy_cap)
         cap = min(policy_cap, requested_cap)
         current = int(agent.get("steps", cap))
-        # Reliability limits are ceilings. Agent configuration may lower, never
-        # raise, the deterministic runtime boundary.
         agent["steps"] = min(current, cap)
 
     plugins = data.setdefault("plugins" if v2 else "plugin", [])
     runtime_plugin = (
-        "./.opencode/plugins/reliability-v2.ts"
+        "./runtime/plugins/reliability-v2.ts"
         if v2
-        else "./.opencode/plugins/reliability-v1.js"
+        else "./runtime/plugins/reliability-v1.js"
     )
     if runtime_plugin not in plugins:
         plugins.append(runtime_plugin)
 
     plan_approval_plugin = (
-        "./.opencode/plugins/plan-approval-v2.ts"
+        "./runtime/plugins/plan-approval-v2.ts"
         if v2
-        else "./.opencode/plugins/plan-approval-v1.js"
+        else "./runtime/plugins/plan-approval-v1.js"
     )
     if plan_approval_plugin not in plugins:
         plugins.append(plan_approval_plugin)
 
-    # V2 exposes a TUI plugin surface. A suspected stall is surfaced to the
-    # user and can only become destructive after explicit confirmation.
     if v2:
         approval_plugin = "./plugins/reliability-approval"
         if approval_plugin not in plugins:
@@ -174,7 +170,7 @@ def append_effective_plan_policy() -> None:
 
 
 def main() -> None:
-    profile()  # validate before mutating generated files
+    profile()
     plan_approval_mode()
     patch_config(ROOT / "opencode.jsonc", v2=False)
     patch_config(ROOT / "opencode.v2.jsonc", v2=True)
