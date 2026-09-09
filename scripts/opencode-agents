@@ -25,6 +25,11 @@ source "$ROOT/.env"
 [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
 set +a
 
+# The generated V2 config always points at scripts/sandbox-shell-v2. When sandboxing
+# is disabled, that wrapper delegates to the user's real host shell instead of
+# changing shell semantics merely because the toolkit is installed.
+export OAT_SANDBOX_HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-${SHELL:-/bin/bash}}"
+
 # Explicit launcher/runtime selection wins over .env defaults.
 # `oc2` is a dedicated OpenCode 2 beta entrypoint and always selects V2.
 if [[ "$INVOKED_AS" == "oc2" ]]; then

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-/bin/bash}"
+
+if [[ "${OAT_SANDBOX_ENABLED:-0}" != "1" ]]; then
+  exec "$HOST_SHELL" "$@"
+fi
+
+command=""
+case "${1:-}" in
+  -c|-lc)
+    [[ $# -eq 2 ]] || {
+      echo "sandbox-shell-v2: unsupported shell invocation while sandboxed: $*" >&2
+      exit 125
+    }
+    command="$2"
+    ;;
+  *)
+    echo "sandbox-shell-v2: refusing unsupported shell invocation while sandboxed: $*" >&2
+    exit 125
+    ;;
+esac
+
+[[ -n "${OAT_SANDBOX_CONTAINER:-}" ]] || {
+  echo "sandbox-shell-v2: OAT_SANDBOX_CONTAINER is not set" >&2
+  exit 125
+}
+[[ -n "${OAT_SANDBOX_PROJECT_ROOT:-}" ]] || {
+  echo "sandbox-shell-v2: OAT_SANDBOX_PROJECT_ROOT is not set" >&2
+  exit 125
+}
+
+exec bash "$ROOT/scripts/sandbox-run" --cwd "$PWD" --command "$command"
