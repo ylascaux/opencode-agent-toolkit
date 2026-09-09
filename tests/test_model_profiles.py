@@ -60,6 +60,13 @@ class ModelProfileTests(unittest.TestCase):
         self.assertEqual(values["MODEL_MEDIUM"], "github-copilot/gpt-5.6-terra")
         self.assertEqual(values["MODEL_HIGH"], "github-copilot/gpt-5.6-sol")
 
+    def test_codex_profile_is_luna_terra_sol(self):
+        values = PROFILE["load_profile"]("codex")
+        self.assertEqual(values["MODEL_PROFILE"], "codex")
+        self.assertEqual(values["MODEL_LOW"], "openai/gpt-5.6-luna")
+        self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-5.6-terra")
+        self.assertEqual(values["MODEL_HIGH"], "openai/gpt-5.6-sol")
+
     def test_profile_switch_backs_up_and_removes_generated_agent_mappings(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
