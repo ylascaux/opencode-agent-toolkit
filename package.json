@@ -1,0 +1,8 @@
+{
+  "name": "opencode-agent-toolkit",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@opencode/plugin": "0.0.0-beta-19398"
+  }
+}

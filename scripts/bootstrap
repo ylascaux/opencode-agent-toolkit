@@ -59,6 +59,21 @@ if [[ -f requirements.txt ]]; then
   echo "Installed Python scanner/API dependencies"
 fi
 
+if [[ -f package.json ]]; then
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "Missing required command: npm (required for OpenCode V2 plugin dependencies)" >&2
+    exit 127
+  fi
+
+  if [[ -f package-lock.json ]]; then
+    npm ci --no-audit --no-fund
+  else
+    npm install --no-audit --no-fund
+    echo "Warning: package-lock.json was missing and has been generated; commit it for reproducible installs" >&2
+  fi
+  echo "Installed OpenCode plugin dependencies"
+fi
+
 # Reliability overrides must be loaded before generated configs are capped so
 # `just install` and `oc` produce the same effective runtime configuration.
 set -a

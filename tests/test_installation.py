@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -52,6 +53,30 @@ class InstallationSurfaceTests(unittest.TestCase):
             "show-reliability", "agent_config.py", "new-agent",
         ]:
             self.assertTrue((ROOT / "scripts" / name).exists(), name)
+
+    def test_opencode_v2_plugin_sdk_dependency_is_pinned(self):
+        package = json.loads((ROOT / "package.json").read_text())
+        self.assertTrue(package.get("private"))
+        self.assertEqual(package.get("type"), "module")
+        self.assertEqual(
+            package.get("dependencies", {}).get("@opencode/plugin"),
+            "0.0.0-beta-19398",
+        )
+        self.assertIn("node_modules/", (ROOT / ".gitignore").read_text().splitlines())
+
+    def test_bootstrap_installs_node_plugin_dependencies(self):
+        text = (ROOT / "scripts" / "bootstrap").read_text()
+        self.assertIn("npm ci --no-audit --no-fund", text)
+        self.assertIn("npm install --no-audit --no-fund", text)
+        self.assertIn("package-lock.json", text)
+        self.assertIn("Installed OpenCode plugin dependencies", text)
+
+    def test_preflight_loads_local_env_and_checks_v2_plugin_sdk(self):
+        text = (ROOT / "scripts" / "preflight").read_text()
+        self.assertIn('source "$ROOT/.env"', text)
+        self.assertIn('source "$ROOT/.env.local"', text)
+        self.assertIn('npm --prefix "$ROOT" ls @opencode/plugin --depth=0', text)
+        self.assertIn("@opencode/plugin is missing; run 'just install'", text)
 
     def test_user_link_install_is_idempotent_and_reversible(self):
         with tempfile.TemporaryDirectory() as tmp:
