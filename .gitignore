@@ -7,6 +7,5 @@ __pycache__/
 *.pyc
 .generated/
 architecture-inventory.json
-security-findings.json
 opencode.jsonc
 opencode.v2.jsonc

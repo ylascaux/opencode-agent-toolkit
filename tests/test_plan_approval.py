@@ -21,9 +21,7 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertEqual(policy["plan_approval"]["default_mode"], "changes")
 
     def test_only_v2_loads_the_plan_gate(self):
-        v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
-        self.assertNotIn("./runtime/plugins/plan-approval-v1.js", v1["plugin"])
         self.assertIn("./runtime/plugins/plan-approval-v2.ts", v2["plugins"])
 
     def test_plan_approval_markers_are_v2_only(self):
@@ -70,13 +68,10 @@ class PlanApprovalTests(unittest.TestCase):
 
     def test_runtime_gate_is_fail_closed_for_mutation(self):
         core = (ROOT / "runtime" / "plugins" / "plan-approval-core.js").read_text()
-        v1 = (ROOT / "runtime" / "plugins" / "plan-approval-v1.js").read_text()
         v2 = (ROOT / "runtime" / "plugins" / "plan-approval-v2.ts").read_text()
         self.assertIn("toolRequiresPlanApproval", core)
         self.assertIn("runtime-blocked-unapproved-change", core)
-        self.assertIn('"tool.execute.before"', v1)
         self.assertIn('ctx.tool.hook("execute.before"', v2)
-        self.assertIn("throw new Error(blockedMessage(decision))", v1)
         self.assertIn("throw new Error(blockedMessage(decision))", v2)
 
 

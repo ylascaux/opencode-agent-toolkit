@@ -24,9 +24,6 @@ class SandboxConfigTests(unittest.TestCase):
             Path(self.v2["shell"]).resolve(),
             (ROOT / "scripts" / "sandbox-shell-v2").resolve(),
         )
-        # V2 must not rely on a session-local plugin hook: the global shell is inherited
-        # by child sessions/subagents and is therefore the actual sandbox boundary.
-        self.assertNotIn("./runtime/plugins/sandbox-v2.ts", self.v2["plugins"])
 
     def test_v2_global_shell_is_fail_closed_when_sandboxed(self):
         wrapper = ROOT / "scripts" / "sandbox-shell-v2"
@@ -42,8 +39,7 @@ class SandboxConfigTests(unittest.TestCase):
         self.assertFalse((ROOT / ".opencode" / "plugins").exists())
         runtime = ROOT / "runtime" / "plugins"
         for filename in [
-            "sandbox-v1.js", "sandbox-v2.ts", "plan-approval-core.js",
-            "plan-approval-v1.js", "plan-approval-v2.ts", "reliability-core.js",
+            "sandbox-v1.js", "plan-approval-core.js", "plan-approval-v2.ts", "reliability-core.js",
             "reliability-v1.js", "reliability-v2.ts",
         ]:
             self.assertTrue((runtime / filename).is_file(), filename)

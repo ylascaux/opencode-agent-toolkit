@@ -95,4 +95,4 @@ Les tiers gardent une politique coût/qualité stable même quand les providers 
 
 ## LiteLLM
 
-LiteLLM reste optionnel et ne fait pas partie de l’installation par défaut. `just configure` et `just configure-litellm` restent disponibles pour un futur usage gateway. Les credentials utilisés pour la découverte ne sont pas persistés par le configurateur.
+LiteLLM reste optionnel et ne fait pas partie de l’installation par défaut. `just configure-litellm` reste disponible pour un futur usage gateway. Les credentials utilisés pour la découverte ne sont pas persistés par le configurateur.
