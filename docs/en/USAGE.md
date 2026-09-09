@@ -11,13 +11,55 @@ The launcher preserves the current working directory. The toolkit repository sup
 
 Use `/auto` when routing should be decided automatically.
 
+## Plan approval
+
+The default runtime policy is `PLAN_APPROVAL_MODE=changes`. Read-only discovery and analysis can run immediately, but the toolkit must show a concrete plan and wait for explicit approval before it mutates files, repository state, infrastructure, configuration, or another external system.
+
+A normal change therefore looks like this:
+
+```text
+/ship Add idempotency to this event consumer.
+```
+
+OpenCode gathers the minimum evidence needed to plan, then returns a plan ending with:
+
+```text
+PLAN_APPROVAL_REQUIRED
+```
+
+Reply with a short explicit approval such as `go`, `approve`, `oui`, or `valide` to execute that plan. Replying with anything else is treated as new/changed scope and requires a revised plan. `reject`, `non`, `stop`, or `annule` rejects the current plan.
+
+You can request planning without execution explicitly:
+
+```text
+/plan Add idempotency to this event consumer.
+```
+
+If implementation discovers a material scope/dependency/trust-boundary/destructive-step/rollback change, execution stops and the revised plan ends with:
+
+```text
+PLAN_REAPPROVAL_REQUIRED
+```
+
+Approval is scoped to the current root request and its child agents. A later user request resets the approval automatically.
+
+Configure the behavior in `.env` or `.env.local`:
+
+```bash
+PLAN_APPROVAL_MODE=changes   # default
+# PLAN_APPROVAL_MODE=off     # disable the gate
+# PLAN_APPROVAL_MODE=always  # also gate delegated execution beyond direct discovery
+```
+
+The plan boundary is enforced by runtime plugins for both OpenCode V1 and V2. Agent prompts improve the workflow, but a mutating tool is still blocked when no approved plan exists.
+
 ## Delivery
 
 ```text
 /ship Add idempotency to this event consumer.
 ```
 
-The meta-router delegates to `orchestrator`; the orchestrator selects implementation/test/review/security leaves. The implementation agent never self-approves.
+The meta-router delegates planning to `orchestrator`, which selects the implementation/test/review/security leaves. The plan is surfaced to the root user before implementation starts. After approval, the orchestrator executes only the approved scope. The implementation agent never self-approves.
 
 ## Review
 
@@ -25,7 +67,7 @@ The meta-router delegates to `orchestrator`; the orchestrator selects implementa
 /review Review the current branch before merge.
 ```
 
-This goes through `review-lead`, which selects only relevant review dimensions.
+This goes through `review-lead`, which selects only relevant review dimensions. Pure read-only review does not require a plan approval.
 
 ## Architecture
 
@@ -36,10 +78,11 @@ This goes through `review-lead`, which selects only relevant review dimensions.
 The workflow is staged rather than self-reviewed:
 
 1. `meta-router` routes design and evidence gathering to `platform-architect`.
-2. If a durable document is requested, `platform-architect` delegates file writing to `docs-writer` after the design is stable.
-3. Once the artifact exists, `meta-router` routes it to `review-lead` for an independent repository-backed review.
-4. When trust boundaries, IAM, public exposure, secrets or infrastructure-security posture materially change, `security-lead` runs as an additional gate. It can run in parallel with `review-lead` when both only read the completed artifact.
-5. The final synthesis reports evidence, trade-offs, rejected alternatives, migration/rollback and residual risks.
+2. If a durable document or other artifact will be created/updated, the stable write/migration plan is surfaced for user approval first.
+3. After approval, `platform-architect` delegates file writing to `docs-writer` once the design is stable.
+4. Once the artifact exists, `meta-router` routes it to `review-lead` for an independent repository-backed review.
+5. When trust boundaries, IAM, public exposure, secrets or infrastructure-security posture materially change, `security-lead` runs as an additional gate. It can run in parallel with `review-lead` when both only read the completed artifact.
+6. The final synthesis reports evidence, trade-offs, rejected alternatives, migration/rollback and residual risks.
 
 The producing architecture path does not perform its own final independent review.
 
