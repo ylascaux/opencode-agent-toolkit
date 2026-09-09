@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+AGENTS_DIR = ROOT / "agents"
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Create a self-contained agents/<name>/ scaffold"
+    )
+    parser.add_argument("name", help="lowercase agent directory name, e.g. cloudflare")
+    parser.add_argument(
+        "--parent",
+        action="append",
+        dest="parents",
+        help="agent allowed to delegate to this agent; repeatable (default: orchestrator)",
+    )
+    parser.add_argument(
+        "--tier",
+        choices=["low", "medium", "high"],
+        default="medium",
+    )
+    parser.add_argument(
+        "--model-profile",
+        choices=["fast", "general", "coding", "reasoning", "deep", "review", "security"],
+        default="general",
+        help="only used by the optional LiteLLM configurator",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["subagent", "all"],
+        default="subagent",
+    )
+    parser.add_argument("--description", help="OpenCode catalog description")
+    args = parser.parse_args()
+
+    name = args.name.strip()
+    if not NAME_RE.fullmatch(name):
+        parser.error("name must match [a-z0-9][a-z0-9-]*")
+
+    target = AGENTS_DIR / name
+    if target.exists():
+        raise SystemExit(f"Agent already exists: {target.relative_to(ROOT)}")
+    target.mkdir(parents=True)
+
+    parents = args.parents if args.parents is not None else ["orchestrator"]
+    description = args.description or f"TODO: describe the {name} agent."
+    model_env = "MODEL_" + name.upper().replace("-", "_")
+
+    config = {
+        "description": description,
+        "mode": args.mode,
+        "model_env": model_env,
+        "tier": args.tier,
+        "model_profile": args.model_profile,
+        "steps": 16,
+        "parents": parents,
+        "opencode": {},
+    }
+    (target / "agent.json").write_text(json.dumps(config, indent=2) + "\n")
+    (target / "permissions.json").write_text("{}\n")
+    (target / "prompt.md").write_text(
+        "## Operating method\n"
+        f"TODO: define how {name} should work.\n\n"
+        "## Non-negotiables\n"
+        "TODO: define the boundaries this agent must respect.\n"
+    )
+
+    print(f"Created {target.relative_to(ROOT)}/")
+    print("Edit agent.json, prompt.md and permissions.json, then run: just config")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
