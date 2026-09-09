@@ -84,6 +84,12 @@ GENERATED_AGENT_KEYS = {
     "description", "mode", "model", "prompt", "system", "steps", "permission", "permissions",
 }
 
+V2_COMPACTION = {
+    "auto": True,
+    "keep": {"tokens": 15000},
+    "buffer": 20000,
+}
+
 
 def agent_entry(name: str, specs, *, v2: bool) -> dict:
     spec = specs[name]
@@ -118,6 +124,9 @@ def build(specs, *, v2: bool) -> dict:
         return {
             "$schema": "https://opencode.ai/config.json",
             "default_agent": primary,
+            # V2 native compaction replaces third-party context-pruning plugins.
+            # Keep the documented defaults explicit so generated configs are deterministic.
+            "compaction": V2_COMPACTION,
             # V2 uses this shell for terminal and shell tool calls, including child sessions.
             # The wrapper is a pass-through when sandboxing is disabled and fail-closed when enabled.
             "shell": str(ROOT / "scripts" / "sandbox-shell-v2"),
