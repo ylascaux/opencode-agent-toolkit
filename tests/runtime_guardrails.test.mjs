@@ -3,6 +3,8 @@ import test from "node:test"
 import {
   createCallIdTracker,
   createProgressAwareRepeatDetector,
+  delegationFailureClass,
+  delegationTaskKey,
   providerRetryDecision,
 } from "../.opencode/plugins/reliability-core.js"
 import { ReliabilityV1Plugin } from "../.opencode/plugins/reliability-v1.js"
@@ -75,6 +77,35 @@ test("provider retry policy stops terminal errors and bounds transient retries",
   assert.deepEqual(providerRetryDecision({ status: 503, attempt: 4, maxRetries: 2 }), { retry: false })
 })
 
+test("delegation failures distinguish retryable cancellation from terminal config errors", () => {
+  assert.equal(delegationFailureClass("Task cancelled"), "retryable")
+  assert.equal(delegationFailureClass("no-material-progress"), "retryable")
+  assert.equal(delegationFailureClass("503 temporary upstream error"), "retryable")
+  assert.equal(delegationFailureClass("403 forbidden"), "terminal")
+  assert.equal(delegationFailureClass("unknown agent type"), "terminal")
+  assert.equal(delegationFailureClass("application test failed"), "unknown")
+})
+
+test("delegation task keys are stable for the same parent, specialist and scope", () => {
+  const first = delegationTaskKey({
+    parentID: "platform",
+    args: {
+      subagent_type: "terraform-terragrunt",
+      description: "Assess Terragrunt deployment semantics",
+      prompt: "Inspect dependencies",
+    },
+  })
+  const second = delegationTaskKey({
+    parentID: "platform",
+    args: {
+      subagent_type: "terraform-terragrunt",
+      description: "Assess Terragrunt deployment semantics",
+      prompt: "Different continuation wording",
+    },
+  })
+  assert.equal(first, second)
+})
+
 test("V1 fallback task reservation is released after execute.after", async () => {
   await withEnv(
     {
@@ -98,6 +129,102 @@ test("V1 fallback task reservation is released after execute.after", async () =>
       await hooks["tool.execute.before"](input, { args: input.args })
       assert.ok(Date.now() - started < 250, "released fallback reservation should not block the next task")
       await hooks["tool.execute.after"](input, { output: "done again" })
+    },
+  )
+})
+
+test("V1 cancelled leaf retry resumes the same task_id instead of creating a new child", async () => {
+  await withEnv(
+    {
+      MAX_PARALLEL_SUBAGENTS: 2,
+      MAX_SUBAGENT_RETRIES: 2,
+      SUBAGENT_QUEUE_TIMEOUT_SECONDS: 2,
+      SUBAGENT_STALLED_TIMEOUT_SECONDS: 30,
+      SUBAGENT_MAX_DURATION_SECONDS: 60,
+      SUBAGENT_WATCH_INTERVAL_SECONDS: 1,
+      MAX_CHILD_COST: 0,
+      MAX_RUN_COST: 0,
+    },
+    async () => {
+      const { client } = makeClient()
+      const hooks = await ReliabilityV1Plugin({ client })
+      const args = {
+        description: "Assess Terragrunt deployment semantics",
+        prompt: "Inspect the existing Terragrunt deployment semantics and report evidence.",
+        subagent_type: "terraform-terragrunt",
+      }
+      const firstInput = { sessionID: "platform-architect", tool: "task", args: { ...args } }
+      const firstOutput = { args: { ...args } }
+
+      await hooks["tool.execute.before"](firstInput, firstOutput)
+      await hooks.event({
+        event: {
+          type: "session.created",
+          properties: { info: { id: "leaf-task-1", parentID: "platform-architect" } },
+        },
+      })
+      await hooks.event({
+        event: {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "platform-architect",
+            part: {
+              type: "tool",
+              tool: "task",
+              state: {
+                status: "error",
+                input: { ...args },
+                metadata: { sessionId: "leaf-task-1" },
+                error: "Task cancelled",
+              },
+            },
+          },
+        },
+      })
+
+      const retryInput = { sessionID: "platform-architect", tool: "task", args: { ...args } }
+      const retryOutput = { args: { ...args } }
+      await hooks["tool.execute.before"](retryInput, retryOutput)
+
+      assert.equal(retryOutput.args.task_id, "leaf-task-1")
+      await hooks["tool.execute.after"](retryInput, { output: "retry scheduled" })
+    },
+  )
+})
+
+test("V1 lead waiting on an active leaf is not aborted as stalled", async () => {
+  await withEnv(
+    {
+      MAX_CHILD_COST: 0,
+      MAX_RUN_COST: 0,
+      SUBAGENT_STALLED_TIMEOUT_SECONDS: 1,
+      SUBAGENT_MAX_DURATION_SECONDS: 30,
+      SUBAGENT_WATCH_INTERVAL_SECONDS: 1,
+    },
+    async () => {
+      const { client, aborts } = makeClient()
+      const hooks = await ReliabilityV1Plugin({ client })
+
+      await hooks.event({
+        event: {
+          type: "session.created",
+          properties: { info: { id: "platform-architect", parentID: "meta-router" } },
+        },
+      })
+      await hooks.event({
+        event: {
+          type: "session.created",
+          properties: { info: { id: "terragrunt-leaf", parentID: "platform-architect" } },
+        },
+      })
+
+      await sleep(1200)
+      assert.equal(aborts.includes("platform-architect"), false, "lead waiting on child must survive")
+
+      // Keep this synthetic lead exempt from later timer ticks in the test process.
+      await hooks.event({
+        event: { type: "permission.asked", properties: { sessionID: "platform-architect" } },
+      })
     },
   )
 })
