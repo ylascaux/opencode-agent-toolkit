@@ -16,6 +16,18 @@ const sessionInfo = (event: any) => {
     parentID: info?.parentID ?? info?.parentId ?? info?.parent?.id ?? p.parentID ?? p.parentId,
   }
 }
+const hookArgs = (holder: any) => {
+  if (!holder) return {}
+  if (typeof holder.get === "function") {
+    try {
+      return holder.get() ?? {}
+    } catch {
+      // Fall back to beta object shapes below.
+    }
+  }
+  if (holder.value && typeof holder.value === "object") return holder.value
+  return holder
+}
 
 const effectiveMode = () =>
   String(process.env.PLAN_APPROVAL_MODE || POLICY.plan_approval?.default_mode || "changes")
@@ -86,7 +98,7 @@ export default Plugin.define({
       const sessionID = String(event?.sessionID ?? event?.sessionId ?? event?.context?.sessionID ?? "")
       if (!sessionID) return
       const tool = String(event?.tool ?? event?.name ?? "")
-      const args = event?.args ?? event?.input ?? {}
+      const args = hookArgs(event?.args ?? event?.input)
       const decision = gate.beforeTool(sessionID, tool, args)
       if (!decision.allowed) throw new Error(blockedMessage(decision))
     })
