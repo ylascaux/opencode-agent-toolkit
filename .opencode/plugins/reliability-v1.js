@@ -1,19 +1,22 @@
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import {
+  createCallIdTracker,
+  createProgressAwareRepeatDetector,
+  stableString,
+} from "./reliability-core.js"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const POLICY = JSON.parse(fs.readFileSync(path.join(ROOT, "reliability.json"), "utf8"))
-
+const TERMINAL = new Set(["COMPLETED", "FAILED", "ABORTED", "IDLE", "ERROR"])
 const now = () => Date.now()
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-const TERMINAL = new Set(["COMPLETED", "FAILED", "ABORTED", "IDLE", "ERROR"])
 
 const profileName = () => {
   const name = String(process.env.RELIABILITY_PROFILE || POLICY.default_profile || "normal").toLowerCase()
   return POLICY.profiles?.[name] ? name : POLICY.default_profile || "normal"
 }
-
 const defaults = () => POLICY.profiles[profileName()]
 
 const intEnv = (name, fallback, { min = 1 } = {}) => {
@@ -22,14 +25,12 @@ const intEnv = (name, fallback, { min = 1 } = {}) => {
   const value = Number.parseInt(raw, 10)
   return Number.isFinite(value) && value >= min ? value : fallback
 }
-
 const numberEnv = (name, fallback, { min = 0 } = {}) => {
   const raw = process.env[name]
   if (raw === undefined || raw === "") return fallback
   const value = Number(raw)
   return Number.isFinite(value) && value >= min ? value : fallback
 }
-
 const normalizeError = (value) =>
   String(value ?? "")
     .toLowerCase()
@@ -38,48 +39,24 @@ const normalizeError = (value) =>
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 500)
-
-const sorted = (value) => {
-  if (Array.isArray(value)) return value.map(sorted)
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sorted(value[key])]))
-  }
-  return value
-}
-
-const stableString = (value) => {
-  try {
-    return JSON.stringify(sorted(value))
-  } catch {
-    return String(value)
-  }
-}
-
 const eventProps = (event) => event?.properties ?? event?.data ?? {}
-
 const eventSession = (event) => {
   const p = eventProps(event)
   const info = p.info ?? p.session ?? p
   return {
-    id: info?.id ?? info?.sessionID ?? p.sessionID ?? p.sessionId ?? event?.sessionID,
+    id: info?.sessionID ?? p.sessionID ?? p.sessionId ?? event?.sessionID ?? info?.id,
     parentID: info?.parentID ?? info?.parentId ?? info?.parent?.id ?? p.parentID ?? p.parentId,
     agent: info?.agent ?? p.agent,
   }
 }
-
 const hookSessionID = (input) =>
   input?.sessionID ?? input?.sessionId ?? input?.context?.sessionID ?? input?.context?.sessionId
-
-const hookCallID = (input, args = input?.args) =>
-  input?.callID ?? input?.callId ?? input?.toolCallID ??
-  `${hookSessionID(input) ?? "unknown"}:${input?.tool ?? "tool"}:${stableString(args ?? {})}`
-
+const nativeCallID = (input) => input?.callID ?? input?.callId ?? input?.toolCallID
 const statusName = (value) => {
   if (!value) return "RUNNING"
   if (typeof value === "string") return value.toUpperCase()
   return String(value.type ?? value.status ?? value.state ?? "RUNNING").toUpperCase()
 }
-
 const unwrap = (value) => value?.data ?? value
 
 export const ReliabilityV1Plugin = async ({ client }) => {
@@ -99,7 +76,9 @@ export const ReliabilityV1Plugin = async ({ client }) => {
   const reservations = new Map()
   const sessionAgents = new Map()
   const messageCosts = new Map()
-  const lastToolCall = new Map()
+  const inFlightTools = new Map()
+  const callIds = createCallIdTracker()
+  const repeatDetector = createProgressAwareRepeatDetector()
 
   const stateFor = (id) => {
     if (!id) return undefined
@@ -122,9 +101,32 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     return sessions.get(id)
   }
 
+  const markStateProgress = (id) => {
+    const state = stateFor(id)
+    if (!state) return
+    state.lastActivityAt = now()
+    state.lastProgressAt = now()
+    state.sameErrorCount = 0
+    state.lastError = ""
+  }
+  const markProgress = (id) => {
+    markStateProgress(id)
+    repeatDetector.markProgress(id)
+  }
+
+  function consumeOldestReservation(parentID) {
+    let selected
+    for (const [callID, reservation] of reservations.entries()) {
+      if (reservation.parentID !== parentID) continue
+      if (!selected || reservation.createdAt < selected[1].createdAt) selected = [callID, reservation]
+    }
+    if (selected) reservations.delete(selected[0])
+  }
+
   const registerChild = (id, parentID, status) => {
     if (!id || !parentID) return false
-    const wasKnown = sessions.has(id) && stateFor(id)?.parentID === parentID
+    const previous = sessions.get(id)
+    const wasKnown = Boolean(previous?.parentID === parentID)
     const state = stateFor(id)
     state.parentID = parentID
     if (status) state.status = statusName(status)
@@ -140,34 +142,21 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       .map((id) => sessions.get(id))
       .filter((state) => state && !TERMINAL.has(statusName(state.status)) && !state.abortedByWatchdog)
   }
-
   const reservationCount = (parentID) =>
     [...reservations.values()].filter((reservation) => reservation.parentID === parentID).length
-
   const maxParallelFor = (parentID) => {
     const agent = sessionAgents.get(parentID)
     const envName = agent && POLICY.lead_parallel_env?.[agent]
     return envName ? intEnv(envName, globalParallel) : globalParallel
   }
-
   const usedSlots = (parentID) => activeChildren(parentID).length + reservationCount(parentID)
-
-  function consumeOldestReservation(parentID) {
-    let selected
-    for (const [callID, reservation] of reservations.entries()) {
-      if (reservation.parentID !== parentID) continue
-      if (!selected || reservation.createdAt < selected[1].createdAt) selected = [callID, reservation]
-    }
-    if (selected) reservations.delete(selected[0])
-  }
 
   const reconcileChildren = async (parentID) => {
     try {
       const children = unwrap(await client.session.children({ path: { id: parentID } })) ?? []
       for (const child of children) {
         const id = child?.id ?? child?.sessionID
-        if (!id) continue
-        registerChild(id, child?.parentID ?? child?.parentId ?? parentID, child?.status)
+        if (id) registerChild(id, child?.parentID ?? child?.parentId ?? parentID, child?.status)
       }
     } catch {
       // Event-driven state remains authoritative when the endpoint is unavailable.
@@ -197,7 +186,6 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     const base = process.env.XDG_STATE_HOME || path.join(process.env.HOME || ".", ".local", "state")
     return path.join(base, "opencode-agent-toolkit", "runs")
   }
-
   const writeCheckpoint = (state) => {
     if (!state?.id) return
     try {
@@ -255,7 +243,6 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     }
     return id
   }
-
   const updateMessageCost = (event) => {
     const p = eventProps(event)
     const info = p.info ?? p.message ?? p
@@ -263,15 +250,11 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     const sessionID = info?.sessionID ?? p.sessionID
     const messageID = info?.id ?? info?.messageID
     if (!sessionID || !messageID) return
-    const key = `${sessionID}:${messageID}`
-    messageCosts.set(key, Math.max(0, info.cost))
+    messageCosts.set(`${sessionID}:${messageID}`, Math.max(0, info.cost))
     let total = 0
-    for (const [messageKey, cost] of messageCosts.entries()) {
-      if (messageKey.startsWith(`${sessionID}:`)) total += cost
-    }
+    for (const [key, cost] of messageCosts.entries()) if (key.startsWith(`${sessionID}:`)) total += cost
     stateFor(sessionID).cost = total
   }
-
   const enforceCostBudgets = async (sessionID) => {
     if (!sessionID) return
     const state = stateFor(sessionID)
@@ -287,7 +270,6 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       await abortSession(candidate, `run provider-reported cost exceeded (${total.toFixed(4)} > ${maxRunCost})`)
     }
   }
-
   const recordFailure = async (sessionID, value) => {
     const state = stateFor(sessionID)
     if (!state) return
@@ -306,23 +288,13 @@ export const ReliabilityV1Plugin = async ({ client }) => {
     }
   }
 
-  const markProgress = (id) => {
-    const state = stateFor(id)
-    if (!state) return
-    state.lastActivityAt = now()
-    state.lastProgressAt = now()
-    state.sameErrorCount = 0
-    state.lastError = ""
-  }
-
   const timer = setInterval(async () => {
     const ts = now()
     for (const [callID, reservation] of reservations.entries()) {
       if (ts - reservation.createdAt > queueTimeoutMs) reservations.delete(callID)
     }
     for (const state of sessions.values()) {
-      if (!state.parentID || TERMINAL.has(statusName(state.status)) || state.abortedByWatchdog) continue
-      if (state.waitingPermission) continue
+      if (!state.parentID || TERMINAL.has(statusName(state.status)) || state.abortedByWatchdog || state.waitingPermission) continue
       if (maxChildCost > 0 && state.cost > maxChildCost) {
         await abortSession(state, `child provider-reported cost exceeded (${state.cost.toFixed(4)} > ${maxChildCost})`)
         continue
@@ -331,9 +303,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         await abortSession(state, "max-duration-exceeded")
         continue
       }
-      if (ts - state.lastProgressAt > stalledMs) {
-        await abortSession(state, "no-material-progress")
-      }
+      if (ts - state.lastProgressAt > stalledMs) await abortSession(state, "no-material-progress")
     }
   }, watchMs)
   timer.unref?.()
@@ -344,13 +314,11 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       if (sessionID && input?.agent) sessionAgents.set(sessionID, input.agent)
       if (sessionID) stateFor(sessionID).lastActivityAt = now()
     },
-
     "chat.params": async (input) => {
       const sessionID = hookSessionID(input)
       if (sessionID && input?.agent) sessionAgents.set(sessionID, input.agent)
       if (sessionID) stateFor(sessionID).lastActivityAt = now()
     },
-
     event: async ({ event }) => {
       const type = event?.type
       const { id, parentID, agent } = eventSession(event)
@@ -358,7 +326,6 @@ export const ReliabilityV1Plugin = async ({ client }) => {
       if (!state) return
       if (agent) sessionAgents.set(id, agent)
       if (parentID) registerChild(id, parentID, eventProps(event)?.status)
-
       if (["message.updated", "message.part.updated", "tool.execute.before", "tool.execute.after", "todo.updated", "session.updated", "session.status"].includes(type)) {
         state.lastActivityAt = now()
       }
@@ -377,10 +344,7 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         markProgress(id)
         writeCheckpoint(state)
       }
-      if (type === "session.status") {
-        const p = eventProps(event)
-        state.status = statusName(p.status)
-      }
+      if (type === "session.status") state.status = statusName(eventProps(event).status)
       if (type === "message.updated") {
         const p = eventProps(event)
         const info = p.info ?? p.message ?? p
@@ -395,45 +359,51 @@ export const ReliabilityV1Plugin = async ({ client }) => {
         writeCheckpoint(state)
       }
     },
-
     "tool.execute.before": async (input, output) => {
       const sessionID = hookSessionID(input)
       if (!sessionID) return
       const state = stateFor(sessionID)
       state.lastActivityAt = now()
       const args = output?.args ?? input?.args
-      const callID = hookCallID(input, args)
-      if (["task", "subagent"].includes(input?.tool)) {
-        await acquireSlot(sessionID, callID)
-      }
-      lastToolCall.set(callID, {
+      const callID = callIds.begin({
+        nativeID: nativeCallID(input),
         sessionID,
         tool: input?.tool,
-        args: stableString(args),
+        args: input?.args,
       })
+      if (["task", "subagent"].includes(input?.tool)) await acquireSlot(sessionID, callID)
+      inFlightTools.set(callID, { sessionID, tool: input?.tool, args: stableString(args) })
     },
-
     "tool.execute.after": async (input, output) => {
       const sessionID = hookSessionID(input)
       if (!sessionID) return
-      const callID = hookCallID(input, input?.args)
+      const callID = callIds.end({
+        nativeID: nativeCallID(input),
+        sessionID,
+        tool: input?.tool,
+        args: input?.args,
+      })
       if (["task", "subagent"].includes(input?.tool)) reservations.delete(callID)
-
       const state = stateFor(sessionID)
       state.lastActivityAt = now()
       const failed = Boolean(output?.error ?? output?.status === "error")
       if (failed) await recordFailure(sessionID, output?.error?.message ?? output?.error ?? output)
 
-      const before = lastToolCall.get(callID) ?? { sessionID, tool: input?.tool, args: stableString(input?.args) }
+      const before = inFlightTools.get(callID) ?? {
+        sessionID,
+        tool: input?.tool,
+        args: stableString(input?.args),
+      }
       const result = normalizeError(output?.output ?? output?.result ?? output?.metadata ?? output?.error ?? output)
-      const key = `${sessionID}:${before.tool}`
-      const previous = lastToolCall.get(key)
-      const same = previous && previous.args === before.args && previous.result === result && result
-      const count = same ? previous.count + 1 : 1
-      lastToolCall.set(key, { ...before, result, count })
-      lastToolCall.delete(callID)
-
-      if (!failed && !same) markProgress(sessionID)
+      const { same, count } = repeatDetector.observe({
+        sessionID,
+        tool: before.tool,
+        args: before.args,
+        result,
+        failed,
+      })
+      inFlightTools.delete(callID)
+      if (!failed && !same) markStateProgress(sessionID)
       if (state.parentID && same && count >= maxSameError) {
         await abortSession(state, `same tool call produced the same result ${count} times`)
       }
