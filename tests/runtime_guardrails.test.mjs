@@ -287,7 +287,6 @@ test("V1 lead waiting on an active leaf is not aborted as stalled", async () => 
       await sleep(1200)
       assert.equal(aborts.includes("platform-architect"), false, "lead waiting on child must survive")
 
-      // Keep this synthetic lead exempt from later timer ticks in the test process.
       await hooks.event({
         event: { type: "permission.asked", properties: { sessionID: "platform-architect" } },
       })
@@ -295,7 +294,7 @@ test("V1 lead waiting on an active leaf is not aborted as stalled", async () => 
   )
 })
 
-test("V1 cost guard applies message cost to the child session, not the message ID", async () => {
+test("legacy compatibility: V1 cost guard still maps message cost to the child session", async () => {
   await withEnv(
     {
       MAX_CHILD_COST: 0.1,
@@ -325,14 +324,45 @@ test("V1 cost guard applies message cost to the child session, not the message I
   )
 })
 
-test("WAITING_PERMISSION is exempt from stall timeout, then stall protection resumes", async () => {
+test("active V1 wrapper ignores stale legacy cost kill settings", async () => {
   await withEnv(
     {
+      NODE_TEST_CONTEXT: undefined,
+      MAX_CHILD_COST: 0.1,
+      MAX_RUN_COST: 0.2,
+      SUBAGENT_STALLED_TIMEOUT_SECONDS: 1,
+      SUBAGENT_MAX_DURATION_SECONDS: 1,
+      SUBAGENT_WATCH_INTERVAL_SECONDS: 1,
+    },
+    async () => {
+      const { client, aborts } = makeClient()
+      const hooks = await ReliabilityV1Plugin({ client })
+      await hooks.event({
+        event: { type: "session.created", properties: { info: { id: "cost-child", parentID: "parent" } } },
+      })
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: { id: "message-cost", sessionID: "cost-child", role: "assistant", cost: 999 },
+          },
+        },
+      })
+      await sleep(1200)
+      assert.deepEqual(aborts, [], "stale cost env must not reactivate automatic killing")
+    },
+  )
+})
+
+test("WAITING_PERMISSION and post-permission silence stay fail-open in production mode", async () => {
+  await withEnv(
+    {
+      NODE_TEST_CONTEXT: undefined,
       MAX_CHILD_COST: 0,
       MAX_RUN_COST: 0,
       SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS: 1,
       SUBAGENT_STALLED_TIMEOUT_SECONDS: 1,
-      SUBAGENT_MAX_DURATION_SECONDS: 30,
+      SUBAGENT_MAX_DURATION_SECONDS: 2,
       SUBAGENT_WATCH_INTERVAL_SECONDS: 1,
     },
     async () => {
@@ -348,7 +378,7 @@ test("WAITING_PERMISSION is exempt from stall timeout, then stall protection res
 
       await hooks.event({ event: { type: "permission.replied", properties: { sessionID: "child" } } })
       await sleep(3200)
-      assert.deepEqual(aborts, ["child"], "stall protection must resume after permission is answered")
+      assert.deepEqual(aborts, [], "heuristic silence must never auto-kill in production mode")
     },
   )
 })
