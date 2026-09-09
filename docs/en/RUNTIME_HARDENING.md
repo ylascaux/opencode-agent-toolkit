@@ -1,6 +1,6 @@
 # Watchdog runtime hardening
 
-This document summarizes the runtime invariants added to prevent ghost queue reservations, false-positive loop detection, and cost enforcement against the wrong session.
+This document summarizes the runtime invariants added to prevent ghost queue reservations, false-positive loop detection, cost enforcement against the wrong session, and delegated agents becoming stuck in interactive terminal programs.
 
 ## Fallback call IDs
 
@@ -22,6 +22,28 @@ Message events contain both a message ID and a session ID. The watchdog always p
 
 This ensures `MAX_CHILD_COST` and `MAX_RUN_COST` are enforced against the actual agent session rather than an ephemeral message object.
 
+## Non-interactive shell invariant
+
+Agent shell execution is non-interactive by construction, not only by prompt convention.
+
+The shared `.opencode/plugins/non-interactive-shell.js` policy injects:
+
+- `PAGER=cat`;
+- `GIT_PAGER=cat`;
+- `GH_PAGER=cat`;
+- `SYSTEMD_PAGER=cat`;
+- `BAT_PAGER=cat`;
+- `AWS_PAGER=`;
+- `GIT_TERMINAL_PROMPT=0`;
+- `GH_PROMPT_DISABLED=1`;
+- `TF_INPUT=0`;
+- `TF_IN_AUTOMATION=1`;
+- `CI=1`.
+
+OpenCode V1 applies this policy through the `shell.env` plugin hook. OpenCode V2 applies it through the shell `create.before` hook before every agent shell is created. V2 intentionally fails closed if that shell hook is unavailable, because silently dropping the non-interactive invariant could leave delegated agents waiting for keyboard input.
+
+This runtime layer complements the default permission policy, which denies common pagers/TUIs/editors and interactive Git modes, and the common prompt, which tells agents to stop as `BLOCKED` when no safe non-interactive path is known.
+
 ## Behavioral tests
 
 `just runtime-test` runs Node tests that verify:
@@ -31,6 +53,9 @@ This ensures `MAX_CHILD_COST` and `MAX_RUN_COST` are enforced against the actual
 - provider retry policy (`401/404` terminal, bounded `429/5xx` retries);
 - subagent reservation release after `execute.after`;
 - child-cost enforcement against the real child session;
-- `WAITING_PERMISSION` exemption from stall detection and resumption after the permission is answered.
+- `WAITING_PERMISSION` exemption from stall detection and resumption after the permission is answered;
+- shared non-interactive shell environment injection, including V1 `shell.env` behavior.
 
-`just check` now includes these tests in addition to Python tests and generated-config validation.
+Python tests additionally verify that every generated agent prompt contains the non-interactive contract and that its `ALLOW`/`ASK`/`DENY` capability map matches the generated effective V1 permission tree.
+
+`just check` includes these tests in addition to generated-config validation.
