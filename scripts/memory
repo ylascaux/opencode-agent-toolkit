@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shlex
+from pathlib import Path
+
+from memory_context import MemorySettings, prepare_memory_context
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _write_env_local(updates: dict[str, str]) -> None:
+    path = ROOT / ".env.local"
+    lines = path.read_text().splitlines() if path.exists() else []
+    pending = dict(updates)
+    output: list[str] = []
+    for line in lines:
+        match = re.match(r"^\s*([A-Z0-9_]+)=", line)
+        if match and match.group(1) in pending:
+            key = match.group(1)
+            output.append(f"{key}={shlex.quote(pending.pop(key))}")
+        else:
+            output.append(line)
+    if output and output[-1].strip():
+        output.append("")
+    for key, value in pending.items():
+        output.append(f"{key}={shlex.quote(value)}")
+    path.write_text("\n".join(output).rstrip() + "\n")
+
+
+def _apply_updates(updates: dict[str, str]) -> None:
+    _write_env_local(updates)
+    os.environ.update(updates)
+
+
+def _summary_text(summary: dict) -> str:
+    enabled = "on" if summary["enabled"] else "off"
+    lines = [
+        f"memory={enabled}",
+        f"directory={summary['directory']}",
+        f"project_name={summary['project_name'] or '-'}",
+        f"project_remote={summary['project_remote'] or '-'}",
+        f"project_id={summary['project_id'] or '-'}",
+        f"common_chars={summary['common_chars']}",
+        f"agent_hat_files={summary['agent_hat_files']}",
+    ]
+    return "\n".join(lines)
+
+
+def cmd_enable(args: argparse.Namespace) -> int:
+    updates = {"OAT_MEMORY_ENABLED": "1"}
+    if args.repo:
+        updates["OAT_MEMORY_REPO"] = args.repo
+    _apply_updates(updates)
+    settings = MemorySettings.from_env()
+    if not settings.repo and not settings.directory.exists():
+        raise SystemExit(
+            "Memory enabled, but no repository is configured. "
+            "Use: just memory-on git@github.com:USER/opencode-memory.git"
+        )
+    summary = prepare_memory_context(
+        ROOT,
+        workdir=Path.cwd(),
+        settings=settings,
+        force_sync=True,
+    )
+    print(_summary_text(summary))
+    return 0
+
+
+def cmd_disable(_args: argparse.Namespace) -> int:
+    _apply_updates({"OAT_MEMORY_ENABLED": "0"})
+    summary = prepare_memory_context(
+        ROOT,
+        workdir=Path.cwd(),
+        settings=MemorySettings.from_env(),
+    )
+    print(_summary_text(summary))
+    return 0
+
+
+def cmd_status(_args: argparse.Namespace) -> int:
+    summary = prepare_memory_context(
+        ROOT,
+        workdir=Path.cwd(),
+        settings=MemorySettings.from_env(),
+    )
+    print(_summary_text(summary))
+    return 0
+
+
+def cmd_sync(_args: argparse.Namespace) -> int:
+    settings = MemorySettings.from_env(enabled_override=True)
+    summary = prepare_memory_context(
+        ROOT,
+        workdir=Path.cwd(),
+        settings=settings,
+        force_sync=True,
+    )
+    print(_summary_text(summary))
+    return 0
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    settings = MemorySettings.from_env()
+    summary = prepare_memory_context(ROOT, workdir=Path.cwd(), settings=settings)
+    if not summary["enabled"]:
+        print("Memory is disabled.")
+        return 0
+
+    common = ROOT / ".generated" / "memory" / "common.md"
+    agent_path = ROOT / ".generated" / "memory" / "agents" / f"{args.agent}.md"
+    if common.exists():
+        print(common.read_text().rstrip())
+    if agent_path.exists():
+        if common.exists():
+            print()
+        print(agent_path.read_text().rstrip())
+    elif args.agent:
+        print(f"\nNo hat memory rendered for agent {args.agent!r}.")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(
+        description="Manage the optional Git-backed OpenCode toolkit memory."
+    )
+    sub = result.add_subparsers(dest="command", required=True)
+
+    enable = sub.add_parser("enable", help="enable memory and optionally configure its Git repository")
+    enable.add_argument("repo", nargs="?", default="")
+    enable.set_defaults(func=cmd_enable)
+
+    disable = sub.add_parser("disable", help="disable memory and clear generated context")
+    disable.set_defaults(func=cmd_disable)
+
+    status = sub.add_parser("status", help="show effective memory configuration and project match")
+    status.set_defaults(func=cmd_status)
+
+    sync = sub.add_parser("sync", help="force clone/pull and rebuild the generated memory context")
+    sync.set_defaults(func=cmd_sync)
+
+    show = sub.add_parser("show", help="render the context that an agent would receive")
+    show.add_argument("agent", nargs="?", default="orchestrator")
+    show.set_defaults(func=cmd_show)
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

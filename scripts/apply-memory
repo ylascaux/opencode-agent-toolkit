@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+from pathlib import Path
+
+from memory_context import prepare_memory_context
+
+ROOT = Path(__file__).resolve().parents[1]
+PROMPTS_DIR = ROOT / ".generated" / "prompts"
+MEMORY_DIR = ROOT / ".generated" / "memory"
+MARKER = "## Opt-in long-term memory"
+
+
+def main() -> int:
+    summary = prepare_memory_context(ROOT, workdir=Path.cwd())
+    if not summary["enabled"]:
+        print("memory disabled")
+        return 0
+
+    common_path = MEMORY_DIR / "common.md"
+    if not common_path.exists():
+        print("memory enabled but no context rendered")
+        return 0
+
+    common = common_path.read_text().strip()
+    updated = 0
+    for prompt_path in sorted(PROMPTS_DIR.glob("*.md")):
+        text = prompt_path.read_text()
+        if MARKER in text:
+            text = text[: text.index(MARKER)].rstrip() + "\n"
+
+        blocks = [text.rstrip(), common]
+        hat_path = MEMORY_DIR / "agents" / prompt_path.name
+        if hat_path.exists():
+            blocks.append(hat_path.read_text().strip())
+        prompt_path.write_text("\n\n".join(blocks).rstrip() + "\n")
+        updated += 1
+
+    print(
+        "memory applied: "
+        f"project={summary['project_id'] or '-'} "
+        f"prompts={updated} hats={summary['agent_hat_files']}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

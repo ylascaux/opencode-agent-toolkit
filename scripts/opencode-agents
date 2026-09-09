@@ -46,6 +46,12 @@ export OPENCODE_MAJOR
 [[ -z "${OPENCODE_BIN:-}" ]] || export OPENCODE_BIN
 
 python3 "$ROOT/scripts/generate-config" >/dev/null
+if [[ -f "$ROOT/scripts/apply-memory" ]]; then
+  python3 "$ROOT/scripts/apply-memory" >/dev/null
+elif [[ "${OAT_MEMORY_ENABLED:-0}" == "1" ]]; then
+  echo "Memory is enabled but $ROOT/scripts/apply-memory is missing" >&2
+  exit 1
+fi
 python3 "$ROOT/scripts/apply-reliability" >/dev/null
 
 # Resolve unset per-agent MODEL_* variables from the active LOW/MEDIUM/HIGH tiers.
