@@ -15,6 +15,14 @@ profile name="copilot":
 profiles:
     @for f in profiles/*.env.example; do basename "$f" .env.example; done
 
+# List discovered agents from agents/<name>/.
+agents:
+    python3 ./scripts/agent_config.py
+
+# Scaffold a new self-contained agent directory.
+new-agent name *args:
+    python3 ./scripts/new-agent "{{name}}" {{args}}
+
 # Install a reversible per-user command (default: oc) in ~/.local/bin.
 install-user command="oc":
     bash ./scripts/user-link install "{{command}}"
@@ -27,10 +35,8 @@ uninstall-user command="oc":
 user-status command="oc":
     bash ./scripts/user-link status "{{command}}"
 
-# Optional/future: discover LiteLLM models and create explicit per-agent mappings.
-configure *args:
-    python3 ./scripts/configure-models {{args}}
-
+# Optional only: discover LiteLLM models and create explicit per-agent mappings.
+# This command is never invoked by `just config`.
 configure-litellm *args:
     python3 ./scripts/configure-models {{args}}
 
@@ -47,6 +53,7 @@ reliability:
 
 check: config test runtime-test
 
+# Purely local/deterministic generation. No provider discovery and no interactive prompts.
 config:
     python3 ./scripts/generate-config
     python3 ./scripts/apply-reliability
@@ -85,4 +92,4 @@ refresh:
     bash ./scripts/bootstrap --refresh
 
 clean:
-    rm -rf .venv architecture-inventory.json security-findings.json
+    rm -rf .venv .generated architecture-inventory.json security-findings.json
