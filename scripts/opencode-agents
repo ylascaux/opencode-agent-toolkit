@@ -65,9 +65,11 @@ case "$major" in
     if command -v opencode2 >/dev/null 2>&1; then
       bin="${OPENCODE_BIN:-opencode2}"
       config="$ROOT/opencode.v2.jsonc"
+      major=2
     else
       bin="${OPENCODE_BIN:-opencode}"
       config="$ROOT/opencode.jsonc"
+      major=1
     fi
     ;;
   *)
@@ -75,6 +77,16 @@ case "$major" in
     exit 2
     ;;
 esac
+
+# OpenCode 2 beta currently has no `web` subcommand. Passing `web` directly is
+# interpreted as a project directory and fails with chdir(... -> "web"). Its
+# `serve` command exposes the V2 HTTP server and browser UI, so preserve the
+# toolkit's stable `oc2 web` UX by translating that alias here.
+if [[ "$major" == "2" && "${1:-}" == "web" ]]; then
+  shift
+  set -- serve "$@"
+  echo "OpenCode 2 beta: 'web' is mapped to 'serve' (open the printed/local URL in your browser)." >&2
+fi
 
 if ! command -v "$bin" >/dev/null 2>&1; then
   echo "OpenCode binary not found: $bin" >&2
