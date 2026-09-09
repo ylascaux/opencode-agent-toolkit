@@ -123,14 +123,21 @@ def patch_config(path: Path, *, v2: bool) -> None:
         agent["steps"] = min(current, cap)
         patch_permissions(agent, name=name, v2=v2)
 
-    plugin = (
+    plugins = data.setdefault("plugins" if v2 else "plugin", [])
+    runtime_plugin = (
         "./.opencode/plugins/reliability-v2.ts"
         if v2
         else "./.opencode/plugins/reliability-v1.js"
     )
-    plugins = data.setdefault("plugins" if v2 else "plugin", [])
-    if plugin not in plugins:
-        plugins.append(plugin)
+    if runtime_plugin not in plugins:
+        plugins.append(runtime_plugin)
+
+    # V2 exposes a TUI plugin surface. Suspected stalls are surfaced to the
+    # user and require an explicit confirmation before session.interrupt().
+    if v2:
+        approval_plugin = "./plugins/reliability-approval"
+        if approval_plugin not in plugins:
+            plugins.append(approval_plugin)
 
     path.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -163,7 +170,8 @@ def append_prompt_policy() -> None:
 - Reliability profile: `{profile_name}`. Never have more than {max_parallel} delegated child agents RUNNING for this lead at the same time. Queue additional independent work until a runtime slot is free.
 - Treat CONFIG/AUTH/PERMISSION/PROVIDER failures differently from code/test failures. Do not repeatedly reason around a deterministic environment failure.
 - If the same root cause is observed {max_same_error} times without new evidence, stop retrying that path and return BLOCKED or ESCALATION_REQUIRED.
-- A child that has activity but no material progress for about {stalled} seconds must be treated as STALLED. Preserve its evidence/checkpoint before recovery.
+- A child with no observable activity/progress for about {stalled} seconds is only STALL_SUSPECTED. Missing OpenCode telemetry is not proof that the child is stuck. Never cancel or replace it automatically because of this heuristic.
+- In V2, the runtime may ask the user whether a suspected child should be killed. Continue waiting unless the user explicitly approves the interruption. In V1/headless mode, fail open and preserve the child.
 - A lead with one or more active child delegations is WAITING_ON_CHILD, not STALLED. Do not cancel or restart the lead merely because its own tool/file progress is quiet while a child is running.
 - WAITING_PERMISSION is not STALLED. Do not duplicate a child merely because it is waiting for a human permission decision.
 - Before delegating, check whether an equivalent child task is already running or already returned COMPLETE. Reuse completed handoffs instead of paying for duplicate work.
