@@ -5,8 +5,18 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+AGENTS_DIR = ROOT / "agents"
+GENERATED_PROMPTS = ROOT / ".generated" / "prompts"
 LEADS = ["meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"]
 READ_ONLY_GIT = ["git status*", "git diff*", "git log*", "git show*", "git rev-parse*"]
+
+
+def source_agents() -> list[str]:
+    return sorted(
+        path.name
+        for path in AGENTS_DIR.iterdir()
+        if path.is_dir() and not path.name.startswith("_")
+    )
 
 
 class ReliabilityPolicyTests(unittest.TestCase):
@@ -37,19 +47,19 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertEqual(set(policy["lead_parallel_env"]), set(LEADS))
         self.assertEqual(policy["lead_parallel_env"]["orchestrator"], "MAX_PARALLEL_ORCHESTRATOR")
 
-    def test_every_manifest_agent_has_an_editable_permission_file(self):
-        manifest = json.loads((ROOT / "agents" / "manifest.json").read_text())
-        permission_dir = ROOT / "agents" / "permissions"
-        self.assertTrue((permission_dir / "_default.json").exists())
-        self.assertTrue((permission_dir / "README.md").exists())
-        actual = {path.stem for path in permission_dir.glob("*.json") if path.name != "_default.json"}
-        self.assertEqual(actual, set(manifest))
-        for name in manifest:
-            data = json.loads((permission_dir / f"{name}.json").read_text())
-            self.assertIsInstance(data, dict, name)
+    def test_every_agent_has_editable_local_files(self):
+        names = source_agents()
+        self.assertEqual(len(names), 37)
+        for name in names:
+            directory = AGENTS_DIR / name
+            self.assertTrue((directory / "agent.json").exists(), name)
+            self.assertTrue((directory / "prompt.md").exists(), name)
+            self.assertTrue((directory / "permissions.json").exists(), name)
+            self.assertIsInstance(json.loads((directory / "agent.json").read_text()), dict, name)
+            self.assertIsInstance(json.loads((directory / "permissions.json").read_text()), dict, name)
 
     def test_default_permission_policy_is_open_but_destructive_safe(self):
-        default = json.loads((ROOT / "agents" / "permissions" / "_default.json").read_text())
+        default = json.loads((AGENTS_DIR / "_defaults" / "permissions.json").read_text())
         self.assertEqual(default["websearch"], "allow")
         self.assertEqual(default["webfetch"], "allow")
         self.assertEqual(default["edit"], "ask")
@@ -96,8 +106,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
             self.assertEqual(shell_default[-1]["effect"], "ask", name)
             for pattern in READ_ONLY_GIT:
                 git_rules = [
-                    r
-                    for r in rules
+                    r for r in rules
                     if r.get("action") == "shell" and r.get("resource") == pattern
                 ]
                 self.assertTrue(git_rules, f"{name}: {pattern}")
@@ -130,7 +139,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
 
     def test_lead_prompts_include_supervision_contract(self):
         for name in LEADS:
-            text = (ROOT / "prompts" / f"{name}.md").read_text().lower()
+            text = (GENERATED_PROMPTS / f"{name}.md").read_text().lower()
             self.assertIn("## reliability and child supervision", text, name)
             self.assertIn("runtime slot", text, name)
             self.assertIn("waiting_permission is not stalled", text, name)
@@ -142,7 +151,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
     def test_all_prompts_include_external_research_contract(self):
         config = json.loads((ROOT / "opencode.jsonc").read_text())
         for name in config["agent"]:
-            text = (ROOT / "prompts" / f"{name}.md").read_text().lower()
+            text = (GENERATED_PROMPTS / f"{name}.md").read_text().lower()
             self.assertIn("## external research", text, name)
             self.assertIn("websearch", text, name)
             self.assertIn("webfetch", text, name)
@@ -151,22 +160,12 @@ class ReliabilityPolicyTests(unittest.TestCase):
     def test_v1_watchdog_has_advanced_runtime_guards(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-v1.js").read_text()
         for needle in [
-            "client.session.children",
-            "client.session.abort",
-            "reservations",
-            "consumeOldestReservation",
-            "lead_parallel_env",
-            "MAX_CHILD_COST",
-            "MAX_RUN_COST",
-            "MAX_SUBAGENT_RETRIES",
-            "RELIABILITY_STATE_DIR",
-            "writeCheckpoint",
-            "same tool call produced the same result",
-            "WAITING_PERMISSION",
-            "retryable_failed",
-            "task_id",
-            "usedSlots(state.id) > 0",
-            "createCallIdTracker",
+            "client.session.children", "client.session.abort", "reservations",
+            "consumeOldestReservation", "lead_parallel_env", "MAX_CHILD_COST",
+            "MAX_RUN_COST", "MAX_SUBAGENT_RETRIES", "RELIABILITY_STATE_DIR",
+            "writeCheckpoint", "same tool call produced the same result",
+            "WAITING_PERMISSION", "retryable_failed", "task_id",
+            "usedSlots(state.id) > 0", "createCallIdTracker",
             "createProgressAwareRepeatDetector",
         ]:
             self.assertIn(needle, text)
@@ -174,24 +173,13 @@ class ReliabilityPolicyTests(unittest.TestCase):
     def test_v2_watchdog_keeps_parity_and_retry_policy(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-v2.ts").read_text()
         for needle in [
-            "session.interrupt",
-            "reconcileChildren",
-            "reservations",
-            "consumeOldestReservation",
-            "lead_parallel_env",
-            "MAX_CHILD_COST",
-            "MAX_RUN_COST",
-            "MAX_SUBAGENT_RETRIES",
-            "RELIABILITY_STATE_DIR",
-            "writeCheckpoint",
-            "same tool call produced the same result",
-            "MAX_PROVIDER_RETRIES",
-            "retryable_failed",
-            "task_id",
-            "usedSlots(state.id) > 0",
-            "createCallIdTracker",
-            "createProgressAwareRepeatDetector",
-            "providerRetryDecision",
+            "session.interrupt", "reconcileChildren", "reservations",
+            "consumeOldestReservation", "lead_parallel_env", "MAX_CHILD_COST",
+            "MAX_RUN_COST", "MAX_SUBAGENT_RETRIES", "RELIABILITY_STATE_DIR",
+            "writeCheckpoint", "same tool call produced the same result",
+            "MAX_PROVIDER_RETRIES", "retryable_failed", "task_id",
+            "usedSlots(state.id) > 0", "createCallIdTracker",
+            "createProgressAwareRepeatDetector", "providerRetryDecision",
         ]:
             self.assertIn(needle, text)
 
@@ -207,13 +195,9 @@ class ReliabilityPolicyTests(unittest.TestCase):
     def test_env_exposes_new_reliability_controls(self):
         text = (ROOT / ".env.example").read_text()
         for key in [
-            "RELIABILITY_PROFILE=",
-            "OPENCODE_PREFLIGHT_AUTH=",
-            "OPENCODE_PREFLIGHT_MODELS=",
-            "MAX_PARALLEL_SUBAGENTS=",
-            "MAX_SUBAGENT_RETRIES=",
-            "MAX_CHILD_COST=",
-            "MAX_RUN_COST=",
+            "RELIABILITY_PROFILE=", "OPENCODE_PREFLIGHT_AUTH=",
+            "OPENCODE_PREFLIGHT_MODELS=", "MAX_PARALLEL_SUBAGENTS=",
+            "MAX_SUBAGENT_RETRIES=", "MAX_CHILD_COST=", "MAX_RUN_COST=",
         ]:
             self.assertIn(key, text)
         self.assertIn("MAX_PARALLEL_ORCHESTRATOR", text)
