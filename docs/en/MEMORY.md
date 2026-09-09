@@ -1,97 +1,134 @@
-# Git-backed long-term memory
+# External Git-backed memory
 
-The toolkit can inject a small, user-controlled long-term memory into generated agent prompts. The feature is **disabled by default** and works in both OpenCode V1 and V2 because memory is rendered before reliability policies are applied.
-
-## Design
-
-The memory repository is a private Markdown/JSON repository with four scopes:
+`opencode-agent-toolkit` no longer owns the memory implementation. Memory is provided by the standalone **`ylascaux/opencode-memory-plugin`** repository, while durable personal/project data stays in a separate private Git repository such as `ylascaux/opencode-memory`.
 
 ```text
-projects/   durable project context, decisions and conventions
-workstyle/  cross-project preferences
-hats/       reusable working lenses mapped to toolkit agents
-inbox/      future candidates; never injected by default
+opencode-agent-toolkit
+        │ configures / consumes
+        ▼
+opencode-memory-plugin
+        │ reads / curates
+        ▼
+private opencode-memory repository
 ```
 
-Agents receive rendered text only. They do not receive direct filesystem or Git write access to the memory repository.
+This keeps agent orchestration, the OpenCode runtime adapter, and private user data independently versioned.
 
-Memory context cannot grant permissions, bypass plan approval, weaken sandbox policy, or override explicit repository/user instructions.
+## Compatibility
 
-## Enable it
+The plugin exposes dedicated OpenCode V1 and V2 adapters around the same memory core.
+
+| Capability | OpenCode V1 | OpenCode V2 beta |
+| --- | --- | --- |
+| Automatic candidate capture | yes | yes |
+| Project/workstyle/hats storage | yes | yes |
+| Candidate review/promote lifecycle | yes | yes |
+| Native plugin prompt injection | yes | not exposed by the V2 API yet |
+| Toolkit prompt injection | not needed | yes |
+
+V1 uses `experimental.chat.system.transform` directly. V2 currently has no equivalent plugin hook, so the toolkit calls the plugin's stable `render` CLI while generating V2 agent prompts. The memory logic still lives entirely in the external plugin.
+
+## Enable
 
 After `just install`:
 
 ```bash
 just memory-on git@github.com:USER/opencode-memory.git
 just memory-status
+```
+
+The external plugin is cloned automatically from `git@github.com:ylascaux/opencode-memory-plugin.git` into:
+
+```text
+${XDG_DATA_HOME:-$HOME/.local/share}/opencode-agent-toolkit/plugins/opencode-memory-plugin
+```
+
+The bootstrap ref is `main`. Once a release is tagged, pin it explicitly:
+
+```bash
+OAT_MEMORY_PLUGIN_REF=v0.1.0
+```
+
+This is preferable for reproducible toolkit runs.
+
+## Automatic capture
+
+Capture is independent from memory reads and is disabled by default:
+
+```bash
+just memory-capture-on
+```
+
+Both V1 and V2 extract only bounded user/assistant text. Reasoning, shell output and tool output are not persisted. Extracted observations go only to the local candidate quarantine.
+
+```text
+session
+  │
+  ▼
+local candidate
+  │ explicit human accept
+  ▼
+inbox/accepted        # still inactive
+  │ explicit human promote
+  ▼
+projects/workstyle/hats
+  │ explicit push
+  ▼
+private Git remote
+```
+
+Session events never commit or push the private memory repository.
+
+## Candidate workflow
+
+```bash
+just memory-candidates
+just memory-candidate a31f92d780cc
+just memory-reject a31f92d780cc
+just memory-accept a31f92d780cc
+just memory-promote a31f92d780cc
+just memory-push
+```
+
+Override the promotion target when needed:
+
+```bash
+just memory-promote a31f92d780cc workstyle/preferences.md
+```
+
+`push=true` can be passed to `memory-accept` or `memory-promote`, but explicit separate pushes are safer and remain the default.
+
+## Manual candidate
+
+```bash
+just memory-add workstyle \
+  'Prefer Just' \
+  'Prefer Justfiles over Makefiles for project automation.' \
+  --target workstyle/preferences.md
+```
+
+## Rendered context
+
+Inspect exactly what an agent receives:
+
+```bash
 just memory-show orchestrator
 ```
 
-The repository is cloned by default to:
+The external plugin resolves the current Git repository, maps it through `projects/index.json`, loads project memory, cross-project workstyle and the hats assigned to the named agent, then bounds the result by `OAT_MEMORY_MAX_CHARS`.
 
-```text
-${XDG_DATA_HOME:-$HOME/.local/share}/opencode-agent-toolkit/memory
-```
+## Configuration
 
-Disable it at any time:
+Toolkit/plugin integration:
 
 ```bash
-just memory-off
+OAT_MEMORY_PLUGIN_REPO=git@github.com:ylascaux/opencode-memory-plugin.git
+OAT_MEMORY_PLUGIN_REF=main
+OAT_MEMORY_PLUGIN_AUTO_SYNC=1
+OAT_MEMORY_PLUGIN_SYNC_INTERVAL_SECONDS=300
 ```
 
-Force a refresh:
-
-```bash
-just memory-sync
-```
-
-`memory-on` stores the enable flag and optional repository URL in `.env.local`, so profile switching does not overwrite it.
-
-## Project matching
-
-The toolkit detects the current Git root and `origin` remote. `projects/index.json` can map repository names/remotes to a stable memory project id:
-
-```json
-{
-  "version": 1,
-  "projects": [
-    {
-      "id": "opencode-agent-toolkit",
-      "match": {
-        "names": ["opencode-agent-toolkit"],
-        "remotes": ["ylascaux/opencode-agent-toolkit"]
-      }
-    }
-  ]
-}
-```
-
-If no explicit mapping matches, `projects/<git-root-name>/` is used when it exists. `OAT_MEMORY_PROJECT` can force an id.
-
-Only Markdown files at the root of the matched project directory are injected. `sessions/` and `inbox/` are intentionally excluded from automatic context.
-
-## Hats
-
-`hats/assignments.json` maps an agent to one or more hats:
-
-```json
-{
-  "version": 1,
-  "default": [],
-  "agents": {
-    "orchestrator": ["architect", "software-engineer"],
-    "platform-architect": ["architect", "platform-engineer"]
-  }
-}
-```
-
-A hat is stored as `hats/<name>.md`. It describes priorities and working habits; it does not replace the technical role or permission map.
-
-`OAT_MEMORY_EXTRA_HATS=foo,bar` adds extra hats to all mapped agents for a run.
-
-## Sync and context limits
-
-Relevant settings:
+Private vault:
 
 ```bash
 OAT_MEMORY_ENABLED=0
@@ -102,16 +139,27 @@ OAT_MEMORY_MAX_CHARS=12000
 OAT_MEMORY_STRICT=0
 ```
 
-Automatic Git pull is throttled by a timestamp in the clone's `.git` directory. Failed sync uses the last local snapshot and warns unless `OAT_MEMORY_STRICT=1`.
+Capture:
 
-The rendered context is bounded. By default roughly 75% of the character budget is reserved for project/workstyle memory and 25% for hats.
+```bash
+OAT_MEMORY_CAPTURE_ENABLED=0
+OAT_MEMORY_CAPTURE_MAX_INPUT_CHARS=18000
+OAT_MEMORY_MAX_CANDIDATES_PER_SESSION=5
+# OAT_MEMORY_EXTRACTOR_MODEL=provider/model
+```
 
-## Sandbox behavior
+The standalone plugin also supports canonical `OPENCODE_MEMORY_*` variables. The `OAT_MEMORY_*` aliases are retained so toolkit upgrades are backward compatible, including the toolkit's existing default vault at `~/.local/share/opencode-agent-toolkit/memory`.
 
-Memory is prepared on the trusted host before OpenCode starts. The private memory clone is **not mounted into the execution sandbox**. Sandboxed agents see only the rendered text already present in their generated prompt.
+## Failure behavior
 
-## Phase 1 write policy
+Plugin and memory Git operations are non-interactive. Automatic updates use `fetch` plus `pull --ff-only` or an explicit detached tag/ref. A dirty local plugin checkout is never overwritten automatically.
 
-Phase 1 is intentionally read-only from the agent runtime. Automatic conversation extraction, confidence scoring, consolidation and Git commits should be implemented as a separate controlled pipeline later. This prevents a single conversation or compromised project from silently rewriting durable personal memory.
+The memory vault must be clean before `accept` or `promote`. Promotion targets are allowlisted and cannot escape the vault. A failed push never rolls back an already-valid local commit.
 
-Because the repository is plain Markdown, it can later be opened directly as an Obsidian vault without changing the toolkit storage format.
+## Sandbox boundary
+
+The private memory repository is not mounted into the toolkit execution sandbox. V2 receives only rendered prompt text. V1 receives memory through the OpenCode plugin hook, not by granting agent shell access to the vault.
+
+## Ownership boundary
+
+The toolkit should not grow memory extraction/storage logic again. Changes to capture, candidate scoring, Git curation, retrieval or future V2 context-source support belong in `opencode-memory-plugin`; this repository owns only installation/configuration and the temporary V2 rendering bridge.
