@@ -27,13 +27,25 @@ new-agent name *args:
 install-user command="oc":
     bash ./scripts/user-link install "{{command}}"
 
+# Install the dedicated OpenCode 2 beta launcher as ~/.local/bin/oc2.
+install-oc2:
+    bash ./scripts/user-link install oc2
+
 # Remove the per-user command only when it points to this toolkit.
 uninstall-user command="oc":
     bash ./scripts/user-link uninstall "{{command}}"
 
+# Remove the dedicated OpenCode 2 beta launcher.
+uninstall-oc2:
+    bash ./scripts/user-link uninstall oc2
+
 # Show whether the per-user command points to this toolkit.
 user-status command="oc":
     bash ./scripts/user-link status "{{command}}"
+
+# Show whether the OpenCode 2 beta launcher is installed.
+oc2-status:
+    bash ./scripts/user-link status oc2
 
 # Optional only: discover LiteLLM models and create explicit per-agent mappings.
 # This command is never invoked by `just config`.

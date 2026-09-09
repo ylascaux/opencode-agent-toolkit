@@ -96,6 +96,8 @@ just models
 just reliability
 just doctor
 just run
+just v1
+just v2
 just configure-litellm   # optional only
 ```
 
@@ -104,6 +106,15 @@ For an `oc` command usable from any workspace:
 ```bash
 just install-user
 ```
+
+For the OpenCode 2 beta, install the dedicated `oc2` launcher:
+
+```bash
+just install-oc2
+oc2 .
+```
+
+`oc2` always selects `opencode2` and `opencode.v2.jsonc`, even when the toolkit `.env` defaults to `OPENCODE_MAJOR=1`. The regular `oc` launcher keeps the normal configured runtime behavior.
 
 ## Documentation
 
