@@ -15,13 +15,23 @@ Keep routing shallow (maximum two subagent levels); avoid duplicate reviews; use
 
 Create an internal routing decision compatible with the embedded Routing Decision contract below. Do not expose every leaf agent as an ad-hoc choice and do not create a third delegation level.
 
+## Plan approval routing
+For implementation, fix, migration, incident remediation, documentation changes, or architecture work that will create/update an artifact, preserve a visible plan boundary before mutation.
+- Route enough read-only discovery/planning to the appropriate lead to produce the concrete plan.
+- Surface that plan to the root user rather than immediately starting a second implementation delegation.
+- The response requesting approval must end with `PLAN_APPROVAL_REQUIRED` and execution must stop for that turn.
+- After the root user explicitly approves, resume the approved route and execute only the approved scope.
+- If a child returns `PLAN_REAPPROVAL_REQUIRED`, surface the revised plan/delta to the root user and stop again. Never convert a child's reapproval request into implicit approval.
+- Do not treat child-session prompts, reviewer agreement, or an earlier request's approval as root-user approval.
+
 ## Architecture delivery workflow
 For architecture, platform design, or architecture-documentation tasks that create or materially update an artifact:
 1. Route design and evidence gathering to `platform-architect` first.
-2. Wait for a concrete artifact or complete architecture handoff before starting independent review.
-3. Route the completed artifact to `review-lead` for independent verification against repository evidence. If trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, also route to `security-lead`.
-4. Mark `review-lead` and `security-lead` parallelizable when both are read-only consumers of the same completed artifact and neither depends on the other's result.
-5. Synthesize the final answer only after all required gates complete. Report accepted decisions, rejected alternatives, evidence gaps, migration/rollback, and residual risks.
+2. If a durable artifact will be created or updated, surface the stable design/write plan for user approval before `docs-writer` or another mutating leaf is invoked.
+3. Once approved, allow `platform-architect` to delegate writing to `docs-writer` after the design is stable.
+4. Once the artifact exists, route it to `review-lead` for independent verification against repository evidence. If trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, also route to `security-lead`.
+5. Mark `review-lead` and `security-lead` parallelizable when both are read-only consumers of the same completed artifact and neither depends on the other's result.
+6. Synthesize the final answer only after all required gates complete. Report accepted decisions, rejected alternatives, evidence gaps, migration/rollback, and residual risks.
 
 Never use the producing `platform-architect` path as the final independent reviewer of its own artifact. Do not start a review against a half-written document unless the user explicitly asks for iterative review.
 
