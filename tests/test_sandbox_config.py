@@ -22,6 +22,15 @@ class SandboxConfigTests(unittest.TestCase):
         self.assertIn("./.opencode/plugins/sandbox-v1.js", self.v1["plugin"])
         self.assertIn("./.opencode/plugins/sandbox-v2.ts", self.v2["plugins"])
 
+    def test_v2_plugin_entrypoints_use_current_opencode_package(self):
+        for relative in [
+            ".opencode/plugins/sandbox-v2.ts",
+            ".opencode/plugins/plan-approval-v2.ts",
+        ]:
+            text = (ROOT / relative).read_text()
+            self.assertIn('from "@opencode-ai/plugin"', text, relative)
+            self.assertNotIn('from "@opencode/plugin"', text, relative)
+
     def test_aws_and_kubectl_are_manual_only(self):
         permissions = json.loads((ROOT / "agents" / "_defaults" / "permissions.json").read_text())
         bash = permissions["bash"]
