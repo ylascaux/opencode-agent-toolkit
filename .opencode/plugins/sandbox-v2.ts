@@ -1,6 +1,6 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { Plugin } from "@opencode/plugin"
+import { Plugin } from "@opencode-ai/plugin"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const RUNNER = path.join(ROOT, "scripts", "sandbox-run")
