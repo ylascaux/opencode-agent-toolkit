@@ -196,18 +196,16 @@ export default Plugin.define({
       if (effectiveTaskID) {
         item.taskID = effectiveTaskID
         delegationByTaskID.set(effectiveTaskID, item)
-        const child = ensure(effectiveTaskID)
-        if (child) {
-          child.aborted = false
-          child.abortReason = undefined
-          child.status = "RUNNING"
-          child.createdAt = now()
-          markProgress(child.id)
-        }
       }
       item.attempts += 1
       item.status = "running"
       return { item, resumeTaskID }
+    }
+
+    const releaseDelegationReservations = (parentID: string, taskKey: string) => {
+      for (const [callID, reservation] of reservations.entries()) {
+        if (reservation.parentID === parentID && reservation.taskKey === taskKey) reservations.delete(callID)
+      }
     }
 
     const recordDelegationOutcome = (parentID: string, part: any) => {
@@ -225,6 +223,7 @@ export default Plugin.define({
         item.taskID = String(taskID)
         delegationByTaskID.set(item.taskID, item)
       }
+      releaseDelegationReservations(parentID, item.key)
       if (toolState.status === "completed") {
         item.status = "complete"
         item.lastFailure = ""
@@ -464,7 +463,16 @@ export default Plugin.define({
           markProgress(id)
           writeCheckpoint(state)
         }
-        if (type === "session.status") state.status = statusName(p.status)
+        if (type === "session.status") {
+          const nextStatus = statusName(p.status)
+          state.status = nextStatus
+          if (!TERMINAL.has(nextStatus) && state.aborted) {
+            state.aborted = false
+            state.abortReason = undefined
+            state.createdAt = now()
+            markProgress(id)
+          }
+        }
         if (type === "message.updated") {
           const message = p.info ?? p.message ?? p
           if (message?.agent) sessionAgents.set(id, message.agent)
