@@ -34,6 +34,9 @@ class NonInteractivePolicyTests(unittest.TestCase):
             "All tool and shell execution MUST be non-interactive.",
             "NEVER open or intentionally invoke an interactive pager",
             "git --no-pager ...",
+            "Prefer one simple command per shell tool call.",
+            "Do not use shell control-flow such as `for`, `while`, or `until`",
+            "Do not use `|| true` merely to hide a meaningful exit status.",
             "## Effective capabilities",
             "### ALLOW",
             "### ASK",
@@ -90,6 +93,14 @@ class NonInteractivePolicyTests(unittest.TestCase):
                 self.assertEqual(shell[pattern], "deny", f"{name}: {pattern}")
             for pattern in allowed_non_paging_git:
                 self.assertEqual(shell[pattern], "allow", f"{name}: {pattern}")
+
+    def test_safe_validation_builtins_are_allowed_for_every_agent(self):
+        allowed = ["test*", "printf*", "echo*", "true"]
+        for name, agent in self.config["agent"].items():
+            shell = agent["permission"]["bash"]
+            for pattern in allowed:
+                self.assertEqual(shell[pattern], "allow", f"{name}: {pattern}")
+            self.assertEqual(shell.get("for*", "ask"), "ask", f"{name}: shell loops must not be blanket-allowed")
 
     def test_v2_runtime_requires_shell_create_hook(self):
         text = (ROOT / ".opencode" / "plugins" / "reliability-v2.ts").read_text()

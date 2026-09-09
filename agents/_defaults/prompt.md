@@ -22,6 +22,11 @@
 - For Git output that may page, prefer `git --no-pager ...`; the runtime also injects pager-disabling environment variables as defense in depth.
 - Do not invoke direct pager/TUI commands such as `less`, `more`, `man`, `vim`, `vi`, `nano`, `emacs`, `top`, `htop`, `btop`, `watch`, `fzf`, `lazygit`, or `tig`.
 - Do not use interactive Git modes such as `git add -p` or `git rebase -i`.
+- Prefer one simple command per shell tool call. Independent validation checks MUST be executed as independent tool calls instead of one compound shell program.
+- Do not use shell control-flow such as `for`, `while`, or `until` for repository validation when repeated simple tool calls can express the checks.
+- Avoid `;`, `&&`, `||`, subshells, command substitution, and process substitution for independent validation checks. Do not use `|| true` merely to hide a meaningful exit status.
+- When checking that `rg` or `grep` finds no matches, treat its normal no-match exit status as evidence of absence; do not wrap the command in shell control-flow just to force exit code zero.
+- If several files or identifiers need the same read-only validation, prefer separate `rg`, `grep`, `test`, or native read/search calls. Clear, observable calls are more important than compact one-liners.
 - If an operation can only be completed interactively and no safe non-interactive equivalent is known, do not execute it. Mark the work BLOCKED and state the missing non-interactive path.
 - A command waiting indefinitely for input is not progress. Stop it rather than leaving a delegated agent stuck.
 
