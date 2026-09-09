@@ -1,6 +1,28 @@
 # Architecture des agents
 
-Le toolkit contient **37 agents**, mais ils ne sont pas tous au même niveau. La hiérarchie est volontaire.
+Le toolkit contient actuellement **37 agents**. Chaque agent est désormais un composant autonome sous `agents/<nom>/`.
+
+Pour le format complet, voir [CONFIGURATION_AGENTS.md](./CONFIGURATION_AGENTS.md).
+
+## Organisation
+
+```text
+agents/<nom>/
+├── agent.json
+├── prompt.md
+└── permissions.json
+```
+
+Le socle partagé vit sous :
+
+```text
+agents/_defaults/
+├── agent.json
+├── prompt.md
+└── permissions.json
+```
+
+Les artefacts runtime sont générés ; il ne faut pas éditer `.generated/`, `opencode.jsonc` ou `opencode.v2.jsonc` comme sources.
 
 ## Plan de contrôle
 
@@ -15,28 +37,35 @@ Le toolkit contient **37 agents**, mais ils ne sont pas tous au même niveau. La
 | `deep-reasoner` | escalade les décisions risquées ou peu certaines |
 | `evidence-auditor` | vérifie les affirmations de réussite |
 
-`meta-router` ne voit que les quatre portes d’exécution/lead et les trois agents d’escalade/audit. Il n’a pas un catalogue plat de tous les spécialistes.
+La hiérarchie reste volontairement courte :
 
-## Leaf agents de delivery
+```text
+meta-router
+  -> lead/orchestrator
+      -> leaf specialist
+```
 
-`brainstorm`, `planner`, `builder`, `tester`, `mock-generator`, `debugger`, `python-specialist`, `go-specialist`, `terraform-terragrunt`, `cicd`.
+La profondeur maximale reste 2.
 
-## Leaf agents de review
+La topologie est déclarée par l'enfant via `agent.json.parents`. Ajouter un agent à un ou plusieurs leads ne demande donc plus de modifier une map centrale.
 
-`reviewer`, `api-contract`, `performance`, plus les domaines/sécurités choisis par `review-lead`.
+## Permissions
 
-## Leaf agents architecture/platform
+Les leaf agents gardent un deny-all déterministe sur `task`/`subagent`. Les exceptions de délégation sont dérivées automatiquement des `parents` déclarés dans les agents enfants.
 
-`project-scanner`, `architecture-designer`, `aws-platform`, `terraform-terragrunt`, `kubernetes`, `cicd`, `sre`, `observability`, `finops`, `database`, `networking`, `threat-model`, `iac-security`.
+Les permissions opérationnelles héritent de `agents/_defaults/permissions.json` et peuvent être surchargées dans `agents/<nom>/permissions.json`.
 
-## Leaf agents sécurité
+## Ajouter un agent
 
-`threat-model`, `appsec`, `iac-security`, `supply-chain`, `secrets`, `pentest`.
+```bash
+just new-agent cloudflare --parent platform-architect --tier medium --model-profile reasoning
+```
 
-## Invariant des leaf agents
+Puis modifier le répertoire créé et valider :
 
-Chaque leaf possède un deny-all explicite sur `task`/`subagent`. Seuls les cinq agents de routage/orchestration ont des exceptions. Un spécialiste ne peut donc pas contourner le plan de contrôle.
+```bash
+just config
+just check
+```
 
-## Contrat des prompts
-
-Chaque prompt généré contient Role, Operating method, Non-negotiables, Evidence discipline, Stop conditions et Handoff. Le comportement spécifique à chaque rôle est défini dans `agents/manifest.json`.
+`just agents` affiche le catalogue découvert, les modèles, parents et enfants.
