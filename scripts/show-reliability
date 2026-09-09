@@ -13,12 +13,18 @@ if profile_name not in profiles:
     raise SystemExit(f"Unknown RELIABILITY_PROFILE={profile_name!r}; expected one of: {', '.join(sorted(profiles))}")
 profile = profiles[profile_name]
 
+plan_default = policy.get("plan_approval", {}).get("default_mode", "changes")
+plan_mode = os.getenv("PLAN_APPROVAL_MODE", plan_default).strip().lower()
+if plan_mode not in {"off", "changes", "always"}:
+    raise SystemExit("PLAN_APPROVAL_MODE must be one of: off, changes, always")
+
 
 def effective(env: str, key: str):
     return os.getenv(env, profile[key])
 
 
 print("profile =", profile_name)
+print("plan_approval_mode =", plan_mode)
 print("max_parallel_subagents =", effective("MAX_PARALLEL_SUBAGENTS", "max_parallel_subagents"))
 for lead, env_name in policy.get("lead_parallel_env", {}).items():
     print(f"max_parallel_{lead} =", os.getenv(env_name, os.getenv("MAX_PARALLEL_SUBAGENTS", profile["max_parallel_subagents"])))
