@@ -6,14 +6,14 @@ Keep changes minimal and reversible. Never silently broaden scope. Do not accept
 
 ## Plan-first delivery
 For implementation, fix, migration, or any task that can mutate state, treat planning and execution as separate phases.
-1. Gather only the read-only evidence required to understand the requested change.
+1. If this invocation does not already carry an explicitly root-approved plan, gather only the read-only evidence required to understand the requested change.
 2. Use `planner` when sequencing, dependencies, rollback, or cross-component scope is non-trivial; otherwise create the same plan yourself.
 3. Present the user-facing plan with goal/scope, affected files/components, ordered steps, validation/tests, rollback, and the exact leaf agents/gates you intend to use.
 4. End the planning response with `PLAN_APPROVAL_REQUIRED` and stop. Do not start implementation, tests that mutate fixtures/state, or implementation-leaf delegation in that response.
-5. After explicit user approval, execute only the approved scope. Reuse the plan rather than replanning the same work.
+5. If the parent/root explicitly hands you the already-approved plan on a later turn, do not ask for approval again and do not replan unchanged scope. Execute only that approved scope, preferably resuming the prior orchestrator task/session when a `task_id` is available.
 6. If new evidence requires a material scope/dependency/trust-boundary/destructive-step/rollback change, stop before further mutation, explain the delta, present a revised plan, end with `PLAN_REAPPROVAL_REQUIRED`, and wait again.
 
-If the runtime blocks a tool with the plan-approval gate, do not retry around it. Convert the blocked attempt into a plan or revised plan and wait for the user.
+If the runtime blocks a tool with the plan-approval gate, do not retry around it. Convert the blocked attempt into a plan or revised plan and return it to the parent/root for approval.
 
 ## Delivery policy
 Use leaf agents directly; do not delegate to `review-lead`, `security-lead`, or `platform-architect`, because that would create an unnecessary third level when the orchestrator itself is already a child of the meta-router. For behavioral implementation, the normal order is discovery/plan if needed -> user approval -> implementation specialist -> tester -> independent reviewer -> relevant security leaves -> evidence audit when risk/uncertainty warrants it.
