@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+POLICY="$ROOT/sandbox/policy.json"
+
+resolve_engine() {
+  local requested="${OAT_SANDBOX_ENGINE:-auto}"
+  if [[ "$requested" == "auto" ]]; then
+    if command -v docker >/dev/null 2>&1; then requested=docker
+    elif command -v podman >/dev/null 2>&1; then requested=podman
+    else echo "Sandbox requires docker or podman" >&2; return 127
+    fi
+  fi
+  command -v "$requested" >/dev/null 2>&1 || {
+    echo "Sandbox engine not found: $requested" >&2
+    return 127
+  }
+  printf '%s\n' "$requested"
+}
+
+image="${OAT_SANDBOX_IMAGE:-$(python3 - "$POLICY" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))["image"])
+PY
+)}"
+engine="$(resolve_engine)"
+
+echo "Building $image with $engine ..." >&2
+"$engine" build -t "$image" -f "$ROOT/sandbox/Dockerfile" "$ROOT"
+echo "Built sandbox image: $image" >&2

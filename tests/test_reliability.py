@@ -65,7 +65,9 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertEqual(default["edit"], "ask")
         self.assertEqual(default["bash"]["*"], "ask")
         self.assertEqual(default["read"]["*.env"], "ask")
-        self.assertEqual(default["external_directory"]["*"], "ask")
+        self.assertEqual(default["read"]["**/.ssh/**"], "deny")
+        self.assertEqual(default["read"]["**/.aws/**"], "deny")
+        self.assertEqual(default["external_directory"]["*"], "deny")
         for command in ["rm -rf*", "git reset --hard*", "git push --force*", "terraform apply*", "kubectl delete*"]:
             self.assertEqual(default["bash"][command], "deny", command)
 

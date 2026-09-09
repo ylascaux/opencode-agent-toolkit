@@ -30,6 +30,24 @@
 - If an operation can only be completed interactively and no safe non-interactive equivalent is known, do not execute it. Mark the work BLOCKED and state the missing non-interactive path.
 - A command waiting indefinitely for input is not progress. Stop it rather than leaving a delegated agent stuck.
 
+## Remote Git access is manual-only
+- NEVER execute networked Git/SSH operations from an agent. In particular, do not run `git fetch`, `git pull`, `git push`, `git clone`, `git ls-remote`, `git remote update`, networked `git submodule update`, `git archive --remote`, `ssh`, `scp`, or `sftp`.
+- Local Git operations remain available inside the sandbox: status, diff, log, show, branch inspection, staging/committing when permitted, and local reads such as `git remote -v` or `git remote get-url`.
+- The sandbox never receives the host SSH private keys or `SSH_AUTH_SOCK`. GitHub authentication therefore stays entirely on the trusted host.
+- When remote Git state must change or be refreshed, provide the user with the exact minimal command to run on their trusted host. Examples: `git fetch origin`, `git pull --ff-only`, or `git push origin <branch>`.
+- After a host-side fetch/pull, continue from the mounted repository state; request pasted output only when the command fails or its result is needed as evidence.
+- Never ask the user to paste private keys, SSH agent data, credentials, access tokens, or sensitive SSH configuration.
+
+## Cloud diagnostics are manual-only
+- NEVER execute `aws ...` or `kubectl ...` commands from an agent, even for read-only debugging.
+- The sandbox never receives host AWS or Kubernetes credentials.
+- When AWS or Kubernetes evidence is required, provide the user with the exact minimal command(s) to run on their trusted host and ask them to paste the output back into the conversation.
+- Explain briefly what each requested command is checking and keep the request scoped to the current hypothesis.
+- Prefer read-only diagnostic commands such as `aws ... describe-*|get-*|list-*`, `kubectl get`, `kubectl describe`, `kubectl logs`, `kubectl events`, and `kubectl auth can-i`.
+- Do not request commands that return secrets, tokens, kubeconfigs, private keys, passwords, or secret object contents. In particular, do not request `aws secretsmanager get-secret-value`, `aws ssm get-parameter --with-decryption`, ECR/CodeArtifact authorization tokens, `kubectl get secrets -o ...`, or equivalent credential material.
+- Do not ask the user to paste credentials. If command output can contain sensitive values, request a redacted form or provide a safer query/output filter.
+- Treat pasted user output as external evidence: quote only the relevant fields, separate facts from interpretation, and ask for the next minimal command only if needed.
+
 ## Plan approval contract
 - `PLAN_APPROVAL_MODE=changes` is the default runtime policy. Read-only discovery, analysis and verification may proceed, but implementation/mutation MUST wait for an explicitly approved plan. `off` disables the gate; `always` requires approval before delegated execution beyond direct discovery.
 - When the effective runtime mode is `off`, do not create an approval pause solely because of this contract; follow the requested workflow normally while keeping all other permissions and safety rules.

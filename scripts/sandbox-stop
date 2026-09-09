@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+container="${1:-${OAT_SANDBOX_CONTAINER:-}}"
+[[ -n "$container" ]] || exit 0
+
+engine="${OAT_SANDBOX_ENGINE_RESOLVED:-${OAT_SANDBOX_ENGINE:-auto}}"
+if [[ "$engine" == "auto" ]]; then
+  if command -v docker >/dev/null 2>&1; then
+    engine=docker
+  elif command -v podman >/dev/null 2>&1; then
+    engine=podman
+  else
+    exit 0
+  fi
+fi
+
+if command -v "$engine" >/dev/null 2>&1 && "$engine" container inspect "$container" >/dev/null 2>&1; then
+  "$engine" rm -f "$container" >/dev/null
+fi

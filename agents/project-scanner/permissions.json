@@ -1,6 +1,6 @@
 {
   "external_directory": {
-    "*": "ask",
+    "*": "deny",
     "~/Projects/**": "allow"
   }
 }

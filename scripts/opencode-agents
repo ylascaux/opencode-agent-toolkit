@@ -81,4 +81,30 @@ if [[ "${OPENCODE_PREFLIGHT:-1}" == "1" ]]; then
 fi
 
 export OPENCODE_CONFIG="$config"
-exec "$bin" "$@"
+
+if [[ "${OAT_SANDBOX_ENABLED:-0}" != "1" ]]; then
+  exec "$bin" "$@"
+fi
+
+project_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+export OAT_SANDBOX_PROJECT_ROOT="$(cd "$project_root" && pwd -P)"
+container="$(bash "$ROOT/scripts/sandbox-start" "$OAT_SANDBOX_PROJECT_ROOT" | tail -n 1)"
+[[ -n "$container" ]] || {
+  echo "Sandbox startup did not return a container name" >&2
+  exit 3
+}
+export OAT_SANDBOX_CONTAINER="$container"
+
+cleanup_sandbox() {
+  bash "$ROOT/scripts/sandbox-stop" "$OAT_SANDBOX_CONTAINER" || true
+}
+trap cleanup_sandbox EXIT INT TERM
+
+echo "OpenCode sandbox: $OAT_SANDBOX_CONTAINER ($OAT_SANDBOX_PROJECT_ROOT -> /workspace)" >&2
+set +e
+"$bin" "$@"
+status=$?
+set -e
+cleanup_sandbox
+trap - EXIT INT TERM
+exit "$status"

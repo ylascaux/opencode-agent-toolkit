@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+POLICY="$ROOT/sandbox/policy.json"
+PERMISSIONS="$ROOT/agents/_defaults/permissions.json"
+PROMPT="$ROOT/agents/_defaults/prompt.md"
+
+ok() { printf 'OK   %s\n' "$*"; }
+warn() { printf 'WARN %s\n' "$*"; }
+fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
+
+python3 -m json.tool "$POLICY" >/dev/null || fail "invalid sandbox/policy.json"
+ok "sandbox policy is valid JSON"
+
+for forbidden in '~/.aws' '~/.ssh' '~/.kube' '~/.config/gh' '/var/run/docker.sock' '$SSH_AUTH_SOCK'; do
+  python3 - "$POLICY" "$forbidden" <<'PY' || exit 1
+import json, sys
+policy = json.load(open(sys.argv[1]))
+assert sys.argv[2] in policy["filesystem"]["never_mount"]
+PY
+  ok "never-mount policy contains $forbidden"
+done
+
+python3 - "$PERMISSIONS" <<'PY' || fail "manual cloud / host credential permissions are not hardened"
+import json, sys
+permissions = json.load(open(sys.argv[1]))
+bash = permissions["bash"]
+reads = permissions["read"]
+assert bash["aws *"] == "deny"
+assert bash["kubectl *"] == "deny"
+for pattern in (
+    "**/.ssh/**",
+    "**/.aws/**",
+    "**/.kube/**",
+    "**/.azure/**",
+    "**/.config/gcloud/**",
+    "**/.config/gh/**",
+):
+    assert reads[pattern] == "deny", pattern
+PY
+ok "aws/kubectl execution and native host credential reads are denied"
+
+grep -q 'NEVER execute `aws ...` or `kubectl ...` commands' "$PROMPT" || fail "manual cloud evidence contract missing from default prompt"
+ok "default prompt requires user-executed cloud diagnostics"
+
+engine="${OAT_SANDBOX_ENGINE:-auto}"
+if [[ "$engine" == "auto" ]]; then
+  if command -v docker >/dev/null 2>&1; then engine=docker
+  elif command -v podman >/dev/null 2>&1; then engine=podman
+  else warn "docker/podman not installed; runtime checks skipped"; exit 0
+  fi
+fi
+command -v "$engine" >/dev/null 2>&1 || fail "sandbox engine not found: $engine"
+"$engine" info >/dev/null 2>&1 || fail "$engine is installed but unavailable"
+ok "$engine runtime is available"
+
+image="${OAT_SANDBOX_IMAGE:-$(python3 - "$POLICY" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1]))["image"])
+PY
+)}"
+if ! "$engine" image inspect "$image" >/dev/null 2>&1; then
+  warn "sandbox image is not built: $image (run: just sandbox-build)"
+  exit 0
+fi
+ok "sandbox image exists: $image"
+
+"$engine" run --rm \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  --network=none \
+  "$image" \
+  bash -lc 'set -e; for tool in git nix direnv python3 rg jq yq just shellcheck actionlint; do command -v "$tool" >/dev/null || { echo "missing $tool" >&2; exit 1; }; done; test ! -e /var/run/docker.sock; test ! -e /root/.aws; test ! -e /root/.kube; test ! -e /root/.ssh' \
+  >/dev/null || fail "sandbox image tool/security self-check failed"
+ok "bootstrap tools are present and host credential/socket paths are absent"
+
+warn "project-specific compilers/CLIs are expected to come from the repository's Nix/devenv environment"
+warn "network.mode=bridge gives Internet but is not a strict egress/LAN allowlist; use a proxy/firewall profile for stronger network isolation"

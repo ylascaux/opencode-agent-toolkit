@@ -13,6 +13,7 @@ Recommended reading order:
 9. [ROUTING.md](./ROUTING.md) — routing decisions and delegation
 10. [ARCHITECTURE.md](./ARCHITECTURE.md) — architecture-design workflow used by agents
 11. [SECURITY.md](./SECURITY.md) — security workflow and guardrails
-12. [PROJECT_DISCOVERY.md](./PROJECT_DISCOVERY.md) — multi-repository project discovery
-13. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
-14. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details
+12. [SANDBOX.md](./SANDBOX.md) — disposable development sandbox and manual AWS/Kubernetes diagnostics
+13. [PROJECT_DISCOVERY.md](./PROJECT_DISCOVERY.md) — multi-repository project discovery
+14. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
+15. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details
