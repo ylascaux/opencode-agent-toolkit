@@ -18,11 +18,7 @@ class NonInteractivePolicyTests(unittest.TestCase):
         capabilities = text.split("## Effective capabilities", 1)[1]
         headings = {"allow": "### ALLOW", "ask": "### ASK", "deny": "### DENY"}
         start = capabilities.split(headings[effect], 1)[1]
-        later = [
-            heading
-            for key, heading in headings.items()
-            if key != effect and heading in start
-        ]
+        later = [heading for key, heading in headings.items() if key != effect and heading in start]
         if not later:
             return start
         positions = [start.index(heading) for heading in later]
@@ -61,32 +57,14 @@ class NonInteractivePolicyTests(unittest.TestCase):
 
     def test_interactive_terminal_tools_are_denied_for_every_agent(self):
         denied = [
-            "less*",
-            "more*",
-            "man*",
-            "vim*",
-            "vi *",
-            "nano*",
-            "emacs*",
-            "top*",
-            "htop*",
-            "btop*",
-            "watch*",
-            "fzf*",
-            "lazygit*",
-            "tig*",
-            "git add -p*",
-            "git add --patch*",
-            "git rebase -i*",
-            "git rebase --interactive*",
+            "less*", "more*", "man*", "vim*", "vi *", "nano*", "emacs*",
+            "top*", "htop*", "btop*", "watch*", "fzf*", "lazygit*", "tig*",
+            "git add -p*", "git add --patch*", "git rebase -i*", "git rebase --interactive*",
         ]
         allowed_non_paging_git = [
-            "git --no-pager status*",
-            "git --no-pager diff*",
-            "git --no-pager show*",
-            "git --no-pager log*",
+            "git --no-pager status*", "git --no-pager diff*",
+            "git --no-pager show*", "git --no-pager log*",
         ]
-
         for name, agent in self.config["agent"].items():
             shell = agent["permission"]["bash"]
             for pattern in denied:
@@ -103,7 +81,7 @@ class NonInteractivePolicyTests(unittest.TestCase):
             self.assertEqual(shell.get("for*", "ask"), "ask", f"{name}: shell loops must not be blanket-allowed")
 
     def test_v2_runtime_requires_shell_create_hook(self):
-        text = (ROOT / ".opencode" / "plugins" / "reliability-v2.ts").read_text()
+        text = (ROOT / "runtime" / "plugins" / "reliability-v2.ts").read_text()
         self.assertIn('ctx.shell.hook("create.before"', text)
         self.assertIn("applyNonInteractiveShellEnv(event.env)", text)
         self.assertIn("required for non-interactive agent execution", text)
