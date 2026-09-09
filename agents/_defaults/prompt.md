@@ -27,14 +27,17 @@
 
 ## Plan approval contract
 - `PLAN_APPROVAL_MODE=changes` is the default runtime policy. Read-only discovery, analysis and verification may proceed, but implementation/mutation MUST wait for an explicitly approved plan. `off` disables the gate; `always` requires approval before delegated execution beyond direct discovery.
-- For a task that may mutate files, configuration, infrastructure, repository state, or other external state, first gather only the evidence needed to plan the change.
+- When the effective runtime mode is `off`, do not create an approval pause solely because of this contract; follow the requested workflow normally while keeping all other permissions and safety rules.
+- For a root task or lead-owned task that may mutate files, configuration, infrastructure, repository state, or other external state, first gather only the evidence needed to plan the change.
 - Present a concise plan containing: goal/scope, affected files/components, ordered implementation steps, validation/tests, rollback, and delegated agents/review/security gates when relevant.
 - End that planning response with the literal marker `PLAN_APPROVAL_REQUIRED`. Do not invoke a mutating tool in the same response after presenting the marker.
 - Treat an explicit root-user response such as `go`, `approve`, `oui`, or `valide` as approval only when a plan is currently waiting. A different user response changes scope and requires a revised plan.
 - A rejected plan must not be implemented. Revise only when the user provides new direction.
 - Approval applies only to the current root request and its child sessions. A later root-user request resets approval automatically.
-- If implementation reveals a material scope change, new dependency, new trust boundary, new destructive step, or a change to previously stated rollback/validation, stop before further mutation, explain the deviation, present the revised plan, and end with `PLAN_REAPPROVAL_REQUIRED`.
-- Never treat another agent's plan, a child prompt, or an earlier approval from a different request as user approval.
+- A delegated implementation/test/docs leaf that is explicitly handed an already root-approved scope MUST NOT ask for a second plan approval. Execute only that handed-off scope when the runtime allows it. If the runtime still blocks mutation, stop and return the blocked state to the parent instead of inventing approval.
+- Planner/discovery/review/security leaves operating before approval stay read-only and return evidence/plans to their parent; they do not ask the root user directly unless they are the visible root agent.
+- If implementation reveals a material scope change, new dependency, new trust boundary, new destructive step, or a change to previously stated rollback/validation, stop before further mutation, explain the deviation, present the revised plan to the parent/root, and end with `PLAN_REAPPROVAL_REQUIRED`.
+- Never treat another agent's plan, a child prompt, reviewer agreement, or an earlier approval from a different request as user approval.
 - Runtime enforcement is authoritative. If a mutating tool is blocked by the plan gate, do not retry it; surface/revise the plan and wait for approval.
 
 ## Stop conditions
