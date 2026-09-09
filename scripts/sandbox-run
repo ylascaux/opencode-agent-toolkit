@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "usage: sandbox-run --cwd <host-cwd> --command <command>" >&2
+  exit 2
+}
+
+cwd=""
+command=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cwd) cwd="${2:-}"; shift 2 ;;
+    --command) command="${2:-}"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$cwd" && -n "$command" ]] || usage
+
+container="${OAT_SANDBOX_CONTAINER:-}"
+[[ -n "$container" ]] || {
+  echo "sandbox-run: OAT_SANDBOX_CONTAINER is not set" >&2
+  exit 3
+}
+project_root="${OAT_SANDBOX_PROJECT_ROOT:-}"
+[[ -n "$project_root" ]] || {
+  echo "sandbox-run: OAT_SANDBOX_PROJECT_ROOT is not set" >&2
+  exit 3
+}
+
+engine="${OAT_SANDBOX_ENGINE_RESOLVED:-${OAT_SANDBOX_ENGINE:-auto}}"
+if [[ "$engine" == "auto" ]]; then
+  if command -v docker >/dev/null 2>&1; then engine=docker
+  elif command -v podman >/dev/null 2>&1; then engine=podman
+  else echo "sandbox-run: docker or podman is required" >&2; exit 127
+  fi
+fi
+
+project_root="$(cd "$project_root" && pwd -P)"
+cwd="$(cd "$cwd" && pwd -P)"
+case "$cwd/" in
+  "$project_root/"*)
+    rel="${cwd#"$project_root"}"
+    container_cwd="/workspace$rel"
+    ;;
+  *)
+    echo "sandbox-run: cwd is outside the sandboxed repository: $cwd" >&2
+    exit 3
+    ;;
+esac
+
+bootstrap='set -euo pipefail
+TARGET="$1"
+COMMAND="$2"
+cd "$TARGET"
+probe="$TARGET"
+while [[ "$probe" == /workspace* && ! -f "$probe/.envrc" ]]; do
+  [[ "$probe" == /workspace ]] && break
+  probe="$(dirname "$probe")"
+done
+if [[ -f "$probe/.envrc" ]]; then
+  cd "$probe"
+  direnv allow "$probe/.envrc" >/dev/null
+  cd "$TARGET"
+  eval "$(direnv export bash)"
+fi
+exec bash -lc "$COMMAND"'
+
+"$engine" exec "$container" bash -lc "$bootstrap" _ "$container_cwd" "$command"

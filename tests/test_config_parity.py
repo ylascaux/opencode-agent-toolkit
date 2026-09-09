@@ -16,9 +16,12 @@ WRITERS = {
     "builder", "tester", "mock-generator", "debugger", "python-specialist",
     "go-specialist", "cicd", "docs-writer", "terraform-terragrunt",
 }
-SENSITIVE_PATTERNS = {
+APPROVAL_SENSITIVE_PATTERNS = {
     "*.env", "*.env.*", "**/.env", "**/.env.*", "*.pem", "*.key",
-    "**/.ssh/**", "**/.aws/credentials", "*id_rsa*", "*id_ed25519*",
+}
+DENIED_HOST_CREDENTIAL_PATTERNS = {
+    "*id_rsa*", "*id_ed25519*", "**/.ssh/**", "**/.aws/**", "**/.kube/**",
+    "**/.azure/**", "**/.config/gcloud/**", "**/.config/gh/**",
 }
 READ_ONLY_GIT = {
     "git status*", "git diff*", "git show*", "git log*", "git rev-parse*",
@@ -146,14 +149,18 @@ class ConfigPolicyTests(unittest.TestCase):
             self.assertEqual(last_v2_effect(agent, "websearch", "*"), "allow", name)
             self.assertEqual(last_v2_effect(agent, "skill", "*"), "ask", name)
 
-    def test_sensitive_reads_require_approval_instead_of_hard_deny(self):
+    def test_sensitive_reads_are_approved_or_denied_by_scope(self):
         for name, agent in self.v1["agent"].items():
             read = agent["permission"]["read"]
-            for pattern in SENSITIVE_PATTERNS:
+            for pattern in APPROVAL_SENSITIVE_PATTERNS:
                 self.assertEqual(read[pattern], "ask", f"{name}: {pattern}")
+            for pattern in DENIED_HOST_CREDENTIAL_PATTERNS:
+                self.assertEqual(read[pattern], "deny", f"{name}: {pattern}")
         for name, agent in self.v2["agents"].items():
-            for pattern in SENSITIVE_PATTERNS:
+            for pattern in APPROVAL_SENSITIVE_PATTERNS:
                 self.assertEqual(last_v2_effect(agent, "read", pattern), "ask", f"{name}: {pattern}")
+            for pattern in DENIED_HOST_CREDENTIAL_PATTERNS:
+                self.assertEqual(last_v2_effect(agent, "read", pattern), "deny", f"{name}: {pattern}")
 
     def test_edit_is_allow_for_writers_and_ask_for_everyone_else(self):
         for name, agent in self.v1["agent"].items():
@@ -182,7 +189,7 @@ class ConfigPolicyTests(unittest.TestCase):
     def test_project_scanner_can_read_projects_without_prompt(self):
         agent = self.v1["agent"]["project-scanner"]
         external = agent["permission"]["external_directory"]
-        self.assertEqual(external["*"], "ask")
+        self.assertEqual(external["*"], "deny")
         self.assertEqual(external["~/Projects/**"], "allow")
 
     def test_review_lead_can_independently_recheck_architecture_evidence(self):

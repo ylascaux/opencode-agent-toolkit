@@ -55,6 +55,27 @@ configure-litellm *args:
 doctor:
     bash ./scripts/doctor
 
+# Build the hardened Nix development sandbox image using Docker or Podman.
+sandbox-build:
+    bash ./scripts/sandbox-build
+
+# Enable sandboxed agent shell execution persistently in .env.local.
+sandbox-on: sandbox-build
+    python3 ./scripts/sandbox-toggle on
+    @echo "Sandbox enabled. Configure OAT_AWS_PROFILE/OAT_KUBE_CONTEXT in .env.local for brokered cloud debugging."
+
+# Disable sandboxed shell execution without deleting the image.
+sandbox-off:
+    python3 ./scripts/sandbox-toggle off
+
+# Validate sandbox policy, cloud command filtering and the local container runtime/image.
+sandbox-doctor:
+    bash ./scripts/sandbox-doctor
+
+# Remove orphaned toolkit sandbox containers. Does not remove the image.
+sandbox-clean:
+    @engine="$${OAT_SANDBOX_ENGINE:-auto}"; if [[ "$$engine" == auto ]]; then if command -v docker >/dev/null 2>&1; then engine=docker; elif command -v podman >/dev/null 2>&1; then engine=podman; else echo "docker/podman not found" >&2; exit 0; fi; fi; ids="$$($$engine ps -aq --filter label=opencode-agent-toolkit=1)"; if [[ -n "$$ids" ]]; then $$engine rm -f $$ids; else echo "No orphaned toolkit sandboxes"; fi
+
 # Fast deterministic checks performed before an OpenCode run.
 preflight:
     @test -f .env || { echo "Missing .env; run: just install" >&2; exit 1; }; set -a; source .env; [[ -f .env.local ]] && source .env.local; set +a; python3 ./scripts/generate-config >/dev/null; python3 ./scripts/apply-reliability >/dev/null; bash ./scripts/preflight

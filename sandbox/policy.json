@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "image": "opencode-agent-toolkit-sandbox:local",
+  "workspace": "/workspace",
+  "resources": {
+    "cpus": "4",
+    "memory": "4g",
+    "pids_limit": 512
+  },
+  "network": {
+    "mode": "bridge",
+    "note": "Bridge networking provides Internet access but is not an egress/LAN allowlist. Use an external proxy/firewall profile when private-network isolation is required."
+  },
+  "filesystem": {
+    "workspace_mode": "rw",
+    "readonly_paths": [
+      ".github"
+    ],
+    "never_mount": [
+      "~/.aws",
+      "~/.ssh",
+      "~/.kube",
+      "~/.azure",
+      "~/.config/gcloud",
+      "~/.config/gh",
+      "/var/run/docker.sock",
+      "$SSH_AUTH_SOCK"
+    ]
+  },
+  "direnv": {
+    "auto_allow": true,
+    "enable_nix_direnv": true
+  },
+  "source_control": {
+    "local_git": true,
+    "remote_mode": "manual_only",
+    "agent_remote_execution": false,
+    "ssh_credentials_mounted": false,
+    "ssh_agent_forwarded": false,
+    "user_runs_remote_commands": true
+  },
+  "cloud": {
+    "mode": "manual_only",
+    "agent_execution": false,
+    "credentials_mounted": false,
+    "user_runs_commands": true,
+    "user_returns_sanitized_output": true
+  }
+}

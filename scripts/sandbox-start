@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+POLICY="$ROOT/sandbox/policy.json"
+
+resolve_engine() {
+  local requested="${OAT_SANDBOX_ENGINE:-auto}"
+  case "$requested" in
+    auto)
+      if command -v docker >/dev/null 2>&1; then
+        printf '%s\n' docker
+      elif command -v podman >/dev/null 2>&1; then
+        printf '%s\n' podman
+      else
+        echo "Sandbox requires docker or podman" >&2
+        return 127
+      fi
+      ;;
+    docker|podman)
+      command -v "$requested" >/dev/null 2>&1 || {
+        echo "Sandbox engine not found: $requested" >&2
+        return 127
+      }
+      printf '%s\n' "$requested"
+      ;;
+    *)
+      echo "OAT_SANDBOX_ENGINE must be auto, docker, or podman" >&2
+      return 2
+      ;;
+  esac
+}
+
+policy_value() {
+  python3 - "$POLICY" "$1" <<'PY'
+import json, sys
+path, dotted = sys.argv[1:]
+value = json.load(open(path))
+for part in dotted.split('.'):
+    value = value[part]
+print(value)
+PY
+}
+
+engine="${OAT_SANDBOX_ENGINE_RESOLVED:-$(resolve_engine)}"
+export OAT_SANDBOX_ENGINE_RESOLVED="$engine"
+project_root="${OAT_SANDBOX_PROJECT_ROOT:-${1:-}}"
+if [[ -z "$project_root" ]]; then
+  project_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+fi
+project_root="$(cd "$project_root" && pwd -P)"
+
+container="${OAT_SANDBOX_CONTAINER:-}"
+if [[ -z "$container" ]]; then
+  digest="$(python3 - "$project_root" <<'PY'
+import hashlib, sys
+print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:10])
+PY
+)"
+  container="oat-${digest}-$$"
+fi
+
+image="${OAT_SANDBOX_IMAGE:-$(policy_value image)}"
+cpus="${OAT_SANDBOX_CPUS:-$(policy_value resources.cpus)}"
+memory="${OAT_SANDBOX_MEMORY:-$(policy_value resources.memory)}"
+pids="${OAT_SANDBOX_PIDS_LIMIT:-$(policy_value resources.pids_limit)}"
+network="${OAT_SANDBOX_NETWORK:-$(policy_value network.mode)}"
+
+if ! "$engine" image inspect "$image" >/dev/null 2>&1; then
+  if [[ "${OAT_SANDBOX_AUTOBUILD:-1}" != "1" ]]; then
+    echo "Sandbox image missing: $image (run: just sandbox-build)" >&2
+    exit 1
+  fi
+  OAT_SANDBOX_IMAGE="$image" OAT_SANDBOX_ENGINE="$engine" bash "$ROOT/scripts/sandbox-build" >&2
+fi
+
+if "$engine" container inspect "$container" >/dev/null 2>&1; then
+  echo "Sandbox container already exists: $container" >&2
+  exit 1
+fi
+
+args=(
+  run -d --rm --init
+  --name "$container"
+  --label "opencode-agent-toolkit=1"
+  --label "opencode-agent-toolkit.project=$project_root"
+  --cap-drop=ALL
+  --security-opt=no-new-privileges
+  --pids-limit "$pids"
+  --memory "$memory"
+  --cpus "$cpus"
+  --network "$network"
+  --tmpfs /tmp:rw,nosuid,size=1g
+  -e OAT_SANDBOX=1
+  -e HOME=/root
+  -e XDG_CONFIG_HOME=/root/.config
+  -e XDG_DATA_HOME=/root/.local/share
+  -e XDG_CACHE_HOME=/root/.cache
+  -v "$project_root:/workspace:rw"
+  -w /workspace
+)
+
+# Repository workflow configuration is visible but not writable from shell tools.
+if [[ -d "$project_root/.github" ]]; then
+  args+=( -v "$project_root/.github:/workspace/.github:ro" )
+fi
+
+"$engine" "${args[@]}" "$image" >/dev/null
+
+# Fail closed if the image is incomplete.
+"$engine" exec "$container" bash -lc 'command -v git >/dev/null && command -v nix >/dev/null && command -v direnv >/dev/null' || {
+  "$engine" rm -f "$container" >/dev/null 2>&1 || true
+  echo "Sandbox image failed bootstrap checks" >&2
+  exit 1
+}
+
+printf '%s\n' "$container"

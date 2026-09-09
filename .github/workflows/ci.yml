@@ -19,23 +19,37 @@ jobs:
           python-version: "3.12"
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
-      - name: Reliability and plan core JavaScript syntax
+      - name: Reliability, plan and sandbox core JavaScript syntax
         run: |
           node --check .opencode/plugins/reliability-core.js
           node --check .opencode/plugins/non-interactive-shell.js
           node --check .opencode/plugins/plan-approval-core.js
+          node --check .opencode/plugins/sandbox-v1.js
       - name: V1 watchdog and plan gate JavaScript syntax
         run: |
           node --check .opencode/plugins/reliability-v1.js
           node --check .opencode/plugins/reliability-v1-legacy.js
           node --check .opencode/plugins/plan-approval-v1.js
-      - name: V2 watchdog and plan gate TypeScript syntax
+      - name: V2 watchdog, plan gate and sandbox TypeScript syntax
         run: |
           node --experimental-strip-types --check .opencode/plugins/reliability-v2.ts
           node --experimental-strip-types --check .opencode/plugins/reliability-v2-legacy.ts
           node --experimental-strip-types --check .opencode/plugins/plan-approval-v2.ts
+          node --experimental-strip-types --check .opencode/plugins/sandbox-v2.ts
           node --experimental-strip-types --check plugins/reliability-approval/rpc.ts
           node --experimental-strip-types --check plugins/reliability-approval/index.ts
           node --experimental-strip-types --check plugins/reliability-approval/tui.ts
       - name: Generate configs and run tests
         run: just check
+
+  sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sandbox image
+        run: docker build -t opencode-agent-toolkit-sandbox:ci -f sandbox/Dockerfile .
+      - name: Sandbox security doctor
+        env:
+          OAT_SANDBOX_ENGINE: docker
+          OAT_SANDBOX_IMAGE: opencode-agent-toolkit-sandbox:ci
+        run: bash scripts/sandbox-doctor
