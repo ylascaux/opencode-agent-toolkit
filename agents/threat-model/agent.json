@@ -1,0 +1,14 @@
+{
+  "description": "Use before or during design when trust boundaries, identities, sensitive assets or external inputs change. Do not perform runtime exploitation.",
+  "mode": "subagent",
+  "model_env": "MODEL_THREAT_MODEL",
+  "tier": "high",
+  "model_profile": "reasoning",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "platform-architect",
+    "security-lead"
+  ],
+  "opencode": {}
+}

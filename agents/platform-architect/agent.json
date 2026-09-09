@@ -1,0 +1,12 @@
+{
+  "description": "Use as the architecture council lead for platform-wide or multi-domain design. Do not implement infrastructure.",
+  "mode": "subagent",
+  "model_env": "MODEL_PLATFORM_ARCHITECT",
+  "tier": "high",
+  "model_profile": "deep",
+  "steps": 24,
+  "parents": [
+    "meta-router"
+  ],
+  "opencode": {}
+}

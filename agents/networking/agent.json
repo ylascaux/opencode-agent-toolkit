@@ -1,0 +1,14 @@
+{
+  "description": "Use for VPC, DNS, CloudFront/WAF, TLS, ingress/egress and private access. Do not use for generic application architecture.",
+  "mode": "subagent",
+  "model_env": "MODEL_NETWORKING",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

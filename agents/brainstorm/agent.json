@@ -1,0 +1,12 @@
+{
+  "description": "Use before implementation when the solution space is genuinely open and alternatives matter. Do not use for obvious one-path fixes.",
+  "mode": "subagent",
+  "model_env": "MODEL_BRAINSTORM",
+  "tier": "medium",
+  "model_profile": "fast",
+  "steps": 16,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

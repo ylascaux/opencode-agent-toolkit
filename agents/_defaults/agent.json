@@ -1,0 +1,8 @@
+{
+  "mode": "subagent",
+  "tier": "medium",
+  "model_profile": "general",
+  "steps": 16,
+  "parents": [],
+  "opencode": {}
+}

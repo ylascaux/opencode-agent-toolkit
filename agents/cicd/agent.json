@@ -1,0 +1,13 @@
+{
+  "description": "Use for GitHub Actions and CI/CD pipelines, deployment/promotion and artifact workflows. Do not use for application code unrelated to delivery.",
+  "mode": "subagent",
+  "model_env": "MODEL_CICD",
+  "tier": "medium",
+  "model_profile": "coding",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

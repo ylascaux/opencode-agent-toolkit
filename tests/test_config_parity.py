@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+AGENTS_DIR = ROOT / "agents"
 
 LEADS = {"meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"}
 EXPECTED_META_CHILDREN = {
@@ -35,6 +36,13 @@ def last_v2_effect(agent: dict, action: str, resource: str) -> str | None:
     return effect
 
 
+def source_agent_dirs() -> list[Path]:
+    return sorted(
+        path for path in AGENTS_DIR.iterdir()
+        if path.is_dir() and not path.name.startswith("_")
+    )
+
+
 class ConfigPolicyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -46,6 +54,28 @@ class ConfigPolicyTests(unittest.TestCase):
     def test_agent_sets_match_and_count(self):
         self.assertEqual(set(self.v1["agent"]), set(self.v2["agents"]))
         self.assertEqual(len(self.v1["agent"]), 37)
+        self.assertEqual({path.name for path in source_agent_dirs()}, set(self.v1["agent"]))
+
+    def test_every_agent_is_self_contained(self):
+        for directory in source_agent_dirs():
+            for filename in ["agent.json", "prompt.md", "permissions.json"]:
+                self.assertTrue((directory / filename).exists(), f"{directory.name}: {filename}")
+            config = json.loads((directory / "agent.json").read_text())
+            self.assertIn("description", config, directory.name)
+            self.assertIn("model_env", config, directory.name)
+            self.assertIn("tier", config, directory.name)
+            self.assertIn("parents", config, directory.name)
+            self.assertIn("## Operating method", (directory / "prompt.md").read_text(), directory.name)
+            self.assertIn("## Non-negotiables", (directory / "prompt.md").read_text(), directory.name)
+
+    def test_defaults_are_centralized(self):
+        defaults = AGENTS_DIR / "_defaults"
+        for filename in ["agent.json", "prompt.md", "permissions.json"]:
+            self.assertTrue((defaults / filename).exists(), filename)
+        permissions = json.loads((defaults / "permissions.json").read_text())
+        self.assertEqual(permissions["websearch"], "allow")
+        self.assertEqual(permissions["webfetch"], "allow")
+        self.assertEqual(permissions["bash"]["*"], "ask")
 
     def test_command_sets_match(self):
         self.assertEqual(set(self.v1["command"]), set(self.v2["commands"]))
@@ -62,8 +92,12 @@ class ConfigPolicyTests(unittest.TestCase):
         self.assertEqual(self.v1["agent"]["orchestrator"]["mode"], "all")
         self.assertEqual(self.v2["agents"]["orchestrator"]["mode"], "all")
 
-    def test_every_model_env_has_a_tier(self):
-        tiers = json.loads((ROOT / "profiles" / "agent-tiers.json").read_text())
+    def test_every_model_env_has_a_tier_in_its_agent_json(self):
+        tiers = {}
+        for directory in source_agent_dirs():
+            config = json.loads((directory / "agent.json").read_text())
+            tiers[config["model_env"]] = config["tier"]
+
         expected_model_envs = set()
         for agent in self.v2["agents"].values():
             match = re.fullmatch(r"\{env:(MODEL_[A-Z0-9_]+)\}", agent["model"])

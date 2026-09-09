@@ -1,0 +1,14 @@
+{
+  "description": "Use for read-only application security review of auth, request handling, business logic and data flows. Do not review cloud/IaC posture unless it directly enables an app finding.",
+  "mode": "subagent",
+  "model_env": "MODEL_APPSEC",
+  "tier": "high",
+  "model_profile": "security",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "review-lead",
+    "security-lead"
+  ],
+  "opencode": {}
+}

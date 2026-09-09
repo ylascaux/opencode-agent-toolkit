@@ -1,0 +1,13 @@
+{
+  "description": "Use to produce current/target system architecture from verified inputs. Do not replace the platform-architect council when multiple platform domains need arbitration.",
+  "mode": "subagent",
+  "model_env": "MODEL_ARCHITECTURE",
+  "tier": "high",
+  "model_profile": "reasoning",
+  "steps": 20,
+  "parents": [
+    "orchestrator",
+    "platform-architect"
+  ],
+  "opencode": {}
+}

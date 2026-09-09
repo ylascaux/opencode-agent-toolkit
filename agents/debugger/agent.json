@@ -1,0 +1,12 @@
+{
+  "description": "Use for failures, incidents and hard-to-explain regressions. Do not patch symptoms without a causal chain.",
+  "mode": "subagent",
+  "model_env": "MODEL_DEBUGGER",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 24,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

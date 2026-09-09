@@ -1,0 +1,16 @@
+{
+  "description": "Use only when credible agents materially disagree. Do not perform majority voting or implementation.",
+  "mode": "subagent",
+  "model_env": "MODEL_ARBITER",
+  "tier": "high",
+  "model_profile": "reasoning",
+  "steps": 14,
+  "parents": [
+    "meta-router",
+    "orchestrator",
+    "review-lead",
+    "platform-architect",
+    "security-lead"
+  ],
+  "opencode": {}
+}

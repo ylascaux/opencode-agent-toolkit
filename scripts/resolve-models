@@ -2,24 +2,21 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shlex
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-TIERS = ROOT / "profiles" / "agent-tiers.json"
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from agent_config import load_agents, model_tiers
 
 
 def load_tiers() -> dict[str, str]:
-    data = json.loads(TIERS.read_text())
-    if not isinstance(data, dict):
-        raise SystemExit("profiles/agent-tiers.json must contain an object")
-    allowed = {"low", "medium", "high"}
-    bad = {k: v for k, v in data.items() if not isinstance(k, str) or v not in allowed}
-    if bad:
-        raise SystemExit(f"invalid agent tier mapping: {bad}")
-    return data
+    """Return MODEL_* -> low/medium/high from agents/<name>/agent.json."""
+    return model_tiers(load_agents())
 
 
 def resolve(environ: dict[str, str] | None = None) -> dict[str, str]:
@@ -41,7 +38,9 @@ def resolve(environ: dict[str, str] | None = None) -> dict[str, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Resolve MODEL_* agent variables from LOW/MEDIUM/HIGH tiers")
+    parser = argparse.ArgumentParser(
+        description="Resolve per-agent MODEL_* variables from LOW/MEDIUM/HIGH tiers"
+    )
     parser.add_argument("--show", action="store_true", help="Show effective mapping with tiers")
     args = parser.parse_args()
 

@@ -1,0 +1,12 @@
+{
+  "description": "Use to design or implement unit, integration and regression tests for behavioral changes. Do not own the production implementation.",
+  "mode": "subagent",
+  "model_env": "MODEL_TESTER",
+  "tier": "medium",
+  "model_profile": "coding",
+  "steps": 20,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

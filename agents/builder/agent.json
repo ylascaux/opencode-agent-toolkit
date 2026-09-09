@@ -1,0 +1,12 @@
+{
+  "description": "Use for general code implementation when no language/platform specialist is more appropriate. Do not self-approve completed work.",
+  "mode": "subagent",
+  "model_env": "MODEL_BUILDER",
+  "tier": "medium",
+  "model_profile": "coding",
+  "steps": 26,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

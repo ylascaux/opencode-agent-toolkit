@@ -13,47 +13,13 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
-PROFILE_BY_ENV = {
-    "MODEL_META_ROUTER": "general",
-    "MODEL_ORCHESTRATOR": "reasoning",
-    "MODEL_REVIEW_LEAD": "review",
-    "MODEL_SECURITY_LEAD": "security",
-    "MODEL_ARBITER": "reasoning",
-    "MODEL_DEEP_REASONER": "deep",
-    "MODEL_EVIDENCE_AUDITOR": "review",
-    "MODEL_BRAINSTORM": "fast",
-    "MODEL_PLANNER": "general",
-    "MODEL_BUILDER": "coding",
-    "MODEL_REVIEWER": "review",
-    "MODEL_TESTER": "coding",
-    "MODEL_MOCK_GENERATOR": "fast",
-    "MODEL_DEBUGGER": "reasoning",
-    "MODEL_API_CONTRACT": "review",
-    "MODEL_PERFORMANCE": "reasoning",
-    "MODEL_PYTHON": "coding",
-    "MODEL_GO": "coding",
-    "MODEL_TERRAFORM": "coding",
-    "MODEL_CICD": "coding",
-    "MODEL_PROJECT_SCANNER": "fast",
-    "MODEL_ARCHITECTURE": "reasoning",
-    "MODEL_PLATFORM_ARCHITECT": "deep",
-    "MODEL_AWS": "reasoning",
-    "MODEL_KUBERNETES": "reasoning",
-    "MODEL_SRE": "reasoning",
-    "MODEL_OBSERVABILITY": "general",
-    "MODEL_FINOPS": "general",
-    "MODEL_DATABASE": "reasoning",
-    "MODEL_NETWORKING": "reasoning",
-    "MODEL_THREAT_MODEL": "reasoning",
-    "MODEL_APPSEC": "security",
-    "MODEL_IAC_SECURITY": "security",
-    "MODEL_SUPPLY_CHAIN": "review",
-    "MODEL_PENTEST": "security",
-    "MODEL_SECRETS": "fast",
-    "MODEL_DOCS": "fast",
-}
+from agent_config import load_agents, model_profiles
 
+PROFILE_BY_ENV = model_profiles(load_agents())
 PROFILE_ORDER = ["fast", "general", "coding", "reasoning", "deep", "review", "security"]
 
 TOKENS = {
@@ -164,7 +130,7 @@ def update_dotenv(path: Path, mapping: dict[str, str]) -> None:
             out.append(line)
     missing = [key for key in mapping if key not in seen]
     if missing:
-        out.extend(["", "# Added by just configure"])
+        out.extend(["", "# Added by just configure-litellm"])
         out.extend(f"{key}={mapping[key]}" for key in missing)
     path.write_text("\n".join(out).rstrip() + "\n")
 
@@ -197,7 +163,9 @@ def headers_from_env() -> dict[str, str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Discover LiteLLM models and map agent profiles into .env")
+    parser = argparse.ArgumentParser(
+        description="Optional LiteLLM model discovery. This is never called by just config."
+    )
     parser.add_argument("--base-url", default=os.getenv("LITELLM_BASE_URL"))
     parser.add_argument("--models-file", help="Read a saved /v1/models JSON response instead of calling the gateway")
     parser.add_argument("--auto", action="store_true", help="Accept heuristic profile recommendations without prompts")
@@ -229,12 +197,15 @@ def main() -> int:
         for profile in PROFILE_ORDER:
             chosen[profile] = choose_model(profile, recommendations[profile], models)
 
-    mapping = {env_name: normalize_model_id(chosen[profile], args.provider_prefix) for env_name, profile in PROFILE_BY_ENV.items()}
+    mapping = {
+        env_name: normalize_model_id(chosen[profile], args.provider_prefix)
+        for env_name, profile in PROFILE_BY_ENV.items()
+    }
 
     print("\nAgent model profiles:")
     for profile in PROFILE_ORDER:
         print(f"  {profile:<10} -> {normalize_model_id(chosen[profile], args.provider_prefix)}")
-    print(f"\nMapped {len(mapping)} MODEL_* variables.")
+    print(f"\nMapped {len(mapping)} MODEL_* variables from agents/<name>/agent.json.")
 
     if args.dry_run:
         for key in sorted(mapping):

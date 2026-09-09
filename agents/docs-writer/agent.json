@@ -1,0 +1,13 @@
+{
+  "description": "Use for README, ADR, runbook, migration and operational documentation grounded in verified implementation. Do not invent behavior.",
+  "mode": "subagent",
+  "model_env": "MODEL_DOCS",
+  "tier": "medium",
+  "model_profile": "fast",
+  "steps": 16,
+  "parents": [
+    "orchestrator",
+    "platform-architect"
+  ],
+  "opencode": {}
+}
