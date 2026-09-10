@@ -14,6 +14,21 @@ private opencode-memory repository
 
 This keeps agent orchestration, the OpenCode runtime adapter, and private user data independently versioned.
 
+## User interface
+
+Daily memory commands do not require being inside the toolkit repository. The global `oc` launcher preserves the caller's working directory and exposes memory as a subcommand:
+
+```bash
+cd ~/Projects/my-project
+oc memory status
+oc memory candidates
+oc memory show orchestrator
+```
+
+The standalone plugin also exposes `oc-memory` when installed globally. `opencode-memory` remains as a compatibility alias.
+
+`just memory-*` recipes remain available as development/maintenance shortcuts, but they are no longer the primary runtime interface.
+
 ## Compatibility
 
 The plugin exposes dedicated OpenCode V1 and V2 adapters around the same memory core.
@@ -30,11 +45,11 @@ V1 uses `experimental.chat.system.transform` directly. V2 currently has no equiv
 
 ## Enable
 
-After `just install`:
+After the one-time toolkit installation:
 
 ```bash
-just memory-on git@github.com:USER/opencode-memory.git
-just memory-status
+oc memory enable git@github.com:USER/opencode-memory.git
+oc memory status
 ```
 
 The external plugin is cloned automatically from `git@github.com:ylascaux/opencode-memory-plugin.git` into:
@@ -56,7 +71,7 @@ This is preferable for reproducible toolkit runs.
 Capture is independent from memory reads and is disabled by default:
 
 ```bash
-just memory-capture-on
+oc memory capture-on
 ```
 
 Both V1 and V2 extract only bounded user/assistant text. Reasoning, shell output and tool output are not persisted. Extracted observations go only to the local candidate quarantine.
@@ -82,26 +97,26 @@ Session events never commit or push the private memory repository.
 ## Candidate workflow
 
 ```bash
-just memory-candidates
-just memory-candidate a31f92d780cc
-just memory-reject a31f92d780cc
-just memory-accept a31f92d780cc
-just memory-promote a31f92d780cc
-just memory-push
+oc memory candidates
+oc memory candidate a31f92d780cc
+oc memory reject a31f92d780cc
+oc memory accept a31f92d780cc
+oc memory promote a31f92d780cc
+oc memory push
 ```
 
 Override the promotion target when needed:
 
 ```bash
-just memory-promote a31f92d780cc workstyle/preferences.md
+oc memory promote a31f92d780cc --target workstyle/preferences.md
 ```
 
-`push=true` can be passed to `memory-accept` or `memory-promote`, but explicit separate pushes are safer and remain the default.
+`--push` can be passed to `accept` or `promote`, but explicit separate pushes are safer and remain the default.
 
 ## Manual candidate
 
 ```bash
-just memory-add workstyle \
+oc memory add workstyle \
   'Prefer Just' \
   'Prefer Justfiles over Makefiles for project automation.' \
   --target workstyle/preferences.md
@@ -112,10 +127,26 @@ just memory-add workstyle \
 Inspect exactly what an agent receives:
 
 ```bash
-just memory-show orchestrator
+oc memory show orchestrator
 ```
 
 The external plugin resolves the current Git repository, maps it through `projects/index.json`, loads project memory, cross-project workstyle and the hats assigned to the named agent, then bounds the result by `OAT_MEMORY_MAX_CHARS`.
+
+## Standalone CLI
+
+When using the plugin without the toolkit, install its package globally and use:
+
+```bash
+oc-memory status
+oc-memory sync
+oc-memory candidates
+oc-memory show <id>
+oc-memory accept <id>
+oc-memory promote <id>
+oc-memory push
+```
+
+The CLI can run from any directory and uses the current Git repository to resolve the project scope.
 
 ## Configuration
 
