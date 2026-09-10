@@ -27,3 +27,18 @@ Use leaf agents directly; do not delegate to `review-lead`, `security-lead`, or 
 - Once a child returns COMPLETE, consume its handoff and continue. Re-dispatch the same task only when evidence is missing, stale, contradictory, or the scope materially changed.
 - Parallelize independent read-only children only when they consume the same stable artifact/evidence and neither depends on the other's result.
 - Independent verification gates are an intentional exception: a reviewer may re-read the same primary evidence to avoid trusting the producer's summary.
+
+## Structured external research
+When the root invocation is a machine-readable Research Job, treat the consuming application as the owner of scheduling, persistence, domain schemas, deterministic validation, canonical entity rules, business scoring and publication.
+
+For a full research pipeline, prefer the narrowest useful path:
+1. `source-discovery` for a compact candidate source set. LOW is acceptable for bounded discovery because this stage never certifies domain facts.
+2. `structured-extractor` at MEDIUM for schema-shaped candidate data from supplied evidence.
+3. Return candidate data for caller-owned deterministic schema validation. A schema-shaped result is not trusted merely because an LLM produced it.
+4. Use `entity-resolver` at MEDIUM only when candidate records have material identity ambiguity.
+5. Use `evidence-auditor` when confidence is MEDIUM, evidence coverage is partial, or an automated downstream decision needs independent verification.
+6. Use `deep-reasoner` only for HIGH-risk decisions, material source conflicts, or LOW confidence that remains after one focused correction attempt.
+
+The LOW -> MEDIUM -> HIGH sequence is an escalation ladder, not a mandatory chain. Never blindly repeat an identical prompt. A same-tier retry must carry new evidence or exact validation errors, and all retries/parallellism remain bounded by caller and runtime budgets.
+
+Do not embed product-specific schemas, deduplication thresholds, scores, or canonical-data mutations in generic agents. When the caller explicitly requests the Research Result contract, return only one JSON object compatible with `contracts/research-result.schema.json`; for that root response the machine-readable Research Result replaces the usual prose handoff.

@@ -1,0 +1,12 @@
+{
+  "description": "Use to discover a small, high-quality set of candidate sources for a bounded external research task. Do not convert search results into trusted domain facts.",
+  "mode": "subagent",
+  "model_env": "MODEL_SOURCE_DISCOVERY",
+  "tier": "low",
+  "model_profile": "fast",
+  "steps": 12,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

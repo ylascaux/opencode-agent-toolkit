@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research Job",
+  "description": "Provider- and domain-agnostic envelope for an externally orchestrated OpenCode research job. The caller owns domain schemas, validation, persistence and business rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "job_id",
+    "stage",
+    "task",
+    "input",
+    "policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage": {
+      "enum": [
+        "pipeline",
+        "source_discovery",
+        "structured_extraction",
+        "entity_resolution",
+        "evidence_audit",
+        "deep_reasoning"
+      ]
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input": {},
+    "target_schema": {
+      "type": "object",
+      "description": "Optional caller-owned JSON Schema or equivalent schema description. The toolkit does not own or persist domain schemas."
+    },
+    "evidence_requirements": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_attempts",
+        "max_parallel",
+        "max_tier"
+      ],
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "max_parallel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "max_tier": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "require_evidence": {
+          "type": "boolean"
+        },
+        "allow_same_tier_retry": {
+          "type": "boolean"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Use to extract candidate structured data from caller-supplied source material and a caller-owned target schema. Do not invent missing values or approve domain truth.",
+  "mode": "subagent",
+  "model_env": "MODEL_STRUCTURED_EXTRACTOR",
+  "tier": "medium",
+  "model_profile": "general",
+  "steps": 16,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}
