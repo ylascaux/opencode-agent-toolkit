@@ -1,0 +1,8 @@
+{
+  "plugins": {
+    "opencode-memory-plugin": {
+      "repository": "git@github.com:ylascaux/opencode-memory-plugin.git",
+      "ref": "v0.1.1"
+    }
+  }
+}
