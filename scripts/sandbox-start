@@ -50,7 +50,11 @@ if [[ -z "$project_root" ]]; then
 fi
 project_root="$(cd "$project_root" && pwd -P)"
 
-container="${OAT_SANDBOX_CONTAINER:-}"
+# OAT_SANDBOX_CONTAINER is runtime output consumed by shell routing and cleanup.
+# Never accept it as startup input: a long-lived parent process may carry a stale
+# value from a previous sandbox. Use OAT_SANDBOX_CONTAINER_NAME only for an
+# intentional explicit name override.
+container="${OAT_SANDBOX_CONTAINER_NAME:-}"
 if [[ -z "$container" ]]; then
   digest="$(python3 - "$project_root" <<'PY'
 import hashlib, sys
