@@ -12,12 +12,15 @@ Every agent is assigned to one of three stable capability tiers in `profiles/age
 | `medium` | `github-copilot/gpt-5.6-terra` | normal engineering, evidence gathering, documentation and operational analysis |
 | `high` | `github-copilot/gpt-5.6-sol` | architecture, security, arbitration and deep reasoning |
 
-The default mapping is quality-focused rather than aggressively cost-minimized. Only `mock-generator` and `secrets` are LOW by default. Tasks that become inputs to later decisions, such as repository architecture discovery, durable documentation, observability analysis, FinOps analysis, evidence auditing and brainstorming, use at least MEDIUM.
+The default mapping is quality-focused rather than aggressively cost-minimized. `mock-generator`, `secrets`, and `source-discovery` are LOW by default. `source-discovery` is deliberately limited to finding candidate sources; it never certifies extracted domain facts. Tasks that transform evidence into inputs for later decisions, such as repository architecture discovery, structured extraction, entity resolution, durable documentation, observability analysis, FinOps analysis, evidence auditing and brainstorming, use at least MEDIUM.
 
 Examples:
 
 - `mock-generator` -> LOW
 - `secrets` -> LOW
+- `source-discovery` -> LOW
+- `structured-extractor` -> MEDIUM
+- `entity-resolver` -> MEDIUM
 - `project-scanner` -> MEDIUM
 - `docs-writer` -> MEDIUM
 - `builder` -> MEDIUM
@@ -27,11 +30,13 @@ Examples:
 
 The agent-to-tier mapping is independent from the concrete provider model. An agent keeps the same capability tier when switching from Copilot to another provider profile.
 
-## Why evidence-producing agents are not LOW
+## Why most evidence-producing agents are not LOW
 
 Some apparently simple agents create inputs that other agents treat as evidence. A weak result there can propagate into otherwise high-quality downstream reasoning.
 
-For example, `project-scanner` discovers components, interfaces, infrastructure, data stores and evidence relationships used by architecture agents. `docs-writer` preserves decisions, assumptions, migration and rollback details in durable artifacts. `observability` and `finops` make operational trade-offs rather than merely extract values. These are MEDIUM by default.
+For example, `project-scanner` discovers components, interfaces, infrastructure, data stores and evidence relationships used by architecture agents. `structured-extractor` converts source evidence into candidate structured data, while `entity-resolver` can influence downstream deduplication decisions. `docs-writer` preserves decisions, assumptions, migration and rollback details in durable artifacts. `observability` and `finops` make operational trade-offs rather than merely extract values. These are MEDIUM by default.
+
+`source-discovery` is the narrow exception: its LOW-tier output is only a candidate source set and must not be treated as trusted domain data. Material extraction or identity decisions move to MEDIUM, and unresolved high-risk uncertainty escalates further.
 
 `evidence-auditor` is MEDIUM because its normal work is structured verification. Material disagreement or unresolved high-risk uncertainty should escalate to HIGH agents such as `arbiter` or `deep-reasoner` instead of making every audit HIGH by default.
 
@@ -87,11 +92,11 @@ agent tier from profiles/agent-tiers.json
 MODEL_LOW / MODEL_MEDIUM / MODEL_HIGH from active profile
 ```
 
-## Why tiers instead of 37 fixed models?
+## Why tiers instead of 40 fixed models?
 
-Tiers keep cost/quality policy stable while providers evolve. You can change three model values and immediately migrate all 37 agents without editing generated OpenCode configs or the agent manifest.
+Tiers keep cost/quality policy stable while providers evolve. You can change three model values and immediately migrate all 40 agents without editing generated OpenCode configs or the agent manifest.
 
-`meta-router` routes ordinary work toward medium paths and uses high-tier control agents for high-risk, low-confidence, security-sensitive or architecture-heavy work. LOW is intentionally reserved for narrow tasks where mistakes have limited downstream impact.
+`meta-router` routes ordinary work toward medium paths and uses high-tier control agents for high-risk, low-confidence, security-sensitive or architecture-heavy work. LOW is intentionally reserved for narrow tasks where mistakes have limited downstream impact or, as with `source-discovery`, where downstream stages are explicitly forbidden from treating the result as trusted data.
 
 ## LiteLLM
 

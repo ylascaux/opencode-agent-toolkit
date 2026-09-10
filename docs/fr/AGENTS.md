@@ -1,6 +1,6 @@
 # Architecture des agents
 
-Le toolkit contient actuellement **37 agents**. Chaque agent est désormais un composant autonome sous `agents/<nom>/`.
+Le toolkit contient actuellement **40 agents**. Chaque agent est désormais un composant autonome sous `agents/<nom>/`.
 
 Pour le format complet, voir [CONFIGURATION_AGENTS.md](./CONFIGURATION_AGENTS.md).
 
@@ -29,7 +29,7 @@ Les artefacts runtime sont générés ; il ne faut pas éditer `.generated/`, `o
 | Agent | Rôle |
 |---|---|
 | `meta-router` | classe le travail et choisit un chemin principal |
-| `orchestrator` | exécute les livraisons/incidents multi-étapes |
+| `orchestrator` | exécute les livraisons/incidents multi-étapes et les workflows de recherche externe structurée |
 | `review-lead` | sélectionne les dimensions de review indépendantes |
 | `security-lead` | sélectionne les gates de sécurité |
 | `platform-architect` | dirige le conseil d’architecture |
@@ -48,6 +48,14 @@ meta-router
 La profondeur maximale reste 2.
 
 La topologie est déclarée par l'enfant via `agent.json.parents`. Ajouter un agent à un ou plusieurs leads ne demande donc plus de modifier une map centrale.
+
+Les leaf agents génériques de recherche structurée sont :
+
+- `source-discovery` : découverte LOW de sources candidates ; il ne certifie jamais des faits métier ;
+- `structured-extractor` : extraction structurée MEDIUM à partir des preuves fournies et d’un schéma appartenant à l’appelant ;
+- `entity-resolver` : résolution d’identité MEDIUM sans modifier les données canoniques.
+
+Voir [RESEARCH_PIPELINE.md](./RESEARCH_PIPELINE.md) pour la frontière d’orchestration externe et la politique d’escalade.
 
 ## Permissions
 

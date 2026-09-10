@@ -17,7 +17,7 @@ class AgentDirectoryLayoutTests(unittest.TestCase):
             path for path in AGENTS.iterdir()
             if path.is_dir() and not path.name.startswith("_")
         )
-        self.assertEqual(len(directories), 37)
+        self.assertEqual(len(directories), 40)
         for directory in directories:
             self.assertTrue((directory / "agent.json").is_file(), directory.name)
             self.assertTrue((directory / "prompt.md").is_file(), directory.name)
@@ -31,22 +31,29 @@ class AgentDirectoryLayoutTests(unittest.TestCase):
     def test_loader_builds_valid_graph_and_model_catalog(self):
         specs = MODULE["load_agents"]()
         children = MODULE["children_by_parent"](specs)
-        self.assertEqual(len(specs), 37)
+        self.assertEqual(len(specs), 40)
         self.assertEqual(specs["meta-router"].mode, "primary")
         self.assertEqual(specs["builder"].tier, "medium")
         self.assertEqual(specs["mock-generator"].tier, "low")
+        self.assertEqual(specs["source-discovery"].tier, "low")
+        self.assertEqual(specs["structured-extractor"].tier, "medium")
+        self.assertEqual(specs["entity-resolver"].tier, "medium")
         self.assertEqual(specs["platform-architect"].tier, "high")
         self.assertIn("docs-writer", children["platform-architect"])
         self.assertIn("terraform-terragrunt", children["platform-architect"])
+        self.assertIn("source-discovery", children["orchestrator"])
+        self.assertIn("structured-extractor", children["orchestrator"])
+        self.assertIn("entity-resolver", children["orchestrator"])
         self.assertEqual(children["builder"], [])
 
     def test_generated_manifest_is_derived_and_points_back_to_source(self):
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], check=True)
         manifest = json.loads((ROOT / ".generated" / "agents.json").read_text())
-        self.assertEqual(len(manifest), 37)
+        self.assertEqual(len(manifest), 40)
         self.assertEqual(manifest["aws-platform"]["source"], "agents/aws-platform")
         self.assertIn("platform-architect", manifest["aws-platform"]["parents"])
         self.assertIn("aws-platform", manifest["platform-architect"]["children"])
+        self.assertIn("orchestrator", manifest["source-discovery"]["parents"])
 
     def test_new_agent_scaffolder_creates_all_three_files(self):
         # Execute a copy of the scaffolder in a minimal temporary toolkit so the
