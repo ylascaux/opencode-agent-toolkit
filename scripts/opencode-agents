@@ -25,6 +25,17 @@ source "$ROOT/.env"
 [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
 set +a
 
+# Memory is a global toolkit subcommand, not an OpenCode command. Dispatch it
+# before config generation/preflight so `oc memory ...` is fast and keeps the
+# caller's cwd for project-scope detection.
+if [[ "${1:-}" == "memory" ]]; then
+  shift
+  if [[ $# -eq 0 ]]; then
+    exec python3 "$ROOT/scripts/memory" --help
+  fi
+  exec python3 "$ROOT/scripts/memory" "$@"
+fi
+
 # The generated V2 config always points at scripts/sandbox-shell-v2. When sandboxing
 # is disabled, that wrapper delegates to the user's real host shell instead of
 # changing shell semantics merely because the toolkit is installed.

@@ -1,46 +1,89 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 from pathlib import Path
 
-from memory_context import prepare_memory_context
+from memory_plugin import ensure_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
-PROMPTS_DIR = ROOT / ".generated" / "prompts"
-MEMORY_DIR = ROOT / ".generated" / "memory"
+PROMPTS_V2 = ROOT / ".generated" / "prompts"
 MARKER = "## Opt-in long-term memory"
+TRUTHY = {"1", "true", "yes", "on"}
+
+
+def enabled(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in TRUTHY
+
+
+def clean_previous_memory() -> None:
+    for prompt_path in PROMPTS_V2.glob("*.md"):
+        text = prompt_path.read_text()
+        if MARKER in text:
+            prompt_path.write_text(text[: text.index(MARKER)].rstrip() + "\n")
+
+
+def configure_plugin(v1_path: str | None, v2_path: str | None) -> None:
+    v1_config = ROOT / "opencode.jsonc"
+    v2_config = ROOT / "opencode.v2.jsonc"
+    v1 = json.loads(v1_config.read_text())
+    v2 = json.loads(v2_config.read_text())
+
+    v1_plugins = v1.setdefault("plugin", [])
+    v1_plugins[:] = [value for value in v1_plugins if "opencode-memory-plugin" not in str(value)]
+    v2_plugins = v2.setdefault("plugins", [])
+    v2_plugins[:] = [value for value in v2_plugins if "opencode-memory-plugin" not in str(value)]
+    if v1_path:
+        v1_plugins.append(v1_path)
+    if v2_path:
+        v2_plugins.append(v2_path)
+    v1_config.write_text(json.dumps(v1, indent=2) + "\n")
+    v2_config.write_text(json.dumps(v2, indent=2) + "\n")
+
+
+def render_for_agent(cli: Path, agent: str) -> str:
+    result = subprocess.run(
+        ["node", str(cli), "render", "--agent", agent, "--cwd", str(Path.cwd())],
+        env=os.environ.copy(),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"OpenCode memory render failed for {agent}: {result.stderr.strip() or result.stdout.strip()}")
+    return result.stdout.strip()
 
 
 def main() -> int:
-    summary = prepare_memory_context(ROOT, workdir=Path.cwd())
-    if not summary["enabled"]:
+    clean_previous_memory()
+    if not enabled("OAT_MEMORY_ENABLED", False):
+        configure_plugin(None, None)
         print("memory disabled")
         return 0
 
-    common_path = MEMORY_DIR / "common.md"
-    if not common_path.exists():
-        print("memory enabled but no context rendered")
-        return 0
+    plugin = ensure_plugin()
+    v1_path = str((plugin / "dist" / "v1.js").resolve())
+    v2_path = str((plugin / "dist" / "v2.js").resolve())
+    configure_plugin(v1_path, v2_path)
 
-    common = common_path.read_text().strip()
     updated = 0
-    for prompt_path in sorted(PROMPTS_DIR.glob("*.md")):
-        text = prompt_path.read_text()
-        if MARKER in text:
-            text = text[: text.index(MARKER)].rstrip() + "\n"
-
-        blocks = [text.rstrip(), common]
-        hat_path = MEMORY_DIR / "agents" / prompt_path.name
-        if hat_path.exists():
-            blocks.append(hat_path.read_text().strip())
-        prompt_path.write_text("\n\n".join(blocks).rstrip() + "\n")
+    # V1 injects through experimental.chat.system.transform. V2 currently has
+    # no equivalent hook, so the toolkit consumes the plugin's stable renderer.
+    for prompt_path in sorted(PROMPTS_V2.glob("*.md")):
+        context = render_for_agent(plugin / "dist" / "cli.js", prompt_path.stem)
+        if not context:
+            continue
+        prompt_path.write_text(prompt_path.read_text().rstrip() + "\n\n" + context + "\n")
         updated += 1
 
-    print(
-        "memory applied: "
-        f"project={summary['project_id'] or '-'} "
-        f"prompts={updated} hats={summary['agent_hat_files']}"
-    )
+    print(f"memory plugin applied: v1=runtime v2=rendered prompts={updated} plugin={plugin}")
     return 0
 
 

@@ -5,9 +5,10 @@ import argparse
 import os
 import re
 import shlex
+import subprocess
 from pathlib import Path
 
-from memory_context import MemorySettings, prepare_memory_context
+from memory_plugin import PluginSettings, cli_command, ensure_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,18 +37,10 @@ def _apply_updates(updates: dict[str, str]) -> None:
     os.environ.update(updates)
 
 
-def _summary_text(summary: dict) -> str:
-    enabled = "on" if summary["enabled"] else "off"
-    lines = [
-        f"memory={enabled}",
-        f"directory={summary['directory']}",
-        f"project_name={summary['project_name'] or '-'}",
-        f"project_remote={summary['project_remote'] or '-'}",
-        f"project_id={summary['project_id'] or '-'}",
-        f"common_chars={summary['common_chars']}",
-        f"agent_hat_files={summary['agent_hat_files']}",
-    ]
-    return "\n".join(lines)
+def _run_plugin(*args: str, force_sync: bool = False) -> int:
+    command = cli_command(*args, force_sync=force_sync)
+    result = subprocess.run(command, env=os.environ.copy(), check=False)
+    return result.returncode
 
 
 def cmd_enable(args: argparse.Namespace) -> int:
@@ -55,97 +48,165 @@ def cmd_enable(args: argparse.Namespace) -> int:
     if args.repo:
         updates["OAT_MEMORY_REPO"] = args.repo
     _apply_updates(updates)
-    settings = MemorySettings.from_env()
-    if not settings.repo and not settings.directory.exists():
-        raise SystemExit(
-            "Memory enabled, but no repository is configured. "
-            "Use: just memory-on git@github.com:USER/opencode-memory.git"
-        )
-    summary = prepare_memory_context(
-        ROOT,
-        workdir=Path.cwd(),
-        settings=settings,
-        force_sync=True,
-    )
-    print(_summary_text(summary))
-    return 0
+    ensure_plugin(force_sync=True)
+    return _run_plugin("status")
 
 
 def cmd_disable(_args: argparse.Namespace) -> int:
     _apply_updates({"OAT_MEMORY_ENABLED": "0"})
-    summary = prepare_memory_context(
-        ROOT,
-        workdir=Path.cwd(),
-        settings=MemorySettings.from_env(),
-    )
-    print(_summary_text(summary))
+    print("memory=off")
     return 0
 
 
 def cmd_status(_args: argparse.Namespace) -> int:
-    summary = prepare_memory_context(
-        ROOT,
-        workdir=Path.cwd(),
-        settings=MemorySettings.from_env(),
-    )
-    print(_summary_text(summary))
-    return 0
+    settings = PluginSettings.from_env()
+    print(f"plugin_repo={settings.repo}")
+    print(f"plugin_ref={settings.ref}")
+    print(f"plugin_dir={settings.directory}")
+    if os.getenv("OAT_MEMORY_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+        print("memory=off")
+        return 0
+    return _run_plugin("status")
 
 
 def cmd_sync(_args: argparse.Namespace) -> int:
-    settings = MemorySettings.from_env(enabled_override=True)
-    summary = prepare_memory_context(
-        ROOT,
-        workdir=Path.cwd(),
-        settings=settings,
-        force_sync=True,
-    )
-    print(_summary_text(summary))
-    return 0
+    ensure_plugin(force_sync=True)
+    return _run_plugin("sync")
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    settings = MemorySettings.from_env()
-    summary = prepare_memory_context(ROOT, workdir=Path.cwd(), settings=settings)
-    if not summary["enabled"]:
-        print("Memory is disabled.")
-        return 0
+    values = ["render", "--agent", args.agent, "--cwd", str(Path.cwd())]
+    if args.json:
+        values.append("--json")
+    return _run_plugin(*values)
 
-    common = ROOT / ".generated" / "memory" / "common.md"
-    agent_path = ROOT / ".generated" / "memory" / "agents" / f"{args.agent}.md"
-    if common.exists():
-        print(common.read_text().rstrip())
-    if agent_path.exists():
-        if common.exists():
-            print()
-        print(agent_path.read_text().rstrip())
-    elif args.agent:
-        print(f"\nNo hat memory rendered for agent {args.agent!r}.")
+
+def cmd_capture_on(_args: argparse.Namespace) -> int:
+    _apply_updates({"OAT_MEMORY_CAPTURE_ENABLED": "1"})
+    print("memory_capture=on")
     return 0
 
 
+def cmd_capture_off(_args: argparse.Namespace) -> int:
+    _apply_updates({"OAT_MEMORY_CAPTURE_ENABLED": "0"})
+    print("memory_capture=off")
+    return 0
+
+
+def cmd_candidates(args: argparse.Namespace) -> int:
+    values = ["candidates"]
+    if args.all:
+        values.append("--all")
+    if args.status:
+        values.extend(["--status", args.status])
+    if args.json:
+        values.append("--json")
+    return _run_plugin(*values)
+
+
+def cmd_candidate(args: argparse.Namespace) -> int:
+    return _run_plugin("show", args.id)
+
+
+def cmd_reject(args: argparse.Namespace) -> int:
+    return _run_plugin("reject", args.id)
+
+
+def cmd_accept(args: argparse.Namespace) -> int:
+    values = ["accept", args.id]
+    if args.push:
+        values.append("--push")
+    return _run_plugin(*values)
+
+
+def cmd_promote(args: argparse.Namespace) -> int:
+    values = ["promote", args.id]
+    if args.target:
+        values.extend(["--target", args.target])
+    if args.push:
+        values.append("--push")
+    return _run_plugin(*values)
+
+
+def cmd_push(_args: argparse.Namespace) -> int:
+    return _run_plugin("push")
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    values = ["add", args.kind, args.title, args.statement]
+    if args.target:
+        values.extend(["--target", args.target])
+    if args.project:
+        values.extend(["--project", args.project])
+    if args.confidence:
+        values.extend(["--confidence", args.confidence])
+    if args.rationale:
+        values.extend(["--rationale", args.rationale])
+    return _run_plugin(*values)
+
+
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(
-        description="Manage the optional Git-backed OpenCode toolkit memory."
-    )
+    result = argparse.ArgumentParser(description="Manage the external OpenCode memory plugin from the toolkit.")
     sub = result.add_subparsers(dest="command", required=True)
 
-    enable = sub.add_parser("enable", help="enable memory and optionally configure its Git repository")
+    enable = sub.add_parser("enable", help="enable memory and optionally configure its Git data repository")
     enable.add_argument("repo", nargs="?", default="")
     enable.set_defaults(func=cmd_enable)
 
-    disable = sub.add_parser("disable", help="disable memory and clear generated context")
+    disable = sub.add_parser("disable", help="disable memory")
     disable.set_defaults(func=cmd_disable)
-
-    status = sub.add_parser("status", help="show effective memory configuration and project match")
+    status = sub.add_parser("status", help="show toolkit/plugin memory status")
     status.set_defaults(func=cmd_status)
-
-    sync = sub.add_parser("sync", help="force clone/pull and rebuild the generated memory context")
+    sync = sub.add_parser("sync", help="force plugin + memory-vault synchronization")
     sync.set_defaults(func=cmd_sync)
 
-    show = sub.add_parser("show", help="render the context that an agent would receive")
+    show = sub.add_parser("show", help="render the memory context for an agent")
     show.add_argument("agent", nargs="?", default="orchestrator")
+    show.add_argument("--json", action="store_true")
     show.set_defaults(func=cmd_show)
+
+    capture_on = sub.add_parser("capture-on", help="enable automatic V1/V2 memory candidate capture")
+    capture_on.set_defaults(func=cmd_capture_on)
+    capture_off = sub.add_parser("capture-off", help="disable automatic memory candidate capture")
+    capture_off.set_defaults(func=cmd_capture_off)
+
+    candidates = sub.add_parser("candidates", help="list memory candidates")
+    candidates.add_argument("--all", action="store_true")
+    candidates.add_argument("--status", default="")
+    candidates.add_argument("--json", action="store_true")
+    candidates.set_defaults(func=cmd_candidates)
+
+    candidate = sub.add_parser("candidate", help="show a memory candidate")
+    candidate.add_argument("id")
+    candidate.set_defaults(func=cmd_candidate)
+
+    reject = sub.add_parser("reject", help="reject a pending local candidate")
+    reject.add_argument("id")
+    reject.set_defaults(func=cmd_reject)
+
+    accept = sub.add_parser("accept", help="accept a pending candidate into the inactive Git inbox")
+    accept.add_argument("id")
+    accept.add_argument("--push", action="store_true")
+    accept.set_defaults(func=cmd_accept)
+
+    promote = sub.add_parser("promote", help="promote an accepted candidate into active durable memory")
+    promote.add_argument("id")
+    promote.add_argument("--target", default="")
+    promote.add_argument("--push", action="store_true")
+    promote.set_defaults(func=cmd_promote)
+
+    push = sub.add_parser("push", help="push local memory-vault commits")
+    push.set_defaults(func=cmd_push)
+
+    add = sub.add_parser("add", help="create a memory candidate manually")
+    add.add_argument("kind")
+    add.add_argument("title")
+    add.add_argument("statement")
+    add.add_argument("--target", default="")
+    add.add_argument("--project", default="")
+    add.add_argument("--confidence", choices=("medium", "high"), default="high")
+    add.add_argument("--rationale", default="")
+    add.set_defaults(func=cmd_add)
     return result
 
 
