@@ -12,14 +12,24 @@ Prérequis : Git, Bash, Python 3, Node.js, OpenCode, et [`just`](https://github.
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
 just install
+just install-user
+just install-oc2
 just models
 just doctor
-just run
 ```
 
 `just install` crée `.env` s'il est absent, prépare l'environnement Python, installe les dépendances locales du scanner/API, génère et valide les configurations OpenCode, puis lance les tests **Python**. Pour la validation complète (génération, tests Python et tests Node), exécutez `just check`.
 
-Les configurations générées sont `opencode.jsonc` (V1) et `opencode.v2.jsonc` (V2). Pour OpenCode 2, utilisez `just v2` ou installez le lanceur dédié avec `just install-oc2` puis lancez `oc2 .`.
+Après l'installation des lanceurs, l'usage quotidien se fait depuis le projet sur lequel vous travaillez :
+
+```bash
+cd ~/Projects/mon-projet
+oc .
+# ou OpenCode V2
+oc2 .
+```
+
+Les configurations générées sont `opencode.jsonc` (V1) et `opencode.v2.jsonc` (V2). Les recettes `just` restent l'interface de développement et de maintenance du dépôt toolkit.
 
 ## Repères rapides
 
@@ -28,7 +38,6 @@ just config                  # régénère les configurations localement
 just check                   # validation complète : config + Python + Node
 just agents                  # inspecte les agents et leur topologie
 just new-agent mon-agent --parent orchestrator
-just run                     # lance OpenCode avec la configuration active
 just configure-litellm       # découverte LiteLLM, optionnelle
 ```
 
@@ -36,15 +45,22 @@ Les overrides par agent doivent aller dans `.env.local`, afin de ne pas être é
 
 ## Mémoire Git privée optionnelle
 
-Le toolkit peut charger une mémoire long terme depuis un dépôt Git privé, avec contexte par projet, préférences de travail et casquettes par agent. Cette mémoire est **désactivée par défaut** et reste en lecture seule côté agents.
+La mémoire est fournie par le plugin autonome `ylascaux/opencode-memory-plugin`. Le toolkit l'installe/configure mais ne contient plus son moteur.
+
+Les commandes mémoire quotidiennes sont accessibles depuis **n'importe quel projet** via le lanceur global `oc` :
 
 ```bash
-just memory-on git@github.com:USER/opencode-memory.git
-just memory-status
-just memory-show orchestrator
+cd ~/Projects/mon-projet
+oc memory enable git@github.com:USER/opencode-memory.git
+oc memory status
+oc memory capture-on
+oc memory candidates
+oc memory show orchestrator
 ```
 
-Le clone mémoire n'est pas monté dans la sandbox : seul le contexte rendu est injecté dans les prompts générés. Voir [la documentation mémoire](docs/fr/MEMORY.md).
+`oc memory ...` conserve le répertoire courant afin que le plugin détecte le bon scope projet. Le package autonome fournit également un CLI global `oc-memory`; `opencode-memory` reste un alias de compatibilité.
+
+Les recettes `just memory-*` restent disponibles comme raccourcis de maintenance, mais elles ne sont plus l'interface principale. Le clone mémoire n'est pas monté dans la sandbox : seul le contexte rendu est injecté dans les prompts générés. Voir [la documentation mémoire](docs/fr/MEMORY.md).
 
 ## Toutes les recettes `just`
 
@@ -80,9 +96,9 @@ Sans argument, `just` exécute `default`, qui affiche cette liste (`just --list`
 
 | Recette | Syntaxe | Description |
 | --- | --- | --- |
-| `run` | `just run [args…]` | Lance OpenCode avec la version/configuration active. |
-| `v1` | `just v1 [args…]` | Lance OpenCode V1 explicitement. |
-| `v2` | `just v2 [args…]` | Lance OpenCode V2 explicitement. |
+| `run` | `just run [args…]` | Lance OpenCode depuis le dépôt toolkit ; pour l'usage quotidien, préférez le lanceur global `oc`. |
+| `v1` | `just v1 [args…]` | Lance OpenCode V1 explicitement depuis le dépôt toolkit. |
+| `v2` | `just v2 [args…]` | Lance OpenCode V2 explicitement depuis le dépôt toolkit. |
 | `serve` | `just serve [args…]` | Démarre un serveur OpenCode headless avec la version active. |
 | `serve-v2` | `just serve-v2 [args…]` | Démarre explicitement un serveur OpenCode 2 headless. |
 | `scan` | `just scan [args…]` | Analyse des projets et écrit `architecture-inventory.json`. |
@@ -99,7 +115,9 @@ Sans argument, `just` exécute `default`, qui affiche cette liste (`just --list`
 | `uninstall-oc2` | `just uninstall-oc2` | Retire le lanceur dédié `oc2`. |
 | `oc2-status` | `just oc2-status` | Indique si `oc2` est installé. |
 
-### Mémoire long terme
+### Mémoire long terme — raccourcis de maintenance
+
+Pour l'usage quotidien, préférez `oc memory ...` depuis le projet courant. Ces recettes restent utiles lorsque vous travaillez directement dans le dépôt toolkit.
 
 | Recette | Syntaxe | Description |
 | --- | --- | --- |
