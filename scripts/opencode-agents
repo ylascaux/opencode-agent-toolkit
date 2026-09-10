@@ -101,6 +101,10 @@ fi
 
 project_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || pwd -P)"
 export OAT_SANDBOX_PROJECT_ROOT="$(cd "$project_root" && pwd -P)"
+
+# Container identity is runtime state, never inherited configuration. A stale value
+# may otherwise leak from a previous shell/session into the next sandbox startup.
+unset OAT_SANDBOX_CONTAINER
 container="$(bash "$ROOT/scripts/sandbox-start" "$OAT_SANDBOX_PROJECT_ROOT" | tail -n 1)"
 [[ -n "$container" ]] || {
   echo "Sandbox startup did not return a container name" >&2
@@ -113,9 +117,27 @@ cleanup_sandbox() {
 }
 trap cleanup_sandbox EXIT INT TERM
 
+launch_args=("$@")
+if [[ "$major" == "2" ]]; then
+  has_standalone=0
+  for arg in "$@"; do
+    case "$arg" in
+      --standalone) has_standalone=1 ;;
+      --server|--server=*)
+        echo "OpenCode V2 sandbox refuses --server: a shared/external server can retain stale sandbox state" >&2
+        exit 3
+        ;;
+    esac
+  done
+  if [[ "$has_standalone" != "1" ]]; then
+    launch_args=(--standalone "$@")
+  fi
+fi
+
 echo "OpenCode sandbox: $OAT_SANDBOX_CONTAINER ($OAT_SANDBOX_PROJECT_ROOT -> /workspace)" >&2
+[[ "$major" != "2" ]] || echo "OpenCode V2 sandbox server: standalone" >&2
 set +e
-"$bin" "$@"
+"$bin" "${launch_args[@]}"
 status=$?
 set -e
 cleanup_sandbox
