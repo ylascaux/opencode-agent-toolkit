@@ -35,6 +35,19 @@ class SandboxConfigTests(unittest.TestCase):
         self.assertIn('exec bash "$ROOT/scripts/sandbox-run"', text)
         self.assertIn("refusing unsupported shell invocation while sandboxed", text)
 
+    def test_v2_sandbox_uses_private_server(self):
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+        self.assertIn('launch_args=(--standalone "$@")', launcher)
+        self.assertIn("OpenCode V2 sandbox refuses --server", launcher)
+        self.assertIn("OpenCode V2 sandbox server: standalone", launcher)
+
+    def test_sandbox_container_runtime_identity_is_not_reused_as_startup_input(self):
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+        starter = (ROOT / "scripts" / "sandbox-start").read_text()
+        self.assertIn("unset OAT_SANDBOX_CONTAINER", launcher)
+        self.assertNotIn('container="${OAT_SANDBOX_CONTAINER:-}"', starter)
+        self.assertIn('container="${OAT_SANDBOX_CONTAINER_NAME:-}"', starter)
+
     def test_runtime_internals_are_outside_v2_auto_discovery_directory(self):
         self.assertFalse((ROOT / ".opencode" / "plugins").exists())
         runtime = ROOT / "runtime" / "plugins"
