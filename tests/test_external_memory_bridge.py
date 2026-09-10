@@ -17,13 +17,13 @@ class ExternalMemoryBridgeTests(unittest.TestCase):
         base = Path(tmp)
         toolkit = base / "toolkit"
         scripts = toolkit / "scripts"
-        config = toolkit / "config"
         prompts = toolkit / ".generated" / "prompts"
+        config = toolkit / "config"
         plugin = base / "plugin"
         dist = plugin / "dist"
         scripts.mkdir(parents=True)
-        config.mkdir(parents=True)
         prompts.mkdir(parents=True)
+        config.mkdir(parents=True)
         dist.mkdir(parents=True)
         shutil.copy2(ROOT / "scripts" / "apply-memory", scripts / "apply-memory")
         shutil.copy2(ROOT / "scripts" / "memory_plugin.py", scripts / "memory_plugin.py")
@@ -46,7 +46,6 @@ class ExternalMemoryBridgeTests(unittest.TestCase):
         env.update({
             "OAT_MEMORY_ENABLED": "1",
             "OAT_MEMORY_PLUGIN_DIR": str(plugin),
-            "OAT_MEMORY_PLUGIN_REPO": "",
             "OAT_MEMORY_PLUGIN_AUTO_SYNC": "0",
         })
         return toolkit, plugin, env
