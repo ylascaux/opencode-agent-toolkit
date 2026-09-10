@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -9,6 +10,33 @@ from pathlib import Path
 
 
 TRUTHY = {"1", "true", "yes", "on"}
+ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_CONFIG_PATH = ROOT / "config" / "plugins.json"
+MEMORY_PLUGIN_NAME = "opencode-memory-plugin"
+
+
+def _load_memory_plugin_config(path: Path = PLUGIN_CONFIG_PATH) -> tuple[str, str]:
+    try:
+        payload = json.loads(path.read_text())
+    except FileNotFoundError as exc:
+        raise SystemExit(f"External plugin config not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid external plugin config {path}: {exc}") from exc
+
+    try:
+        config = payload["plugins"][MEMORY_PLUGIN_NAME]
+        repo = config["repository"].strip()
+        ref = config["ref"].strip()
+    except (KeyError, AttributeError, TypeError) as exc:
+        raise SystemExit(
+            f"External plugin config {path} must define plugins.{MEMORY_PLUGIN_NAME}.repository and .ref"
+        ) from exc
+
+    if not repo or not ref:
+        raise SystemExit(
+            f"External plugin config {path} must define non-empty repository and ref for {MEMORY_PLUGIN_NAME}"
+        )
+    return repo, ref
 
 
 @dataclass(frozen=True)
@@ -22,17 +50,21 @@ class PluginSettings:
 
     @classmethod
     def from_env(cls) -> "PluginSettings":
+        configured_repo, configured_ref = _load_memory_plugin_config()
         data_home = Path(os.getenv("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
+        repo = os.getenv("OAT_MEMORY_PLUGIN_REPO", configured_repo).strip()
+        ref = os.getenv("OAT_MEMORY_PLUGIN_REF", configured_ref).strip()
+        if not repo:
+            raise SystemExit("OAT_MEMORY_PLUGIN_REPO override cannot be empty")
+        if not ref:
+            raise SystemExit("OAT_MEMORY_PLUGIN_REF override cannot be empty")
         return cls(
-            repo=os.getenv(
-                "OAT_MEMORY_PLUGIN_REPO",
-                "git@github.com:ylascaux/opencode-memory-plugin.git",
-            ).strip(),
-            ref=os.getenv("OAT_MEMORY_PLUGIN_REF", "main").strip() or "main",
+            repo=repo,
+            ref=ref,
             directory=Path(
                 os.getenv(
                     "OAT_MEMORY_PLUGIN_DIR",
-                    str(data_home / "opencode-agent-toolkit" / "plugins" / "opencode-memory-plugin"),
+                    str(data_home / "opencode-agent-toolkit" / "plugins" / MEMORY_PLUGIN_NAME),
                 )
             ).expanduser(),
             auto_sync=os.getenv("OAT_MEMORY_PLUGIN_AUTO_SYNC", "1").strip().lower() in TRUTHY,
