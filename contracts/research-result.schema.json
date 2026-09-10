@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Structured Research Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "job_id",
+    "status",
+    "confidence",
+    "schema_valid",
+    "payload",
+    "evidence",
+    "flags",
+    "warnings",
+    "errors",
+    "attempts"
+  ],
+  "properties": {
+    "version": {
+      "const": "1"
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "escalation_required",
+        "failed"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "schema_valid": {
+      "type": "boolean"
+    },
+    "payload": {},
+    "evidence": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
+        }
+      }
+    },
+    "flags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "conflicting_evidence",
+          "entity_ambiguity",
+          "insufficient_evidence",
+          "stale_evidence",
+          "source_quality"
+        ]
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agent",
+          "tier",
+          "status",
+          "reason"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "status": {
+            "enum": [
+              "complete",
+              "invalid",
+              "error"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

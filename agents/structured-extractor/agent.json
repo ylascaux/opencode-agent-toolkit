@@ -1,0 +1,12 @@
+{
+  "description": "Use for schema-bound extraction and normalization from supplied external evidence. Return only supported structured facts and preserve uncertainty/provenance.",
+  "mode": "all",
+  "model_env": "MODEL_STRUCTURED_EXTRACTOR",
+  "tier": "low",
+  "model_profile": "fast",
+  "steps": 14,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

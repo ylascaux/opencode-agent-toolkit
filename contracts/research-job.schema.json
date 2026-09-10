@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Structured Research Job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "job_id",
+    "objective",
+    "task_type",
+    "output_schema"
+  ],
+  "properties": {
+    "version": {
+      "const": "1"
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 12000
+    },
+    "task_type": {
+      "enum": [
+        "research",
+        "discover_sources",
+        "extract"
+      ]
+    },
+    "subject": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "context": {
+      "type": "object",
+      "maxProperties": 200
+    },
+    "source_hints": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https?://"
+      }
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "languages": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 32
+          }
+        },
+        "allowed_domains": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
+        },
+        "denied_domains": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
+        },
+        "require_primary_sources": {
+          "type": "boolean"
+        },
+        "max_sources": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "freshness_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 36500
+        }
+      }
+    }
+  }
+}

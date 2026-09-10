@@ -1,0 +1,13 @@
+{
+  "description": "Use to resolve ambiguous entities, conflicting external evidence, weak provenance, or schema-invalid research output before a deterministic consumer accepts it.",
+  "mode": "all",
+  "model_env": "MODEL_EVIDENCE_RESOLVER",
+  "tier": "medium",
+  "model_profile": "review",
+  "steps": 18,
+  "parents": [
+    "orchestrator",
+    "review-lead"
+  ],
+  "opencode": {}
+}

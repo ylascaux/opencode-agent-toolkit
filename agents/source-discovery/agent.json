@@ -1,0 +1,12 @@
+{
+  "description": "Use for bounded external source discovery. Find authoritative, relevant sources and return provenance-rich candidates without making downstream business decisions.",
+  "mode": "all",
+  "model_env": "MODEL_SOURCE_DISCOVERY",
+  "tier": "low",
+  "model_profile": "fast",
+  "steps": 12,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}
