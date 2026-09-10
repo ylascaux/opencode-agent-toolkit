@@ -16,7 +16,7 @@ class Oc2LauncherTests(unittest.TestCase):
 
         shutil.copy2(ROOT / "scripts" / "opencode-agents", scripts / "opencode-agents")
 
-        for name in ("generate-config", "apply-reliability", "resolve-models"):
+        for name in ("generate-config", "apply-memory", "apply-reliability", "resolve-models"):
             path = scripts / name
             path.write_text("#!/usr/bin/env python3\n")
             path.chmod(0o755)

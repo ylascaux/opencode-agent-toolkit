@@ -4,6 +4,8 @@
 
 ## macOS quick start
 
+Prerequisites: `just`, Node.js and npm. Node.js 22.18.0 is recommended to match CI; `just install` does not install Node.js or npm.
+
 ```bash
 brew install just
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
@@ -13,7 +15,7 @@ just models
 just doctor
 ```
 
-`just install` creates `.env` only when absent, creates `.venv`, installs scanner/API dependencies, generates both OpenCode configs, validates them, runs the Python tests and validates model-tier resolution. For complete validation, including the Node runtime tests, use `just check`.
+`just install` creates `.env` only when absent, creates `.venv`, installs scanner/API dependencies, generates both OpenCode configs, validates them, runs the Python tests and validates model-tier resolution. `just check` includes the Node runtime tests, but does not perform native TypeScript module-load checks. CI pins Node.js 22.18.0 and natively loads the supported TypeScript plugin modules.
 
 It does **not** install global packages, use `sudo`, edit shell startup files or modify `~/.config`.
 

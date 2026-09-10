@@ -1,6 +1,8 @@
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -46,13 +48,81 @@ def source_agent_dirs() -> list[Path]:
     )
 
 
+def generated_artifact_snapshot(root: Path) -> dict[str, bytes | None]:
+    snapshot = {}
+    for filename in ["opencode.jsonc", "opencode.v2.jsonc"]:
+        path = root / filename
+        snapshot[filename] = path.read_bytes() if path.is_file() else None
+
+    generated_dir = root / ".generated"
+    snapshot[".generated/"] = b"" if generated_dir.is_dir() else None
+    if generated_dir.is_dir():
+        for path in generated_dir.rglob("*"):
+            relative = str(path.relative_to(root))
+            snapshot[f"{relative}/" if path.is_dir() else relative] = b"" if path.is_dir() else path.read_bytes()
+    return snapshot
+
+
+class GeneratedArtifactSnapshotTests(unittest.TestCase):
+    def test_missing_artifacts_are_snapshotted_and_changes_are_detected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            absent = generated_artifact_snapshot(root)
+            self.assertEqual(absent["opencode.jsonc"], None)
+            self.assertEqual(absent["opencode.v2.jsonc"], None)
+            self.assertEqual(absent[".generated/"], None)
+
+            config = root / "opencode.jsonc"
+            config.write_bytes(b"first")
+            generated = root / ".generated"
+            generated.mkdir()
+            generated_file = generated / "prompt.md"
+            generated_file.write_bytes(b"prompt")
+            populated = generated_artifact_snapshot(root)
+            self.assertNotEqual(absent, populated)
+
+            config.write_bytes(b"second")
+            self.assertNotEqual(populated, generated_artifact_snapshot(root))
+            config.write_bytes(b"first")
+            generated_file.unlink()
+            self.assertNotEqual(populated, generated_artifact_snapshot(root))
+
+
 class ConfigPolicyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], check=True, capture_output=True, text=True)
-        subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], check=True, capture_output=True, text=True)
-        cls.v1 = json.loads((ROOT / "opencode.jsonc").read_text())
-        cls.v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
+        repository_artifacts = generated_artifact_snapshot(ROOT)
+        cls.fixture = tempfile.TemporaryDirectory()
+        cls.fixture_root = Path(cls.fixture.name)
+        shutil.copytree(AGENTS_DIR, cls.fixture_root / "agents")
+        fixture_scripts = cls.fixture_root / "scripts"
+        fixture_scripts.mkdir()
+        for filename in ["generate-config", "agent_config.py", "apply-reliability"]:
+            shutil.copy2(ROOT / "scripts" / filename, fixture_scripts / filename)
+        shutil.copy2(ROOT / "reliability.json", cls.fixture_root / "reliability.json")
+
+        subprocess.run(
+            ["python3", str(fixture_scripts / "generate-config")],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=cls.fixture_root,
+        )
+        subprocess.run(
+            ["python3", str(fixture_scripts / "apply-reliability")],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=cls.fixture_root,
+        )
+        if repository_artifacts != generated_artifact_snapshot(ROOT):
+            raise AssertionError("parity fixture generation must not modify repository output artifacts")
+        cls.v1 = json.loads((cls.fixture_root / "opencode.jsonc").read_text())
+        cls.v2 = json.loads((cls.fixture_root / "opencode.v2.jsonc").read_text())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.fixture.cleanup()
 
     def test_agent_sets_match_and_count(self):
         self.assertEqual(set(self.v1["agent"]), set(self.v2["agents"]))
