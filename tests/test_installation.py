@@ -105,7 +105,8 @@ class InstallationSurfaceTests(unittest.TestCase):
 
             for name in [
                 "opencode-agents", "generate-config", "user-link", "resolve-models",
-                "apply-reliability", "preflight", "agent_config.py",
+                "apply-reliability", "apply-memory", "memory_plugin.py", "preflight",
+                "agent_config.py",
             ]:
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
             shutil.copytree(ROOT / "agents", toolkit / "agents")
@@ -115,6 +116,7 @@ class InstallationSurfaceTests(unittest.TestCase):
                 "OPENCODE_MAJOR=1\n"
                 "OPENCODE_PREFLIGHT=1\n"
                 "OAT_SANDBOX_ENABLED=0\n"
+                "OAT_MEMORY_ENABLED=0\n"
                 "MODEL_PROFILE=test\n"
                 "MODEL_LOW=test/low\n"
                 "MODEL_MEDIUM=test/medium\n"
@@ -138,6 +140,11 @@ class InstallationSurfaceTests(unittest.TestCase):
 
             bin_dir = tmp_path / "bin"
             env = os.environ.copy()
+            # Keep the isolated toolkit's test profile from inheriting explicit
+            # per-agent model overrides from the parent environment.
+            for key in [key for key in env if key.startswith("MODEL_")]:
+                env.pop(key)
+            env.pop("OPENCODE_MAJOR", None)
             env["OPENCODE_TOOLKIT_BIN_DIR"] = str(bin_dir)
             env["OPENCODE_BIN"] = str(fake_opencode)
             env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
