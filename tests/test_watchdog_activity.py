@@ -33,6 +33,17 @@ class WatchdogActivityTests(unittest.TestCase):
         self.assertIn('cancel: "Keep running"', tui)
         self.assertIn('enum: ["kill", "keep"]', rpc)
 
+    def test_v2_approval_watchdog_never_targets_lead_sessions(self):
+        server = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
+
+        self.assertIn("const LEAD_AGENTS = new Set(", server)
+        self.assertIn("POLICY.lead_parallel_env", server)
+        self.assertIn("const hasKnownChildren =", server)
+        self.assertIn("const isProtectedLead =", server)
+        self.assertGreaterEqual(server.count("isProtectedLead(state)"), 3)
+        self.assertIn('return { status: "protected-lead" }', server)
+        self.assertIn("pending.delete(String(parentID))", server)
+
     def test_heartbeat_control_is_exposed_without_cost_kill_controls(self):
         env = (ROOT / ".env.example").read_text()
         self.assertIn("SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS=", env)
