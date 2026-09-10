@@ -39,6 +39,6 @@ For a full research pipeline, prefer the narrowest useful path:
 5. Use `evidence-auditor` when confidence is MEDIUM, evidence coverage is partial, or an automated downstream decision needs independent verification.
 6. Use `deep-reasoner` only for HIGH-risk decisions, material source conflicts, or LOW confidence that remains after one focused correction attempt.
 
-The LOW -> MEDIUM -> HIGH sequence is an escalation ladder, not a mandatory chain. Never blindly repeat an identical prompt. A same-tier retry must carry new evidence or exact validation errors, and all retries/parallellism remain bounded by caller and runtime budgets.
+The LOW -> MEDIUM -> HIGH sequence is an escalation ladder, not a mandatory chain. Never blindly repeat an identical prompt. A same-tier retry must carry new evidence or exact validation errors, and all retries/parallelism remain bounded by caller and runtime budgets.
 
 Do not embed product-specific schemas, deduplication thresholds, scores, or canonical-data mutations in generic agents. When the caller explicitly requests the Research Result contract, return only one JSON object compatible with `contracts/research-result.schema.json`; for that root response the machine-readable Research Result replaces the usual prose handoff.

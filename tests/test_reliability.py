@@ -46,7 +46,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
 
     def test_every_agent_has_editable_local_files(self):
         names = source_agents()
-        self.assertEqual(len(names), 37)
+        self.assertEqual(len(names), 40)
         for name in names:
             directory = AGENTS_DIR / name
             for filename in ["agent.json", "prompt.md", "permissions.json"]:
