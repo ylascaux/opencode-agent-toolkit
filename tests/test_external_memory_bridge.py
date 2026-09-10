@@ -18,13 +18,16 @@ class ExternalMemoryBridgeTests(unittest.TestCase):
         toolkit = base / "toolkit"
         scripts = toolkit / "scripts"
         prompts = toolkit / ".generated" / "prompts"
+        config = toolkit / "config"
         plugin = base / "plugin"
         dist = plugin / "dist"
         scripts.mkdir(parents=True)
         prompts.mkdir(parents=True)
+        config.mkdir(parents=True)
         dist.mkdir(parents=True)
         shutil.copy2(ROOT / "scripts" / "apply-memory", scripts / "apply-memory")
         shutil.copy2(ROOT / "scripts" / "memory_plugin.py", scripts / "memory_plugin.py")
+        shutil.copy2(ROOT / "config" / "plugins.json", config / "plugins.json")
         (toolkit / "opencode.jsonc").write_text(json.dumps({"plugin": ["./runtime/plugins/sandbox-v1.js"]}))
         (toolkit / "opencode.v2.jsonc").write_text(json.dumps({"plugins": []}))
         (prompts / "builder.md").write_text("# Builder\n\nBase prompt.\n")
@@ -43,7 +46,6 @@ class ExternalMemoryBridgeTests(unittest.TestCase):
         env.update({
             "OAT_MEMORY_ENABLED": "1",
             "OAT_MEMORY_PLUGIN_DIR": str(plugin),
-            "OAT_MEMORY_PLUGIN_REPO": "",
             "OAT_MEMORY_PLUGIN_AUTO_SYNC": "0",
         })
         return toolkit, plugin, env

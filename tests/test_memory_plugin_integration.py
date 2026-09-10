@@ -19,12 +19,25 @@ spec.loader.exec_module(memory_plugin)
 
 
 class MemoryPluginIntegrationTests(unittest.TestCase):
-    def test_default_settings_point_to_external_plugin_repo(self) -> None:
+    def test_default_settings_come_from_external_plugin_config(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
             settings = memory_plugin.PluginSettings.from_env()
         self.assertEqual(settings.repo, "git@github.com:ylascaux/opencode-memory-plugin.git")
-        self.assertEqual(settings.ref, "main")
+        self.assertEqual(settings.ref, "v0.1.1")
         self.assertTrue(str(settings.directory).endswith("opencode-agent-toolkit/plugins/opencode-memory-plugin"))
+
+    def test_environment_can_override_versioned_plugin_config(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "OAT_MEMORY_PLUGIN_REPO": "git@example.invalid/custom-memory-plugin.git",
+                "OAT_MEMORY_PLUGIN_REF": "feature/test",
+            },
+            clear=True,
+        ):
+            settings = memory_plugin.PluginSettings.from_env()
+        self.assertEqual(settings.repo, "git@example.invalid/custom-memory-plugin.git")
+        self.assertEqual(settings.ref, "feature/test")
 
     def test_existing_unmanaged_checkout_builds_and_returns_dist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
