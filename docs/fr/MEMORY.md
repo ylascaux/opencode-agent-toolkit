@@ -14,6 +14,21 @@ dépôt privé opencode-memory
 
 On sépare ainsi l'orchestration des agents, l'adaptateur runtime OpenCode et les données privées, avec un versionnement indépendant.
 
+## Interface utilisateur
+
+Les commandes quotidiennes ne nécessitent pas d'être dans le dépôt du toolkit. Le wrapper global `oc` conserve le répertoire courant et expose la mémoire comme sous-commande :
+
+```bash
+cd ~/Projects/mon-projet
+oc memory status
+oc memory candidates
+oc memory show orchestrator
+```
+
+Le plugin autonome expose également `oc-memory` lorsqu'il est installé globalement. `opencode-memory` reste un alias de compatibilité.
+
+Les recettes `just memory-*` sont conservées comme raccourcis de développement/maintenance, mais ne constituent plus l'interface principale d'utilisation.
+
 ## Compatibilité
 
 Le plugin expose un adaptateur OpenCode V1 et un adaptateur V2 autour du même cœur mémoire.
@@ -30,11 +45,11 @@ En V1, le plugin utilise directement `experimental.chat.system.transform`. En V2
 
 ## Activation
 
-Après `just install` :
+Après l'installation initiale du toolkit :
 
 ```bash
-just memory-on git@github.com:USER/opencode-memory.git
-just memory-status
+oc memory enable git@github.com:USER/opencode-memory.git
+oc memory status
 ```
 
 Le plugin externe est cloné automatiquement depuis `git@github.com:ylascaux/opencode-memory-plugin.git` vers :
@@ -56,7 +71,7 @@ Cela rend les exécutions du toolkit reproductibles.
 La capture est indépendante de la lecture mémoire et reste désactivée par défaut :
 
 ```bash
-just memory-capture-on
+oc memory capture-on
 ```
 
 V1 et V2 extraient uniquement un texte borné provenant des messages utilisateur/assistant. Le reasoning, les sorties shell et les résultats d'outils ne sont pas persistés. Les observations extraites arrivent uniquement dans la quarantaine locale des candidats.
@@ -82,26 +97,26 @@ Un événement de session ne committe et ne pousse jamais le dépôt mémoire pr
 ## Cycle des candidats
 
 ```bash
-just memory-candidates
-just memory-candidate a31f92d780cc
-just memory-reject a31f92d780cc
-just memory-accept a31f92d780cc
-just memory-promote a31f92d780cc
-just memory-push
+oc memory candidates
+oc memory candidate a31f92d780cc
+oc memory reject a31f92d780cc
+oc memory accept a31f92d780cc
+oc memory promote a31f92d780cc
+oc memory push
 ```
 
 Forcer une cible de promotion si nécessaire :
 
 ```bash
-just memory-promote a31f92d780cc workstyle/preferences.md
+oc memory promote a31f92d780cc --target workstyle/preferences.md
 ```
 
-`push=true` reste disponible sur `memory-accept` et `memory-promote`, mais le push séparé reste le comportement par défaut le plus sûr.
+`--push` reste disponible sur `accept` et `promote`, mais le push séparé reste le comportement par défaut le plus sûr.
 
 ## Candidat manuel
 
 ```bash
-just memory-add workstyle \
+oc memory add workstyle \
   'Prefer Just' \
   'Prefer Justfiles over Makefiles for project automation.' \
   --target workstyle/preferences.md
@@ -112,10 +127,26 @@ just memory-add workstyle \
 Afficher exactement ce que reçoit un agent :
 
 ```bash
-just memory-show orchestrator
+oc memory show orchestrator
 ```
 
 Le plugin externe détecte le dépôt Git courant, le mappe via `projects/index.json`, charge la mémoire projet, le workstyle transversal et les hats de l'agent, puis borne le contexte avec `OAT_MEMORY_MAX_CHARS`.
+
+## CLI autonome
+
+Pour utiliser le plugin sans toolkit, le package fournit un vrai CLI global :
+
+```bash
+oc-memory status
+oc-memory sync
+oc-memory candidates
+oc-memory show <id>
+oc-memory accept <id>
+oc-memory promote <id>
+oc-memory push
+```
+
+Le CLI fonctionne depuis n'importe quel répertoire et utilise le dépôt Git courant pour déterminer le scope projet.
 
 ## Configuration
 
