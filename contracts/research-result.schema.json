@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research Result",
+  "description": "Provider- and domain-agnostic result envelope for an externally orchestrated OpenCode research job. The data payload remains untrusted until caller-owned deterministic validation succeeds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "job_id",
+    "stage",
+    "status",
+    "confidence",
+    "data",
+    "evidence",
+    "issues",
+    "execution"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage": {
+      "enum": [
+        "pipeline",
+        "source_discovery",
+        "structured_extraction",
+        "entity_resolution",
+        "evidence_audit",
+        "deep_reasoning"
+      ]
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial",
+        "blocked",
+        "failed",
+        "escalation_required"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "confidence_reason": {
+      "type": "string"
+    },
+    "data": {},
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "status",
+          "source",
+          "result"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "url",
+              "file",
+              "api",
+              "search_result",
+              "log",
+              "metric",
+              "trace",
+              "runtime_check",
+              "other"
+            ]
+          },
+          "status": {
+            "enum": [
+              "verified",
+              "partially_verified",
+              "unverified",
+              "contradicted"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "type": "string"
+          },
+          "retrieved_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent",
+        "tier",
+        "attempts"
+      ],
+      "properties": {
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tier": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "next_tier": {
+          "enum": [
+            "medium",
+            "high"
+          ]
+        },
+        "next_agent": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

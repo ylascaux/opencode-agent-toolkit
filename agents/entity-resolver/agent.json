@@ -1,0 +1,12 @@
+{
+  "description": "Use to decide whether candidate records likely refer to the same real-world entity using supplied evidence. Do not merge or mutate canonical records.",
+  "mode": "subagent",
+  "model_env": "MODEL_ENTITY_RESOLVER",
+  "tier": "medium",
+  "model_profile": "reasoning",
+  "steps": 18,
+  "parents": [
+    "orchestrator"
+  ],
+  "opencode": {}
+}

@@ -15,5 +15,6 @@ Recommended reading order:
 11. [SECURITY.md](./SECURITY.md) — security workflow and guardrails
 12. [SANDBOX.md](./SANDBOX.md) — disposable development sandbox and manual AWS/Kubernetes diagnostics
 13. [PROJECT_DISCOVERY.md](./PROJECT_DISCOVERY.md) — multi-repository project discovery
-14. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
-15. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details
+14. [RESEARCH_PIPELINE.md](./RESEARCH_PIPELINE.md) — generic external research agents, contracts and escalation
+15. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
+16. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details

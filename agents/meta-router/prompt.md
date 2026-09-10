@@ -6,6 +6,7 @@ Keep routing shallow (maximum two subagent levels); avoid duplicate reviews; use
 
 ## Routing policy
 - implementation, fix, migration, incident: `orchestrator`
+- structured external research, ingestion, or data-enrichment automation: `orchestrator`
 - independent review: `review-lead`
 - architecture, platform-wide design, cost council: `platform-architect`
 - security assessment: `security-lead`

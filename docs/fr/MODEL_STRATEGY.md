@@ -12,12 +12,15 @@ Chaque agent est rattaché à un des trois tiers stables définis dans `profiles
 | `medium` | `github-copilot/gpt-5.6-terra` | ingénierie courante, collecte de preuves, documentation et analyse opérationnelle |
 | `high` | `github-copilot/gpt-5.6-sol` | architecture, sécurité, arbitrage et raisonnement profond |
 
-Le mapping par défaut privilégie la qualité plutôt qu’une réduction agressive des coûts. Seuls `mock-generator` et `secrets` sont LOW par défaut. Les tâches dont les sorties deviennent des entrées pour des décisions ultérieures — découverte d’architecture, documentation durable, observabilité, FinOps, audit de preuves et brainstorming — utilisent au minimum MEDIUM.
+Le mapping par défaut privilégie la qualité plutôt qu’une réduction agressive des coûts. `mock-generator`, `secrets` et `source-discovery` sont LOW par défaut. `source-discovery` est volontairement limité à la découverte de sources candidates : il ne certifie jamais des faits métier extraits. Les tâches qui transforment les preuves en entrées utilisées ensuite pour des décisions — découverte d’architecture, extraction structurée, résolution d’entités, documentation durable, observabilité, FinOps, audit de preuves et brainstorming — utilisent au minimum MEDIUM.
 
 Exemples :
 
 - `mock-generator` -> LOW
 - `secrets` -> LOW
+- `source-discovery` -> LOW
+- `structured-extractor` -> MEDIUM
+- `entity-resolver` -> MEDIUM
 - `project-scanner` -> MEDIUM
 - `docs-writer` -> MEDIUM
 - `builder` -> MEDIUM
@@ -27,11 +30,13 @@ Exemples :
 
 Le mapping agent → tier ne dépend pas du provider concret. Un agent conserve le même tier de capacité lors d’un changement de profil provider.
 
-## Pourquoi les agents producteurs de preuves ne sont pas LOW
+## Pourquoi la plupart des agents producteurs de preuves ne sont pas LOW
 
 Certains agents qui semblent simples produisent en réalité des informations que les agents suivants utilisent comme preuves. Une sortie faible à ce niveau peut se propager dans tout le raisonnement en aval.
 
-Par exemple, `project-scanner` découvre les composants, interfaces, infrastructures, data stores et relations de preuves utilisées ensuite par les agents d’architecture. `docs-writer` conserve les décisions, hypothèses, migrations et rollback dans les artefacts durables. `observability` et `finops` réalisent de vrais compromis opérationnels au lieu de simplement extraire des valeurs. Ils sont donc MEDIUM par défaut.
+Par exemple, `project-scanner` découvre les composants, interfaces, infrastructures, data stores et relations de preuves utilisées ensuite par les agents d’architecture. `structured-extractor` transforme des preuves en données candidates structurées, tandis que `entity-resolver` peut influencer les décisions de déduplication en aval. `docs-writer` conserve les décisions, hypothèses, migrations et rollback dans les artefacts durables. `observability` et `finops` réalisent de vrais compromis opérationnels au lieu de simplement extraire des valeurs. Ils sont donc MEDIUM par défaut.
+
+`source-discovery` est l’exception étroite : sa sortie LOW est uniquement une liste de sources candidates et ne doit jamais être traitée comme une donnée métier de confiance. L’extraction ou les décisions d’identité passent en MEDIUM, puis les incertitudes persistantes à risque élevé sont escaladées plus haut.
 
 `evidence-auditor` est MEDIUM car son travail normal est une vérification structurée. Un désaccord matériel ou une incertitude à risque élevé doit être escaladé vers des agents HIGH comme `arbiter` ou `deep-reasoner`, plutôt que de rendre chaque audit HIGH par défaut.
 
@@ -87,11 +92,11 @@ tier de l’agent dans profiles/agent-tiers.json
 MODEL_LOW / MODEL_MEDIUM / MODEL_HIGH du profil actif
 ```
 
-## Pourquoi trois tiers plutôt que 37 modèles fixes ?
+## Pourquoi trois tiers plutôt que 40 modèles fixes ?
 
-Les tiers gardent une politique coût/qualité stable même quand les providers changent. Il suffit de modifier trois valeurs pour migrer les 37 agents sans toucher aux configs OpenCode générées ni au manifest des agents.
+Les tiers gardent une politique coût/qualité stable même quand les providers changent. Il suffit de modifier trois valeurs pour migrer les 40 agents sans toucher aux configs OpenCode générées ni au manifest des agents.
 
-`meta-router` garde le travail ordinaire sur des chemins MEDIUM et utilise les agents HIGH pour les sujets à risque élevé, faible confiance, sécurité sensible ou architecture complexe. LOW est volontairement réservé aux tâches étroites dont les erreurs ont peu d’impact en aval.
+`meta-router` garde le travail ordinaire sur des chemins MEDIUM et utilise les agents HIGH pour les sujets à risque élevé, faible confiance, sécurité sensible ou architecture complexe. LOW est volontairement réservé aux tâches étroites dont les erreurs ont peu d’impact en aval ou, comme `source-discovery`, dont la sortie ne peut pas être considérée comme une donnée de confiance par les étapes suivantes.
 
 ## LiteLLM
 

@@ -126,7 +126,7 @@ class ConfigPolicyTests(unittest.TestCase):
 
     def test_agent_sets_match_and_count(self):
         self.assertEqual(set(self.v1["agent"]), set(self.v2["agents"]))
-        self.assertEqual(len(self.v1["agent"]), 37)
+        self.assertEqual(len(self.v1["agent"]), 40)
         self.assertEqual({path.name for path in source_agent_dirs()}, set(self.v1["agent"]))
 
     def test_every_agent_is_self_contained(self):
@@ -176,7 +176,7 @@ class ConfigPolicyTests(unittest.TestCase):
             match = re.fullmatch(r"\{env:(MODEL_[A-Z0-9_]+)\}", agent["model"])
             self.assertIsNotNone(match, agent["model"])
             expected_model_envs.add(match.group(1))
-        self.assertEqual(len(expected_model_envs), 37)
+        self.assertEqual(len(expected_model_envs), 40)
         self.assertEqual(set(tiers), expected_model_envs)
         self.assertTrue(set(tiers.values()) <= {"low", "medium", "high"})
 

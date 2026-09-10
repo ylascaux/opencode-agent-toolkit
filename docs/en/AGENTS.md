@@ -1,6 +1,6 @@
 # Agents
 
-The toolkit currently defines 37 agents. Each agent is a self-contained component under `agents/<name>/`.
+The toolkit currently defines 40 agents. Each agent is a self-contained component under `agents/<name>/`.
 
 For the complete configuration format, see [AGENT_CONFIGURATION.md](./AGENT_CONFIGURATION.md).
 
@@ -42,12 +42,20 @@ Topology is declared by the child through `agent.json.parents`. This lets a new 
 
 ## Common lead agents
 
-- `orchestrator`: delivery, fixes, migrations and incidents
+- `orchestrator`: delivery, fixes, migrations, incidents, and structured external research workflows
 - `review-lead`: independent review
 - `platform-architect`: platform-wide architecture
 - `security-lead`: defense-in-depth security assessment
 
 Escalation/evidence specialists such as `arbiter`, `deep-reasoner`, and `evidence-auditor` can be reachable from several leads.
+
+The generic structured-research leaves are:
+
+- `source-discovery`: LOW-cost candidate source discovery; never certifies domain facts
+- `structured-extractor`: MEDIUM structured extraction from supplied evidence and caller-owned schemas
+- `entity-resolver`: MEDIUM identity resolution without mutating canonical records
+
+See [RESEARCH_PIPELINE.md](./RESEARCH_PIPELINE.md) for their external orchestration boundary and escalation policy.
 
 ## Add an agent
 
