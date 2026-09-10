@@ -7,6 +7,9 @@ import { ReliabilityApproval } from "./rpc.js"
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const POLICY = JSON.parse(fs.readFileSync(path.join(ROOT, "reliability.json"), "utf8"))
 const TERMINAL = new Set(["COMPLETED", "FAILED", "ABORTED", "IDLE", "ERROR"])
+const LEAD_AGENTS = new Set(
+  Object.keys(POLICY.lead_parallel_env ?? {}).map((name) => String(name).toLowerCase()),
+)
 const now = () => Date.now()
 
 const profileName = () => {
@@ -85,6 +88,18 @@ export default Plugin.define({
       return state
     }
 
+    const hasKnownChildren = (sessionID: string) => {
+      for (const candidate of states.values()) {
+        if (candidate.parentID === sessionID) return true
+      }
+      return false
+    }
+
+    const isProtectedLead = (state: State) => {
+      const agent = String(state.agent ?? "").toLowerCase()
+      return LEAD_AGENTS.has(agent) || hasKnownChildren(state.id)
+    }
+
     const touch = (id?: string, progress = false) => {
       const state = ensure(id)
       if (!state) return
@@ -102,6 +117,14 @@ export default Plugin.define({
         const state = states.get(sessionID)
         if (!state) return { status: "unknown" }
         if (!pending.has(sessionID)) return { status: "stale" }
+
+        // Lead sessions supervise children and may legitimately become quiet after
+        // completing their own work. Never let a stale approval interrupt them.
+        if (action === "kill" && isProtectedLead(state)) {
+          pending.delete(sessionID)
+          return { status: "protected-lead" }
+        }
+
         pending.delete(sessionID)
 
         if (action === "keep") {
@@ -130,8 +153,16 @@ export default Plugin.define({
         const state = ensure(id)
         if (!state) continue
 
-        if (parentID) state.parentID = parentID
-        if (info?.agent ?? p.agent) state.agent = info?.agent ?? p.agent
+        if (parentID) {
+          state.parentID = parentID
+          // Once a child is observable, its parent is definitively a lead. Any
+          // already-open inactivity prompt for that parent is now stale.
+          pending.delete(String(parentID))
+        }
+        if (info?.agent ?? p.agent) {
+          state.agent = info?.agent ?? p.agent
+          if (isProtectedLead(state)) pending.delete(state.id)
+        }
 
         if (["message.updated", "message.part.updated", "session.updated", "session.status", "todo.updated"].includes(type)) {
           touch(id, false)
@@ -179,7 +210,7 @@ export default Plugin.define({
     })
 
     const emitSuspect = async (state: State, reason: SuspectReason, ts: number) => {
-      if (!state.parentID || pending.has(state.id)) return
+      if (!state.parentID || pending.has(state.id) || isProtectedLead(state)) return
       if ((suppressedUntil.get(state.id) ?? 0) > ts) return
       if (ts - (lastPromptAt.get(state.id) ?? 0) < promptCooldownMs) return
 
@@ -210,7 +241,12 @@ export default Plugin.define({
       const ts = now()
       void (async () => {
         for (const state of states.values()) {
-          if (!state.parentID || TERMINAL.has(statusName(state.status)) || state.waitingPermission) continue
+          if (
+            !state.parentID ||
+            TERMINAL.has(statusName(state.status)) ||
+            state.waitingPermission ||
+            isProtectedLead(state)
+          ) continue
           if ((inFlight.get(state.id) ?? 0) > 0) continue
 
           const staleActivity = ts - state.lastActivityAt > heartbeatMs
