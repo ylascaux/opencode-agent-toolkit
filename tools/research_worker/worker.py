@@ -8,15 +8,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .client import ResearchApiClient, ResearchApiError
-from .models import ExternalResearchJob, ResultSubmission, ToolkitResearchResult
-from .protocol import build_toolkit_job
+from .contracts import ExternalResearchJob, ResearchOutput
 from .settings import WorkerSettings
 
 logger = logging.getLogger("oat.research_worker")
 
 
 class Executor(Protocol):
-    def execute(self, toolkit_job: dict) -> ToolkitResearchResult: ...
+    def execute(self, job: ExternalResearchJob) -> ResearchOutput: ...
 
 
 @dataclass
@@ -26,27 +25,19 @@ class ResearchWorker:
     executor: Executor
 
     def _process(self, job: ExternalResearchJob) -> str:
-        toolkit_job = build_toolkit_job(job, self.settings)
         started = time.monotonic()
-        result = self.executor.execute(toolkit_job)
+        result = self.executor.execute(job)
         elapsed_ms = int((time.monotonic() - started) * 1000)
         logger.info(
             "research completed job_id=%s job_type=%s status=%s confidence=%s duration_ms=%s",
-            job.id,
+            job.job_id,
             job.job_type,
             result.status,
             result.confidence,
             elapsed_ms,
         )
-        submission = ResultSubmission(
-            result_id=str(uuid.uuid4()),
-            worker_id=self.settings.worker_id,
-            worker_version=self.settings.worker_version,
-            lease_generation=job.lease.generation,
-            result=result,
-        )
-        self.client.submit(job, submission)
-        return job.id
+        self.client.submit(job, str(uuid.uuid4()), result)
+        return job.job_id
 
     def run_once(self) -> int:
         jobs = self.client.claim()
@@ -61,9 +52,10 @@ class ResearchWorker:
                     future.result()
                     completed += 1
                 except Exception as error:
-                    # Do not fabricate a Research Result on local execution failure.
-                    # The external lease expires and the caller-owned queue decides retry/dead-letter policy.
-                    logger.error("research failed job_id=%s job_type=%s error=%s", job.id, job.job_type, error)
+                    # Do not fabricate a Research Result for local execution failure.
+                    # The external lease expires and the caller-owned queue decides
+                    # retry/dead-letter policy independently from toolkit/provider retries.
+                    logger.error("research failed job_id=%s job_type=%s error=%s", job.job_id, job.job_type, error)
         return completed
 
     def run_forever(self) -> None:
