@@ -164,6 +164,11 @@ import_host_auth() {
   docker cp "$host_auth" "$cid:/root/.local/share/opencode/auth.json" >/dev/null
   docker exec "$cid" chmod 600 /root/.local/share/opencode/auth.json
   echo "Imported existing host OpenCode auth into the persistent $service volume" >&2
+
+  # The server may cache provider credentials at startup. Restart only on this
+  # first import so credentials are guaranteed to be visible to the server.
+  "${compose[@]}" restart "$service" >/dev/null
+  ensure_server
 }
 
 if [[ "${1:-}" == "server" || "${1:-}" == "serve" ]]; then
