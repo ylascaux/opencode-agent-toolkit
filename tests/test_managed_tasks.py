@@ -28,6 +28,17 @@ class ManagedTaskIsolationTests(unittest.TestCase):
         self.assertNotIn("OAT_DOCKER_SOCKET", compose)
         self.assertNotIn("OAT_DOCKER_SOCKET", runtime)
 
+    def test_docker_runtime_preserves_explicit_major_across_env_loading(self):
+        runtime = (ROOT / "scripts" / "docker-runtime").read_text()
+        requested = runtime.index('REQUESTED_MAJOR="${OPENCODE_MAJOR:-}"')
+        source_env = runtime.index('source "$ROOT/.env"')
+        restore = runtime.index('OPENCODE_MAJOR="$REQUESTED_MAJOR"')
+        major_select = runtime.index('major="${OPENCODE_MAJOR:-1}"')
+        self.assertLess(requested, source_env)
+        self.assertLess(source_env, restore)
+        self.assertLess(restore, major_select)
+        self.assertIn("export OPENCODE_MAJOR", runtime[restore:major_select])
+
     def test_managed_task_requires_explicit_approval_and_rootless_dind(self):
         script = (ROOT / "scripts" / "task-run").read_text()
         self.assertIn("Managed execution requires explicit --approved", script)
