@@ -91,13 +91,11 @@ class OpenCodeExecutor:
             f"research:{job.job_id[:120]}",
             prompt,
         ]
-        env = os.environ.copy()
-        env["OPENCODE_MAJOR"] = self.settings.opencode_major
         try:
             completed = subprocess.run(
                 command,
                 cwd=ROOT,
-                env=env,
+                env=os.environ.copy(),
                 capture_output=True,
                 text=True,
                 timeout=self.settings.execution_timeout_seconds,
