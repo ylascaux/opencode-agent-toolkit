@@ -83,9 +83,10 @@ jobs:
           OAT_WORKSPACE_ROOT: ${{ github.workspace }}
           OAT_DOCKER_SOCKET: /var/run/docker.sock
           OAT_DATA_DIR: ${{ runner.temp }}/oat-data
+          OAT_STATE_DIR: ${{ runner.temp }}/oat-state
         run: |
           set -euo pipefail
-          mkdir -p "$OAT_DATA_DIR"
+          mkdir -p "$OAT_DATA_DIR" "$OAT_STATE_DIR"
           cp .env.example .env
           docker compose -f compose.yaml config >/dev/null
           trap 'docker compose -f compose.yaml down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
