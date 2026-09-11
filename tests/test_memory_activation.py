@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import sys
 import tempfile
 import unittest
 from importlib.machinery import SourceFileLoader
@@ -11,7 +12,10 @@ from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-MEMORY_PATH = ROOT / "scripts" / "memory"
+SCRIPTS = ROOT / "scripts"
+MEMORY_PATH = SCRIPTS / "memory"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 loader = SourceFileLoader("memory_cli_activation", str(MEMORY_PATH))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 assert spec and spec.loader
