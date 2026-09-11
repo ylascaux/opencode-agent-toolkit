@@ -14,16 +14,13 @@ def _normalized_key(value: str) -> str:
     return value.strip().lower().replace("-", "_")
 
 
-def reject_remote_control_fields(value: Any, path: str = "job") -> None:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            key_string = str(key)
-            if _normalized_key(key_string) in FORBIDDEN_REMOTE_KEYS:
-                raise ValueError(f"Remote execution-control field is forbidden at {path}.{key_string}")
-            reject_remote_control_fields(item, f"{path}.{key_string}")
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            reject_remote_control_fields(item, f"{path}[{index}]")
+def reject_top_level_remote_control_fields(value: Any) -> None:
+    if not isinstance(value, dict):
+        return
+    for key in value:
+        key_string = str(key)
+        if _normalized_key(key_string) in FORBIDDEN_REMOTE_KEYS:
+            raise ValueError(f"Remote execution-control field is forbidden at job.{key_string}")
 
 
 class Subject(BaseModel):
@@ -58,7 +55,10 @@ class ExternalResearchJob(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def reject_execution_control(cls, value: Any) -> Any:
-        reject_remote_control_fields(value)
+        # Only the transport envelope can control execution. Nested subject/context/schema
+        # values are untrusted domain data and may legitimately contain words such as
+        # "model" or "provider"; the local protocol never interprets them as controls.
+        reject_top_level_remote_control_fields(value)
         return value
 
     @model_validator(mode="after")
@@ -77,6 +77,8 @@ class ClaimResponse(BaseModel):
 ResearchStatus = Literal["complete", "partial", "blocked", "failed", "escalation_required"]
 Confidence = Literal["high", "medium", "low"]
 Tier = Literal["low", "medium", "high"]
+ExternalStatus = Literal["SUCCESS", "PARTIAL", "NO_DATA", "CONFLICT", "FAILED"]
+ExternalConfidence = Literal["HIGH", "MEDIUM", "LOW"]
 
 
 class ToolkitEvidence(BaseModel):
@@ -123,12 +125,73 @@ class ToolkitResearchResult(BaseModel):
     execution: Execution
     escalation: Escalation | None = None
 
+    @model_validator(mode="after")
+    def evidence_for_assertions(self) -> "ToolkitResearchResult":
+        asserted = self.data not in ({}, [], None, "")
+        if asserted and self.status in {"complete", "partial"} and not self.evidence:
+            raise ValueError("complete/partial asserted data requires evidence")
+        return self
+
 
 class ResultSubmission(BaseModel):
+    """Caller-facing result envelope. Provider/model/agent details stay local to the toolkit."""
+
     model_config = ConfigDict(extra="forbid")
 
+    job_id: str = Field(min_length=1, max_length=200)
     result_id: str = Field(min_length=1, max_length=200)
+    schema_version: str = Field(min_length=1, max_length=40)
+    status: ExternalStatus
+    data: Any
+    evidence: list[ToolkitEvidence] = Field(max_length=100)
+    confidence: ExternalConfidence
+    warnings: list[str] = Field(default_factory=list, max_length=100)
     worker_id: str = Field(min_length=1, max_length=120)
     worker_version: str = Field(min_length=1, max_length=80)
     lease_generation: int = Field(ge=1)
-    result: ToolkitResearchResult
+
+
+def to_external_submission(
+    result: ToolkitResearchResult,
+    *,
+    external_schema_version: str,
+    result_id: str,
+    worker_id: str,
+    worker_version: str,
+    lease_generation: int,
+) -> ResultSubmission:
+    contradicted = any(item.status == "contradicted" for item in result.evidence)
+    if contradicted:
+        status: ExternalStatus = "CONFLICT"
+    elif result.status == "complete":
+        status = "SUCCESS"
+    elif result.status == "partial":
+        status = "PARTIAL"
+    elif result.status == "blocked":
+        status = "NO_DATA" if result.data in ({}, [], None, "") else "PARTIAL"
+    else:
+        # Local escalation is owned by the toolkit. A final failed/escalation_required
+        # status means the local pipeline could not finish the job and must not leak
+        # model/agent routing instructions back to the caller.
+        status = "FAILED"
+
+    warnings = list(result.issues)
+    if result.confidence_reason:
+        warnings.append(result.confidence_reason)
+    if result.escalation and result.escalation.reason:
+        warnings.append(result.escalation.reason)
+    warnings = [value[:500] for value in warnings if value.strip()][:100]
+
+    return ResultSubmission(
+        job_id=result.job_id,
+        result_id=result_id,
+        schema_version=external_schema_version,
+        status=status,
+        data={} if status == "NO_DATA" else result.data,
+        evidence=result.evidence,
+        confidence=result.confidence.upper(),
+        warnings=warnings,
+        worker_id=worker_id,
+        worker_version=worker_version,
+        lease_generation=lease_generation,
+    )
