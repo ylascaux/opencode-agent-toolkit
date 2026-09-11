@@ -26,6 +26,8 @@ jobs:
         run: npm ls @opencode/plugin --depth=0
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
+      - name: Managed task shell syntax
+        run: bash -n scripts/task-run scripts/workspace-broker scripts/docker-runtime scripts/opencode-agents
       - name: Reliability, plan and sandbox core JavaScript syntax
         run: |
           node --check runtime/plugins/reliability-core.js
@@ -77,11 +79,10 @@ jobs:
             python3 -m unittest discover -s tests -v
             node --test tests/*.test.mjs
           '
-      - name: Validate and start both persistent servers
+      - name: Validate persistent servers use dedicated DinD
         env:
           OAT_RUNTIME_IMAGE: opencode-agent-toolkit:ci
           OAT_WORKSPACE_ROOT: ${{ github.workspace }}
-          OAT_DOCKER_SOCKET: /var/run/docker.sock
           OAT_DATA_DIR: ${{ runner.temp }}/oat-data
           OAT_STATE_DIR: ${{ runner.temp }}/oat-state
         run: |
@@ -92,18 +93,18 @@ jobs:
           trap 'docker compose -f compose.yaml down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
           docker compose -f compose.yaml up -d --no-build oc-server oc2-server
 
-          for service in oc-server oc2-server; do
+          for service in docker-agent oc-server oc2-server; do
             cid="$(docker compose -f compose.yaml ps -q "$service")"
             test -n "$cid"
             healthy=0
-            for _ in $(seq 1 30); do
+            for _ in $(seq 1 45); do
               status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")"
               if [ "$status" = healthy ]; then
                 healthy=1
                 break
               fi
               if [ "$status" = unhealthy ] || [ "$status" = exited ] || [ "$status" = dead ]; then
-                docker compose -f compose.yaml logs "$service"
+                docker compose -f compose.yaml logs docker-agent oc-server oc2-server
                 exit 1
               fi
               sleep 1
@@ -111,8 +112,65 @@ jobs:
             test "$healthy" = 1
           done
 
+          for service in oc-server oc2-server; do
+            cid="$(docker compose -f compose.yaml ps -q "$service")"
+            if docker inspect "$cid" --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -qx '/var/run/docker.sock'; then
+              echo "$service unexpectedly has the host Docker socket" >&2
+              exit 1
+            fi
+            docker compose -f compose.yaml exec -T "$service" docker info >/dev/null
+          done
+
           docker compose -f compose.yaml exec -T oc-server opencode --version
           docker compose -f compose.yaml exec -T oc2-server opencode2 --version
+
+      - name: Validate managed-task rootless DinD endpoint
+        run: |
+          set -euo pipefail
+          network=oat-ci-rootless-$RANDOM
+          dind=oat-ci-rootless-$RANDOM
+          workspace=oat-ci-workspace-$RANDOM
+          data=oat-ci-dind-data-$RANDOM
+          cleanup() {
+            docker rm -f "$dind" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+            docker volume rm -f "$workspace" "$data" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker network create "$network" >/dev/null
+          docker volume create "$workspace" >/dev/null
+          docker volume create "$data" >/dev/null
+          docker run --rm --mount "type=volume,src=$workspace,dst=/workspace" alpine:3.22 \
+            sh -c 'chown -R 1000:1000 /workspace && chmod 0777 /workspace'
+          docker run -d --name "$dind" --privileged \
+            --network "$network" --network-alias docker-agent \
+            -e DOCKER_TLS_CERTDIR= \
+            -e 'DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS=-p 0.0.0.0:2375:2375/tcp' \
+            --mount "type=volume,src=$workspace,dst=/workspace" \
+            --mount "type=volume,src=$data,dst=/home/rootless/.local/share/docker" \
+            docker:29-dind-rootless >/dev/null
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if docker exec "$dind" sh -c 'DOCKER_HOST=unix:///run/user/1000/docker.sock docker info >/dev/null 2>&1'; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+
+          remote=0
+          for _ in $(seq 1 20); do
+            if docker run --rm --network "$network" \
+              -e DOCKER_HOST=tcp://docker-agent:2375 \
+              --entrypoint docker opencode-agent-toolkit:ci info >/dev/null 2>&1; then
+              remote=1
+              break
+            fi
+            sleep 1
+          done
+          test "$remote" = 1
 
   sandbox:
     runs-on: ubuntu-latest
