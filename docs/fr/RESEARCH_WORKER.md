@@ -26,7 +26,7 @@ research-runner
 résultat candidat structuré
 ```
 
-L'application peut définir **quelles** informations sont recherchées. Elle ne peut pas choisir à distance un modèle, provider, agent, prompt, commande shell, callback, outil, chemin local ou configuration OpenCode. Ces champs de contrôle sont refusés récursivement avant toute exécution.
+L'application peut définir **quelles** informations sont recherchées. Elle ne peut pas choisir à distance un modèle, provider, agent, prompt, commande shell, callback, outil, chemin local ou configuration OpenCode. Les champs de contrôle sont interdits au niveau de l'enveloppe du job. Les valeurs imbriquées dans `subject`, `requirements`, `metadata` et les schémas restent des données métier opaques non fiables et ne sont jamais interprétées comme une configuration d'exécution locale ; un champ métier légitime nommé `model` reste donc possible.
 
 L'agent `research-runner` est volontairement restreint : lecture de fichiers locaux, édition, shell, skills et accès aux répertoires externes sont interdits. Le contenu du job et des sources est une donnée non fiable, jamais une instruction.
 
@@ -97,7 +97,7 @@ Le worker envoie son identité, sa version, les types de jobs neutres supportés
 }
 ```
 
-Aucune information de modèle/provider/agent ne doit apparaître dans ce contrat.
+Aucune information de modèle/provider/agent ne doit apparaître au niveau de l'enveloppe d'exécution du job.
 
 ## Exécution et escalade
 
@@ -127,7 +127,8 @@ Cela évite que deux systèmes de retry indépendants acquittent incorrectement 
 - HTTPS obligatoire hors développement loopback ;
 - authentification Bearer fournie par la configuration locale ;
 - aucun callback distant arbitraire ;
-- aucun contrôle distant de shell/commande/chemin/modèle/agent/provider ;
+- aucun contrôle distant de shell/commande/chemin/modèle/agent/provider au niveau de l'enveloppe ;
+- les données métier imbriquées restent opaques et ne deviennent jamais une configuration d'exécution ;
 - tailles de requêtes/réponses/résultats bornées ;
 - contenu externe et job traités comme données non fiables ;
 - `research-runner` ne peut ni lire/éditer les fichiers locaux ni utiliser le shell ;
