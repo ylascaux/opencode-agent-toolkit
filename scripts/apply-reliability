@@ -75,9 +75,13 @@ def patch_config(path: Path, *, v2: bool) -> None:
         plan_approval_plugin = "./runtime/plugins/plan-approval-v2.ts"
         if plan_approval_plugin not in plugins:
             plugins.append(plan_approval_plugin)
+
+        # Temporarily disable the approval-based session-kill watchdog in V2.
+        # Remove it explicitly so rerunning apply-reliability also cleans configs
+        # generated while the feature was enabled. The implementation stays in
+        # the repository so it can be re-enabled deliberately later.
         approval_plugin = "./plugins/reliability-approval"
-        if approval_plugin not in plugins:
-            plugins.append(approval_plugin)
+        plugins[:] = [plugin for plugin in plugins if plugin != approval_plugin]
 
     path.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -127,7 +131,7 @@ def append_prompt_policy() -> None:
 - Treat CONFIG/AUTH/PERMISSION/PROVIDER failures differently from code/test failures. Do not repeatedly reason around a deterministic environment failure.
 - If the same root cause is observed {max_same_error} times without new evidence, stop retrying that path and return BLOCKED or ESCALATION_REQUIRED.
 - A child with no observable activity/progress for about {stalled} seconds is only STALL_SUSPECTED. Missing OpenCode telemetry is not proof that the child is stuck. Never cancel or replace it automatically because of this heuristic.
-- In V2, the runtime may ask the user whether a suspected child should be killed. Continue waiting unless the user explicitly approves the interruption. In V1/headless mode, fail open and preserve the child.
+- In V2, approval-based watchdog killing is temporarily disabled. Preserve suspected child sessions; do not request or infer permission to kill them from watchdog silence. In V1/headless mode, fail open and preserve the child.
 - A lead with one or more active child delegations is WAITING_ON_CHILD, not STALLED. Do not cancel or restart the lead merely because its own tool/file progress is quiet while a child is running.
 - WAITING_PERMISSION is not STALLED. Do not duplicate a child merely because it is waiting for a human permission decision.
 - Before delegating, check whether an equivalent child task is already running or already returned COMPLETE. Reuse completed handoffs instead of paying for duplicate work.
@@ -182,7 +186,7 @@ def main() -> None:
     append_prompt_policy()
     append_effective_plan_policy(GENERATED_V1_PROMPTS_DIR, "off")
     append_effective_plan_policy(GENERATED_PROMPTS_DIR, v2_plan_approval_mode)
-    print("Reliability policies applied; plan approval is disabled in V1 and configured in V2")
+    print("Reliability policies applied; plan approval is disabled in V1, configured in V2, and V2 watchdog session-kill approval is disabled")
 
 
 if __name__ == "__main__":
