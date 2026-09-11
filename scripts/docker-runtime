@@ -289,8 +289,28 @@ if [[ "$major" == "1" ]]; then
 fi
 
 # Authentication is local credential state rather than a server RPC. Execute it
-# directly in the shared home volume so /connect and `auth login` remain durable.
+# directly in the persistent V2 home volume so credentials survive server restarts.
+# OpenAI browser OAuth binds its callback to the container loopback, so provide a
+# dedicated shortcut that always uses OpenCode's device/headless flow instead.
 if [[ "${1:-}" == "auth" ]]; then
+  if [[ "${2:-}" == "openai" ]]; then
+    if [[ $# -ne 2 ]]; then
+      echo "Usage: oc2 auth openai" >&2
+      exit 2
+    fi
+    exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
+      opencode2 auth login -p openai -m "ChatGPT Pro/Plus (headless)"
+  fi
+
+  if [[ "${2:-}" == "login" && $# -eq 2 ]]; then
+    cat >&2 <<'EOF'
+OC2 runs inside Docker. OpenAI's browser OAuth callback binds to the container loopback
+and cannot be reached through a normal Docker port publish.
+For ChatGPT Pro/Plus use: oc2 auth openai
+If you continue with the interactive provider picker, choose "ChatGPT Pro/Plus (headless)".
+EOF
+  fi
+
   exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" opencode2 "$@"
 fi
 
