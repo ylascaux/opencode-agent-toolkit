@@ -23,6 +23,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 major="${OPENCODE_MAJOR:-1}"
+[[ "$major" == auto ]] && major=2
 case "$major" in
   1)
     service=oc-server
@@ -35,7 +36,7 @@ case "$major" in
     host_port="${OAT_OC2_PORT:-4096}"
     ;;
   *)
-    echo "OPENCODE_MAJOR must be 1 or 2 for the Docker runtime (got: $major)" >&2
+    echo "OPENCODE_MAJOR must be 1, 2, or auto for the Docker runtime (got: $major)" >&2
     exit 2
     ;;
 esac
@@ -144,20 +145,25 @@ server_control() {
   esac
 }
 
-ensure_server
+# Preserve an existing local OpenCode login without mounting the whole host home.
+# The import is one-time per V1/V2 home volume and can be disabled explicitly.
+import_host_auth() {
+  [[ "${OAT_IMPORT_HOST_AUTH:-1}" == "1" ]] || return 0
 
-exec_opts=()
-if [[ ! -t 1 ]]; then
-  exec_opts+=(-T)
-fi
+  local host_auth cid
+  host_auth="${OAT_HOST_AUTH_FILE:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json}"
+  [[ -f "$host_auth" ]] || return 0
 
-container_exec() {
-  "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" "$@"
-}
+  if "${compose[@]}" exec -T "$service" test -s /root/.local/share/opencode/auth.json >/dev/null 2>&1; then
+    return 0
+  fi
 
-run_preflight() {
-  [[ "${OPENCODE_PREFLIGHT:-1}" == "1" ]] || return 0
-  "${compose[@]}" exec -T -w "$cwd" "$service" bash /opt/oat/scripts/preflight
+  cid="$("${compose[@]}" ps -q "$service")"
+  [[ -n "$cid" ]] || return 0
+  docker exec "$cid" mkdir -p /root/.local/share/opencode
+  docker cp "$host_auth" "$cid:/root/.local/share/opencode/auth.json" >/dev/null
+  docker exec "$cid" chmod 600 /root/.local/share/opencode/auth.json
+  echo "Imported existing host OpenCode auth into the persistent $service volume" >&2
 }
 
 if [[ "${1:-}" == "server" || "${1:-}" == "serve" ]]; then
@@ -165,6 +171,19 @@ if [[ "${1:-}" == "server" || "${1:-}" == "serve" ]]; then
   server_control "${1:-status}"
   exit $?
 fi
+
+ensure_server
+import_host_auth
+
+exec_opts=()
+if [[ ! -t 1 ]]; then
+  exec_opts+=(-T)
+fi
+
+run_preflight() {
+  [[ "${OPENCODE_PREFLIGHT:-1}" == "1" ]] || return 0
+  "${compose[@]}" exec -T -w "$cwd" "$service" bash /opt/oat/scripts/preflight
+}
 
 if [[ "${1:-}" == "shell" ]]; then
   shift
@@ -195,6 +214,12 @@ if [[ $# -eq 0 ]]; then
   run_preflight
   exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
     opencode2 --server http://127.0.0.1:4096
+fi
+
+# Authentication is local credential state rather than a server RPC. Execute it
+# directly in the shared home volume so /connect and `auth login` remain durable.
+if [[ "$1" == "auth" ]]; then
+  exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" opencode2 "$@"
 fi
 
 if [[ "$1" == "run" ]]; then
