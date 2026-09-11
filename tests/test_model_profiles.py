@@ -16,10 +16,11 @@ class ModelProfileTests(unittest.TestCase):
             "MODEL_MEDIUM": "test/terra",
             "MODEL_HIGH": "test/sol",
         })
-        self.assertEqual(len(result), 40)
+        self.assertEqual(len(result), 41)
         self.assertEqual(result["MODEL_MOCK_GENERATOR"], "test/luna")
         self.assertEqual(result["MODEL_SECRETS"], "test/luna")
         self.assertEqual(result["MODEL_SOURCE_DISCOVERY"], "test/luna")
+        self.assertEqual(result["MODEL_RESEARCH_RUNNER"], "test/luna")
         self.assertEqual(result["MODEL_STRUCTURED_EXTRACTOR"], "test/terra")
         self.assertEqual(result["MODEL_ENTITY_RESOLVER"], "test/terra")
         self.assertEqual(result["MODEL_DOCS"], "test/terra")
@@ -32,7 +33,7 @@ class ModelProfileTests(unittest.TestCase):
     def test_default_quality_policy_keeps_only_bounded_agents_low(self):
         tiers = RESOLVER["load_tiers"]()
         low_agents = {name for name, tier in tiers.items() if tier == "low"}
-        self.assertEqual(low_agents, {"MODEL_MOCK_GENERATOR", "MODEL_SECRETS", "MODEL_SOURCE_DISCOVERY"})
+        self.assertEqual(low_agents, {"MODEL_MOCK_GENERATOR", "MODEL_SECRETS", "MODEL_SOURCE_DISCOVERY", "MODEL_RESEARCH_RUNNER"})
 
     def test_architecture_evidence_sources_are_not_low(self):
         tiers = RESOLVER["load_tiers"]()
