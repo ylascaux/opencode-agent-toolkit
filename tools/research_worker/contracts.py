@@ -87,21 +87,20 @@ def _normalized_key(value: Any) -> str:
     return str(value).strip().lower().replace("-", "_")
 
 
-def _reject_remote_controls(value: Any, path: str = "job") -> None:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if _normalized_key(key) in FORBIDDEN_CONTROL_KEYS:
-                raise ContractError(f"remote execution control is forbidden at {path}.{key}")
-            _reject_remote_controls(item, f"{path}.{key}")
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            _reject_remote_controls(item, f"{path}[{index}]")
+def _reject_top_level_remote_controls(payload: dict[str, Any]) -> None:
+    present = sorted(key for key in payload if _normalized_key(key) in FORBIDDEN_CONTROL_KEYS)
+    if present:
+        raise ContractError("remote execution controls are forbidden: " + ", ".join(present))
 
 
 def parse_external_job(payload: Any) -> ExternalResearchJob:
     if not isinstance(payload, dict):
         raise ContractError("job must be an object")
-    _reject_remote_controls(payload)
+    # Only the envelope can control worker execution. Nested subject/requirements/
+    # schema/metadata values are opaque untrusted domain data and may legitimately
+    # contain names such as "model" or "provider". They are never interpreted as
+    # local execution controls and are passed to research-runner as DATA.
+    _reject_top_level_remote_controls(payload)
 
     allowed = {
         "id",
