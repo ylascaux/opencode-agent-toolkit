@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+HEX64 = re.compile(r"^[a-f0-9]{64}$")
+KINDS = {"project_fact", "decision", "convention", "known_issue", "workstyle", "hat_preference"}
+CONFIDENCE = {"low", "medium", "high"}
+MAX_BYTES = 64 * 1024
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"memory-broker: {message}")
+
+
+def clean_string(value: object, *, maximum: int) -> str:
+    if not isinstance(value, str):
+        fail("candidate contains a non-string field")
+    value = value.strip()
+    if len(value) > maximum:
+        fail("candidate field exceeds size limit")
+    return value
+
+
+def validate(path: Path) -> dict:
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fail(f"refusing non-regular candidate file {path.name}")
+    if info.st_size > MAX_BYTES:
+        fail(f"candidate file is too large: {path.name}")
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"invalid candidate JSON {path.name}: {exc}")
+    if not isinstance(data, dict):
+        fail(f"candidate is not an object: {path.name}")
+
+    fingerprint = clean_string(data.get("fingerprint", ""), maximum=64).lower()
+    if not HEX64.fullmatch(fingerprint) or path.name != f"{fingerprint}.json":
+        fail(f"candidate fingerprint/path mismatch: {path.name}")
+    candidate_id = clean_string(data.get("id", ""), maximum=64).lower()
+    if not candidate_id or not fingerprint.startswith(candidate_id):
+        fail(f"candidate id/fingerprint mismatch: {path.name}")
+    if clean_string(data.get("kind", ""), maximum=60) not in KINDS:
+        fail(f"unsupported candidate kind: {path.name}")
+    if clean_string(data.get("confidence", ""), maximum=30).lower() not in CONFIDENCE:
+        fail(f"unsupported candidate confidence: {path.name}")
+    clean_string(data.get("title", ""), maximum=180)
+    clean_string(data.get("statement", ""), maximum=4000)
+    if data.get("rationale") is not None:
+        clean_string(data["rationale"], maximum=2000)
+    if data.get("project_id") is not None:
+        clean_string(data["project_id"], maximum=120)
+    if data.get("suggested_target") is not None:
+        clean_string(data["suggested_target"], maximum=240)
+    return data
+
+
+def atomic_write(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(data, indent=2, sort_keys=False) + "\n")
+    os.chmod(temp, 0o600)
+    temp.replace(path)
+
+
+def collect(task_state: Path, host_state: Path) -> int:
+    source = task_state / "memory" / "candidates"
+    if not source.is_dir():
+        print("memory-broker: no managed-task candidates")
+        return 0
+
+    destination = host_state / "memory" / "candidates"
+    imported = 0
+    merged = 0
+    for pathname in sorted(source.iterdir()):
+        if pathname.suffix != ".json":
+            continue
+        incoming = validate(pathname)
+        target = destination / pathname.name
+        if target.exists():
+            existing = validate(target)
+            occurrences = max(1, int(existing.get("occurrences", 1))) + max(1, int(incoming.get("occurrences", 1)))
+            existing["occurrences"] = occurrences
+            if incoming.get("last_seen_at"):
+                existing["last_seen_at"] = incoming["last_seen_at"]
+            if incoming.get("session_id"):
+                existing["session_id"] = incoming["session_id"]
+            atomic_write(target, existing)
+            merged += 1
+        else:
+            atomic_write(target, incoming)
+            imported += 1
+
+    print(f"memory-broker: candidates imported={imported} merged={merged}")
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) != 4 or sys.argv[1] != "collect":
+        fail("usage: memory-broker collect TASK_STATE_DIR HOST_STATE_DIR")
+    task_state = Path(sys.argv[2]).resolve()
+    host_state = Path(sys.argv[3]).resolve()
+    return collect(task_state, host_state)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
