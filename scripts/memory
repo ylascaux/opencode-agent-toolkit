@@ -11,6 +11,11 @@ from pathlib import Path
 from memory_plugin import PluginSettings, cli_command, ensure_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
+TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in TRUTHY
 
 
 def _settings_path() -> Path:
@@ -56,9 +61,14 @@ def _run_plugin(*args: str, force_sync: bool = False) -> int:
 
 
 def cmd_enable(args: argparse.Namespace) -> int:
-    updates = {"OAT_MEMORY_ENABLED": "1"}
-    if args.repo:
-        updates["OAT_MEMORY_REPO"] = args.repo
+    repo = (args.repo or os.getenv("OAT_MEMORY_REPO", "")).strip()
+    if not repo:
+        print(
+            "Memory repository is not configured. Run: oc2 memory enable git@github.com:USER/opencode-memory.git",
+            file=os.sys.stderr,
+        )
+        return 2
+    updates = {"OAT_MEMORY_ENABLED": "1", "OAT_MEMORY_REPO": repo}
     _apply_updates(updates)
     ensure_plugin(force_sync=True)
     return _run_plugin("status")
@@ -67,17 +77,26 @@ def cmd_enable(args: argparse.Namespace) -> int:
 def cmd_disable(_args: argparse.Namespace) -> int:
     _apply_updates({"OAT_MEMORY_ENABLED": "0"})
     print("memory=off")
+    print(f"capture={'on' if _enabled('OAT_MEMORY_CAPTURE_ENABLED') else 'off'}")
+    print("effective_capture=off")
     return 0
 
 
 def cmd_status(_args: argparse.Namespace) -> int:
     settings = PluginSettings.from_env()
+    memory_enabled = _enabled("OAT_MEMORY_ENABLED")
+    capture_enabled = _enabled("OAT_MEMORY_CAPTURE_ENABLED")
     print(f"plugin_repo={settings.repo}")
     print(f"plugin_ref={settings.ref}")
     print(f"plugin_dir={settings.directory}")
     print(f"settings_file={_settings_path()}")
-    if os.getenv("OAT_MEMORY_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
-        print("memory=off")
+    print(f"memory={'on' if memory_enabled else 'off'}")
+    print(f"capture={'on' if capture_enabled else 'off'}")
+    print(f"effective_capture={'on' if memory_enabled and capture_enabled else 'off'}")
+    memory_repo = os.getenv("OAT_MEMORY_REPO", "").strip()
+    if memory_repo:
+        print(f"memory_repo={memory_repo}")
+    if not memory_enabled:
         return 0
     return _run_plugin("status")
 
@@ -95,14 +114,35 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def cmd_capture_on(_args: argparse.Namespace) -> int:
-    _apply_updates({"OAT_MEMORY_CAPTURE_ENABLED": "1"})
+    updates = {"OAT_MEMORY_CAPTURE_ENABLED": "1"}
+    auto_enabled = False
+    if not _enabled("OAT_MEMORY_ENABLED"):
+        repo = os.getenv("OAT_MEMORY_REPO", "").strip()
+        if not repo:
+            print(
+                "Cannot enable memory capture while memory is disabled and OAT_MEMORY_REPO is not configured.",
+                file=os.sys.stderr,
+            )
+            print(
+                "Run: oc2 memory enable git@github.com:USER/opencode-memory.git",
+                file=os.sys.stderr,
+            )
+            return 2
+        updates["OAT_MEMORY_ENABLED"] = "1"
+        auto_enabled = True
+    _apply_updates(updates)
+    if auto_enabled:
+        ensure_plugin(force_sync=True)
+        print("memory=on (auto-enabled for capture)")
     print("memory_capture=on")
+    print("effective_capture=on")
     return 0
 
 
 def cmd_capture_off(_args: argparse.Namespace) -> int:
     _apply_updates({"OAT_MEMORY_CAPTURE_ENABLED": "0"})
     print("memory_capture=off")
+    print("effective_capture=off")
     return 0
 
 
