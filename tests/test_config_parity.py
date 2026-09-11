@@ -9,10 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
 
-LEADS = {"meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"}
+LEADS = {"meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead", "research-runner"}
+RESTRICTED_RESEARCH_AGENTS = {"research-runner"}
 EXPECTED_META_CHILDREN = {
     "orchestrator", "review-lead", "platform-architect", "security-lead",
-    "arbiter", "deep-reasoner", "evidence-auditor",
+    "arbiter", "deep-reasoner", "evidence-auditor", "research-runner",
 }
 WRITERS = {
     "builder", "tester", "mock-generator", "debugger", "python-specialist",
@@ -126,7 +127,7 @@ class ConfigPolicyTests(unittest.TestCase):
 
     def test_agent_sets_match_and_count(self):
         self.assertEqual(set(self.v1["agent"]), set(self.v2["agents"]))
-        self.assertEqual(len(self.v1["agent"]), 40)
+        self.assertEqual(len(self.v1["agent"]), 41)
         self.assertEqual({path.name for path in source_agent_dirs()}, set(self.v1["agent"]))
 
     def test_every_agent_is_self_contained(self):
@@ -176,7 +177,7 @@ class ConfigPolicyTests(unittest.TestCase):
             match = re.fullmatch(r"\{env:(MODEL_[A-Z0-9_]+)\}", agent["model"])
             self.assertIsNotNone(match, agent["model"])
             expected_model_envs.add(match.group(1))
-        self.assertEqual(len(expected_model_envs), 40)
+        self.assertEqual(len(expected_model_envs), 41)
         self.assertEqual(set(tiers), expected_model_envs)
         self.assertTrue(set(tiers.values()) <= {"low", "medium", "high"})
 
@@ -206,47 +207,57 @@ class ConfigPolicyTests(unittest.TestCase):
         task = self.v1["agent"]["meta-router"]["permission"]["task"]
         allowed = {name for name, effect in task.items() if name != "*" and effect == "allow"}
         self.assertEqual(allowed, EXPECTED_META_CHILDREN)
-        self.assertLessEqual(len(allowed), 8)
+        self.assertLessEqual(len(allowed), 9)
 
     def test_every_agent_has_open_web_and_prompted_skill_policy(self):
         for name, agent in self.v1["agent"].items():
             p = agent["permission"]
             self.assertEqual(p["webfetch"], "allow", name)
             self.assertEqual(p["websearch"], "allow", name)
-            self.assertEqual(p["skill"], "ask", name)
+            self.assertEqual(p["skill"], "deny" if name in RESTRICTED_RESEARCH_AGENTS else "ask", name)
         for name, agent in self.v2["agents"].items():
             self.assertEqual(last_v2_effect(agent, "webfetch", "*"), "allow", name)
             self.assertEqual(last_v2_effect(agent, "websearch", "*"), "allow", name)
-            self.assertEqual(last_v2_effect(agent, "skill", "*"), "ask", name)
+            self.assertEqual(last_v2_effect(agent, "skill", "*"), "deny" if name in RESTRICTED_RESEARCH_AGENTS else "ask", name)
 
     def test_sensitive_reads_are_approved_or_denied_by_scope(self):
         for name, agent in self.v1["agent"].items():
             read = agent["permission"]["read"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(read, "deny", name)
+                continue
             for pattern in APPROVAL_SENSITIVE_PATTERNS:
                 self.assertEqual(read[pattern], "ask", f"{name}: {pattern}")
             for pattern in DENIED_HOST_CREDENTIAL_PATTERNS:
                 self.assertEqual(read[pattern], "deny", f"{name}: {pattern}")
         for name, agent in self.v2["agents"].items():
+            expected_sensitive = "deny" if name in RESTRICTED_RESEARCH_AGENTS else "ask"
             for pattern in APPROVAL_SENSITIVE_PATTERNS:
-                self.assertEqual(last_v2_effect(agent, "read", pattern), "ask", f"{name}: {pattern}")
+                self.assertEqual(last_v2_effect(agent, "read", pattern), expected_sensitive, f"{name}: {pattern}")
             for pattern in DENIED_HOST_CREDENTIAL_PATTERNS:
                 self.assertEqual(last_v2_effect(agent, "read", pattern), "deny", f"{name}: {pattern}")
 
     def test_edit_is_allow_for_writers_and_ask_for_everyone_else(self):
         for name, agent in self.v1["agent"].items():
-            expected = "allow" if name in WRITERS else "ask"
+            expected = "deny" if name in RESTRICTED_RESEARCH_AGENTS else ("allow" if name in WRITERS else "ask")
             self.assertEqual(agent["permission"]["edit"], expected, name)
         for name, agent in self.v2["agents"].items():
-            expected = "allow" if name in WRITERS else "ask"
+            expected = "deny" if name in RESTRICTED_RESEARCH_AGENTS else ("allow" if name in WRITERS else "ask")
             self.assertEqual(last_v2_effect(agent, "edit", "*"), expected, name)
 
     def test_non_destructive_shell_defaults_to_ask_and_safe_git_is_allowed(self):
         for name, agent in self.v1["agent"].items():
             bash = agent["permission"]["bash"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(bash, "deny", name)
+                continue
             self.assertEqual(bash["*"], "ask", name)
             for command in READ_ONLY_GIT:
                 self.assertEqual(bash[command], "allow", f"{name}: {command}")
         for name, agent in self.v2["agents"].items():
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(last_v2_effect(agent, "shell", "some harmless custom command"), "deny", name)
+                continue
             self.assertEqual(last_v2_effect(agent, "shell", "some harmless custom command"), "ask", name)
             for command in READ_ONLY_GIT:
                 self.assertEqual(last_v2_effect(agent, "shell", command), "allow", f"{name}: {command}")
@@ -289,6 +300,9 @@ class ConfigPolicyTests(unittest.TestCase):
     def test_destructive_commands_stay_denied(self):
         for name, agent in self.v1["agent"].items():
             bash = agent["permission"]["bash"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(bash, "deny", name)
+                continue
             for command in [
                 "rm -rf*", "git reset --hard*", "git push --force*",
                 "terraform apply*", "terraform destroy*", "tofu apply*",
