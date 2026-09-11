@@ -26,6 +26,11 @@ jobs:
         run: npm ls @opencode/plugin --depth=0
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
+      - name: Managed task shell syntax
+        run: |
+          for script in scripts/task-run scripts/task-dind scripts/workspace-broker scripts/docker-runtime scripts/opencode-agents; do
+            bash -n "$script"
+          done
       - name: Reliability, plan and sandbox core JavaScript syntax
         run: |
           node --check runtime/plugins/reliability-core.js
@@ -53,6 +58,7 @@ jobs:
 
   runtime:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker runtime
@@ -77,11 +83,10 @@ jobs:
             python3 -m unittest discover -s tests -v
             node --test tests/*.test.mjs
           '
-      - name: Validate and start both persistent servers
+      - name: Validate persistent servers use dedicated DinD
         env:
           OAT_RUNTIME_IMAGE: opencode-agent-toolkit:ci
           OAT_WORKSPACE_ROOT: ${{ github.workspace }}
-          OAT_DOCKER_SOCKET: /var/run/docker.sock
           OAT_DATA_DIR: ${{ runner.temp }}/oat-data
           OAT_STATE_DIR: ${{ runner.temp }}/oat-state
         run: |
@@ -92,18 +97,18 @@ jobs:
           trap 'docker compose -f compose.yaml down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
           docker compose -f compose.yaml up -d --no-build oc-server oc2-server
 
-          for service in oc-server oc2-server; do
+          for service in docker-agent oc-server oc2-server; do
             cid="$(docker compose -f compose.yaml ps -q "$service")"
             test -n "$cid"
             healthy=0
-            for _ in $(seq 1 30); do
+            for _ in $(seq 1 45); do
               status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")"
               if [ "$status" = healthy ]; then
                 healthy=1
                 break
               fi
               if [ "$status" = unhealthy ] || [ "$status" = exited ] || [ "$status" = dead ]; then
-                docker compose -f compose.yaml logs "$service"
+                docker compose -f compose.yaml logs docker-agent oc-server oc2-server
                 exit 1
               fi
               sleep 1
@@ -111,8 +116,61 @@ jobs:
             test "$healthy" = 1
           done
 
+          for service in oc-server oc2-server; do
+            cid="$(docker compose -f compose.yaml ps -q "$service")"
+            if docker inspect "$cid" --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -qx '/var/run/docker.sock'; then
+              echo "$service unexpectedly has the host Docker socket" >&2
+              exit 1
+            fi
+            docker compose -f compose.yaml exec -T "$service" docker info >/dev/null
+          done
+
           docker compose -f compose.yaml exec -T oc-server opencode --version
           docker compose -f compose.yaml exec -T oc2-server opencode2 --version
+
+      - name: Validate managed-task rootless DinD endpoint
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          network=oat-ci-rootless-$RANDOM
+          dind=oat-ci-rootless-$RANDOM
+          workspace=oat-ci-workspace-$RANDOM
+          data=oat-ci-dind-data-$RANDOM
+          profile_loaded=0
+          cleanup() {
+            docker rm -f "$dind" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+            docker volume rm -f "$workspace" "$data" >/dev/null 2>&1 || true
+            if [ "$profile_loaded" = 1 ]; then
+              sudo apparmor_parser -R runtime/apparmor/oat-dind-rootless || true
+            fi
+          }
+          trap cleanup EXIT
+          # Permit userns for this DinD container only. Do not disable Ubuntu's
+          # host-wide AppArmor restriction to make the rootless test pass.
+          if docker info --format '{{json .SecurityOptions}}' | grep -q apparmor; then
+            sudo apparmor_parser -r runtime/apparmor/oat-dind-rootless
+            profile_loaded=1
+            export OAT_TASK_DIND_APPARMOR_PROFILE=oat-dind-rootless
+          fi
+          docker network create "$network" >/dev/null
+          docker volume create "$workspace" >/dev/null
+          docker volume create "$data" >/dev/null
+          docker run --rm --mount "type=volume,src=$workspace,dst=/workspace" alpine:3.22 \
+            sh -c 'chown 1000:1000 /workspace && chmod 0755 /workspace'
+          bash scripts/task-dind "$dind" "$network" "$workspace" "$data" \
+            docker:29-dind-rootless opencode-agent-toolkit:ci
+          # Go beyond docker info: start a nested container and verify that its
+          # rootless bind-mount write is visible in the shared workspace volume.
+          docker run --rm --network "$network" \
+            -e DOCKER_HOST=tcp://docker-agent:2375 \
+            --entrypoint timeout opencode-agent-toolkit:ci 60s \
+            docker run --rm --mount type=bind,src=/workspace,dst=/workspace \
+            alpine:3.22 sh -ec 'printf "rootless-ok\n" > /workspace/.dind-smoke'
+          docker run --rm --mount "type=volume,src=$workspace,dst=/workspace,readonly" \
+            alpine:3.22 grep -qx rootless-ok /workspace/.dind-smoke
+          docker inspect "$dind" --format '{{json .Mounts}}' | \
+            python3 -c 'import json,sys; assert all(m["Type"] == "volume" for m in json.load(sys.stdin))'
 
   sandbox:
     runs-on: ubuntu-latest

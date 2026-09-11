@@ -40,7 +40,14 @@ fi
 export OPENCODE_MAJOR
 [[ -z "${OPENCODE_BIN:-}" ]] || export OPENCODE_BIN
 
-# Docker is now the default runtime: OpenCode, Node, Python, Nix and plugin
+# Managed tasks intentionally bypass the persistent project-mounted server. They
+# create their own cloned workspace, rootless DinD daemon and broker-owned PR.
+if [[ "${OAT_RUNTIME:-docker}" == "docker" && "${1:-}" == "task" ]]; then
+  shift
+  exec bash "$ROOT/scripts/task-run" "$@"
+fi
+
+# Docker is the default runtime: OpenCode, Node, Python, Nix and plugin
 # dependencies stay out of the host. Set OAT_RUNTIME=host to retain the legacy
 # launcher while migrating or debugging.
 if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then

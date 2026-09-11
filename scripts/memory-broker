@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+HEX64 = re.compile(r"^[a-f0-9]{64}$")
+KINDS = {"project_fact", "decision", "convention", "known_issue", "workstyle", "hat_preference"}
+CONFIDENCE = {"low", "medium", "high"}
+MAX_BYTES = 64 * 1024
+MAX_OCCURRENCES = 10000
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"memory-broker: {message}")
+
+
+def clean_string(value: object, *, maximum: int) -> str:
+    if not isinstance(value, str):
+        fail("candidate contains a non-string field")
+    value = value.strip()
+    if len(value) > maximum:
+        fail("candidate field exceeds size limit")
+    return value
+
+
+def occurrences(value: object) -> int:
+    if isinstance(value, bool):
+        fail("candidate occurrences must be an integer")
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        fail("candidate occurrences must be an integer")
+    if count < 1 or count > MAX_OCCURRENCES:
+        fail("candidate occurrences is outside the accepted range")
+    return count
+
+
+def ensure_directory(path: Path, *, create: bool, label: str) -> bool:
+    if path.exists() or path.is_symlink():
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            fail(f"refusing unsafe {label}: {path}")
+        return True
+    if not create:
+        return False
+    path.mkdir(mode=0o700)
+    return True
+
+
+def validate(path: Path) -> dict:
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fail(f"refusing non-regular candidate file {path.name}")
+    if info.st_size > MAX_BYTES:
+        fail(f"candidate file is too large: {path.name}")
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"invalid candidate JSON {path.name}: {exc}")
+    if not isinstance(data, dict):
+        fail(f"candidate is not an object: {path.name}")
+
+    fingerprint = clean_string(data.get("fingerprint", ""), maximum=64).lower()
+    if not HEX64.fullmatch(fingerprint) or path.name != f"{fingerprint}.json":
+        fail(f"candidate fingerprint/path mismatch: {path.name}")
+    candidate_id = clean_string(data.get("id", ""), maximum=64).lower()
+    if not candidate_id or not fingerprint.startswith(candidate_id):
+        fail(f"candidate id/fingerprint mismatch: {path.name}")
+    if clean_string(data.get("kind", ""), maximum=60) not in KINDS:
+        fail(f"unsupported candidate kind: {path.name}")
+    if clean_string(data.get("confidence", ""), maximum=30).lower() not in CONFIDENCE:
+        fail(f"unsupported candidate confidence: {path.name}")
+    clean_string(data.get("title", ""), maximum=180)
+    clean_string(data.get("statement", ""), maximum=4000)
+    occurrences(data.get("occurrences", 1))
+    if data.get("rationale") is not None:
+        clean_string(data["rationale"], maximum=2000)
+    if data.get("project_id") is not None:
+        clean_string(data["project_id"], maximum=120)
+    if data.get("suggested_target") is not None:
+        clean_string(data["suggested_target"], maximum=240)
+    if data.get("last_seen_at") is not None:
+        clean_string(data["last_seen_at"], maximum=80)
+    if data.get("session_id") is not None:
+        clean_string(data["session_id"], maximum=160)
+    return data
+
+
+def atomic_write(path: Path, data: dict) -> None:
+    temp = path.with_suffix(".tmp")
+    temp.write_text(json.dumps(data, indent=2, sort_keys=False) + "\n")
+    os.chmod(temp, 0o600)
+    temp.replace(path)
+
+
+def collect(task_state: Path, host_state: Path) -> int:
+    task_memory = task_state / "memory"
+    if not ensure_directory(task_memory, create=False, label="task memory directory"):
+        print("memory-broker: no managed-task candidates")
+        return 0
+    source = task_memory / "candidates"
+    if not ensure_directory(source, create=False, label="task candidate directory"):
+        print("memory-broker: no managed-task candidates")
+        return 0
+
+    ensure_directory(host_state, create=True, label="host state directory")
+    host_memory = host_state / "memory"
+    ensure_directory(host_memory, create=True, label="host memory directory")
+    destination = host_memory / "candidates"
+    ensure_directory(destination, create=True, label="host candidate directory")
+
+    imported = 0
+    merged = 0
+    for pathname in sorted(source.iterdir()):
+        if pathname.suffix != ".json":
+            continue
+        incoming = validate(pathname)
+        target = destination / pathname.name
+        if target.exists() or target.is_symlink():
+            existing = validate(target)
+            existing["occurrences"] = min(
+                MAX_OCCURRENCES,
+                occurrences(existing.get("occurrences", 1)) + occurrences(incoming.get("occurrences", 1)),
+            )
+            if incoming.get("last_seen_at"):
+                existing["last_seen_at"] = incoming["last_seen_at"]
+            if incoming.get("session_id"):
+                existing["session_id"] = incoming["session_id"]
+            atomic_write(target, existing)
+            merged += 1
+        else:
+            atomic_write(target, incoming)
+            imported += 1
+
+    print(f"memory-broker: candidates imported={imported} merged={merged}")
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) != 4 or sys.argv[1] != "collect":
+        fail("usage: memory-broker collect TASK_STATE_DIR HOST_STATE_DIR")
+    task_state = Path(sys.argv[2]).resolve()
+    host_state = Path(sys.argv[3]).resolve()
+    return collect(task_state, host_state)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

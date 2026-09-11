@@ -1,0 +1,9 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# Applied explicitly to the already-privileged outer DinD container only.
+# Ubuntu 24.04 restricts user namespace creation even for unconfined processes.
+# A named profile allows RootlessKit without disabling the host-wide restriction.
+profile oat-dind-rootless flags=(unconfined) {
+  userns,
+}

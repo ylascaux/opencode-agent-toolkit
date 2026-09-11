@@ -17,24 +17,45 @@ x-runtime-common: &runtime-common
   environment:
     OAT_RUNTIME: container
     OAT_SANDBOX_HOST_SHELL: /bin/bash
+    DOCKER_HOST: tcp://docker-agent:2375
 
 services:
-  oc-server:
-    <<: *runtime-common
+  # Normal interactive oc/oc2 usage keeps the host repository bind for editor
+  # compatibility, but Docker commands target this isolated daemon rather than
+  # the host Docker socket. The daemon is not published to the host.
+  docker-agent:
+    image: ${OAT_DIND_IMAGE:-docker:29-dind}
+    privileged: true
+    restart: unless-stopped
     environment:
-      OAT_RUNTIME: container
-      OAT_SANDBOX_HOST_SHELL: /bin/bash
-      OPENCODE_MAJOR: "1"
-      OPENCODE_CONFIG: /opt/oat/opencode.jsonc
+      DOCKER_TLS_CERTDIR: ""
     volumes:
-      # Keep the workspace path identical on host and in-container so Docker
-      # bind mounts emitted by an agent are valid for the host Docker daemon.
       - type: bind
         source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
         target: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
+      - dind-data:/var/lib/docker
+    healthcheck:
+      test: ["CMD-SHELL", "docker info >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  oc-server:
+    <<: *runtime-common
+    depends_on:
+      docker-agent:
+        condition: service_healthy
+    environment:
+      OAT_RUNTIME: container
+      OAT_SANDBOX_HOST_SHELL: /bin/bash
+      DOCKER_HOST: tcp://docker-agent:2375
+      OPENCODE_MAJOR: "1"
+      OPENCODE_CONFIG: /opt/oat/opencode.jsonc
+    volumes:
       - type: bind
-        source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
-        target: /var/run/docker.sock
+        source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
+        target: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
       - oc-home:/root
       # Share only toolkit-owned persistent data/state across V1/V2. The rest
       # of the host home, including ~/.ssh, remains outside the runtime.
@@ -56,18 +77,19 @@ services:
 
   oc2-server:
     <<: *runtime-common
+    depends_on:
+      docker-agent:
+        condition: service_healthy
     environment:
       OAT_RUNTIME: container
       OAT_SANDBOX_HOST_SHELL: /bin/bash
+      DOCKER_HOST: tcp://docker-agent:2375
       OPENCODE_MAJOR: "2"
       OPENCODE_CONFIG: /opt/oat/opencode.v2.jsonc
     volumes:
       - type: bind
         source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
         target: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
-      - type: bind
-        source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
-        target: /var/run/docker.sock
       - oc2-home:/root
       - type: bind
         source: ${OAT_DATA_DIR:?set OAT_DATA_DIR through scripts/docker-runtime}
@@ -88,3 +110,4 @@ services:
 volumes:
   oc-home:
   oc2-home:
+  dind-data:

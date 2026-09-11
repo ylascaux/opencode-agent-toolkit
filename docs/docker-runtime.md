@@ -1,21 +1,44 @@
 # Docker runtime for `oc` and `oc2`
 
-The toolkit uses Docker as its default OpenCode runtime. The host only needs Docker, Git/Bash and optionally `just`; Node.js, Python dependencies, OpenCode V1/V2, Nix and plugin dependencies live in the runtime image.
+The toolkit uses Docker as its default OpenCode runtime. The host needs Docker, Git/Bash and optionally `just`; Node.js, Python dependencies, OpenCode V1/V2, Nix and plugin dependencies live in the runtime image.
 
-## Architecture
+## Normal interactive architecture
 
-Two persistent services share one runtime image but keep separate OpenCode home volumes:
+Two persistent OpenCode services share one runtime image but keep separate home volumes:
 
 - `oc-server`: OpenCode V1, host URL `http://127.0.0.1:4095`
 - `oc2-server`: OpenCode V2 beta, host URL `http://127.0.0.1:4096`
 - `oc-home`: V1 auth, sessions, cache and local state
 - `oc2-home`: V2 auth, sessions, cache and local state
+- `docker-agent`: dedicated Docker-in-Docker daemon used by both OpenCode services
 
-Only toolkit-owned persistent data and state are shared between the two services and the host. By default those are `~/.local/share/opencode-agent-toolkit` and `~/.local/state/opencode-agent-toolkit`, containing memory/plugin data, candidates, reliability checkpoints and related toolkit state. The rest of the host home, including `~/.ssh`, is not mounted.
+The host Docker socket is **not** mounted in `oc-server` or `oc2-server`. Docker commands issued by OpenCode target `tcp://docker-agent:2375` on the private Compose network. The DinD API is not published to the host.
 
-The active workspace is bind-mounted at the **same absolute path** inside the runtime container as on the host. This is intentional: the Docker CLI inside the container talks to the host Docker daemon. Keeping identical paths means `docker build`, `docker run -v`, and `docker compose` can pass bind-mount paths that the host daemon understands.
+Normal interactive use still bind-mounts the active host repository into both OpenCode and `docker-agent` at the same absolute path. That preserves the familiar workflow where edits immediately appear in the user's checkout and lets nested `docker compose` bind mounts resolve inside DinD. It also means normal interactive mode is not a strict filesystem sandbox: the selected workspace is intentionally exposed read/write.
 
-The host Docker socket is mounted at `/var/run/docker.sock`. This is Docker-outside-of-Docker, not Docker-in-Docker; containers created by an agent are normal host Docker containers.
+Only toolkit-owned persistent data/state are shared with normal OpenCode sessions. By default these are `~/.local/share/opencode-agent-toolkit` and `~/.local/state/opencode-agent-toolkit`. The rest of the host home, including `~/.ssh`, AWS config and kubeconfig, is not mounted.
+
+## Managed task architecture
+
+For a stronger boundary use `oc2 task`. Managed tasks do **not** bind-mount the host project at all:
+
+```text
+Git broker (GitHub credential)
+        |
+        | clone
+        v
+ ephemeral workspace volume
+        |
+        +--> OpenCode V2 orchestrator/leaf agents
+        |
+        +--> dedicated rootless DinD
+        |
+        +--> Git broker -> push agent/... -> PR
+```
+
+Each run gets a fresh workspace volume, fresh task state and a fresh rootless DinD data volume. The GitHub token exists only in the short-lived trusted Git broker containers used for clone and publication; it is never passed to the OpenCode worker. The worker receives neither the host Docker socket nor a host project bind.
+
+See [`managed-tasks.md`](managed-tasks.md) for the full lifecycle and threat-boundary details.
 
 ## Installation
 
@@ -29,11 +52,9 @@ just install-oc2
 
 Use `just refresh` to rebuild the runtime image without the Docker build cache.
 
-On first use, if `~/.local/share/opencode/auth.json` already exists, the wrapper copies it once into the selected private runtime home (`oc-home` or `oc2-home`) and restarts that server. This preserves an existing OpenCode login without exposing the whole host data directory. Disable this with `OAT_IMPORT_HOST_AUTH=0`.
+On first use, if `~/.local/share/opencode/auth.json` already exists, the wrapper copies it once into the selected private runtime home and, for managed tasks, into the persistent managed-task OpenCode home. Disable this with `OAT_IMPORT_HOST_AUTH=0`.
 
-## Daily usage
-
-From a repository:
+## Daily interactive usage
 
 ```bash
 oc
@@ -43,78 +64,88 @@ oc2
 oc2 run "fix the failing tests"
 ```
 
-The wrapper starts the corresponding server automatically and then connects a client inside the same container. The current Git repository root is the default workspace boundary. Outside a Git repository, the current directory is used.
-
-Server controls are available through either launcher:
+Server controls remain unchanged:
 
 ```bash
-oc server status
-oc server logs
-oc server restart
-oc server stop
-
 oc2 server status
 oc2 server logs
 oc2 server restart
 oc2 server stop
 ```
 
-Open an interactive shell in the runtime with:
+`server status` also reports the dedicated DinD service.
+
+Open a shell in the normal persistent runtime with:
 
 ```bash
 oc2 shell
 ```
 
-Toolkit memory commands also execute inside the runtime while using the shared toolkit data/state directories:
+Memory commands continue to work normally:
 
 ```bash
 oc2 memory status
 oc2 memory sync
 ```
 
-## Connecting with a native client
+## Managed task usage
 
-The servers are published on loopback, so a native client can connect if one happens to be installed on the host:
+A managed run is intentionally explicit and V2-only:
 
 ```bash
-opencode attach http://127.0.0.1:4095 --dir "$PWD"
-opencode2 --server http://127.0.0.1:4096
+export OAT_GITHUB_TOKEN='...'
+oc2 task --repo owner/repository --approved -- "fix the failing tests"
 ```
 
-A host installation is optional; the `oc` and `oc2` wrappers already run their clients from inside the image.
+Optional controls:
 
-The native client must reference a path visible to the running server. If you regularly switch repositories while keeping the same server alive, set a broader `OAT_WORKSPACE_ROOT` such as `$HOME/Projects`.
+```bash
+oc2 task \
+  --repo owner/repository \
+  --base main \
+  --title "fix: repair failing tests" \
+  --approved \
+  -- "fix the failing tests"
+```
 
-## Workspace scope
+`--approved` is required because this path is non-interactive. It represents explicit root approval for the requested execution scope and disables the normal plan pause **only inside that managed run**. Material scope broadening remains forbidden by the orchestrator contract.
 
-By default only the current Git repository is exposed read/write. Switching to a repository outside the current bind causes Compose to recreate the service with the new workspace mount, while the OpenCode home volume keeps its persistent state.
+The run is not considered complete merely because files changed. Success requires the worker to exit successfully and the trusted broker to commit, push the generated `agent/...` branch and create a pull request. If publication fails, the command fails.
 
-To deliberately grant a broader tree and avoid recreating the server when moving between repositories, set an absolute path in `.env.local`:
+## Workspace scope for normal sessions
+
+By default only the current Git repository is exposed read/write. Switching to a repository outside the current bind causes Compose to recreate the affected services while persistent home/DinD volumes retain state.
+
+To deliberately grant a broader tree to normal interactive sessions, set an absolute path in `.env.local`:
 
 ```bash
 OAT_WORKSPACE_ROOT=$HOME/Projects
 ```
 
-Then any invocation whose current directory is under that path can use the same persistent server. This is useful for multi-repository architecture work.
+`oc2 task` ignores `OAT_WORKSPACE_ROOT`; managed projects are always cloned into an ephemeral Docker volume.
 
-## Memory and private plugin repositories
+## Memory
 
-The toolkit data bind mount reuses an existing local memory vault and `opencode-memory-plugin` checkout. This is particularly useful because the default memory plugin repository is private and uses an SSH Git URL.
+Normal sessions continue to use the toolkit's durable memory/plugin directories directly.
 
-The container does **not** receive `~/.ssh` or the host SSH agent. If an existing private checkout cannot be updated, the memory plugin's non-strict mode keeps using the local snapshot. A completely fresh private clone still needs an explicit authentication method; do not solve that by mounting the whole SSH directory into the runtime.
+Managed tasks use a different boundary:
 
-## Docker access and security
+1. toolkit-owned memory/plugin data are copied read-only-from-host into a per-run Docker volume;
+2. the OpenCode worker operates on that disposable snapshot;
+3. candidate capture, when enabled, writes only to the per-run state volume;
+4. after a successful run, `memory-broker` validates candidate filename/fingerprint, JSON shape, kind, confidence and size;
+5. only validated `candidates/*.json` files are merged into the durable quarantine state;
+6. accepted/promoted memory is never mutated automatically by a managed worker.
 
-Mounting the host Docker socket is effectively host-level privilege. An agent that can issue unrestricted Docker commands can create a container that mounts host files regardless of the normal workspace bind mount.
+This preserves project/hats/workstyle context without granting the agent direct write access to durable memory.
 
-For that reason:
+## Docker security model
 
-- keep OpenCode server ports bound to `127.0.0.1`;
-- keep the toolkit permission/approval rules around destructive Docker commands;
-- do not treat the runtime container itself as a security boundary once the Docker socket is mounted;
-- use the existing inner sandbox when a task needs a stronger command boundary and does not require unrestricted host Docker access.
+Normal interactive mode uses a dedicated **rootful** DinD service for compatibility with host bind-mounted source trees. The DinD container is privileged, so it must not be treated as a perfect hostile-code sandbox. The important improvement over Docker-outside-of-Docker is that OpenCode no longer receives the host daemon socket; Docker operations are scoped to the dedicated daemon and the explicitly mounted workspace.
 
-The V1 and V2 homes are intentionally separate so beta V2 state cannot corrupt V1 state.
+Managed tasks use a fresh `docker:29-dind-rootless` daemon. Docker's rootless DinD image still needs a privileged outer container for RootlessKit, but the daemon itself runs as an unprivileged user and receives only ephemeral named volumes. It has no host project bind and no host Docker socket.
+
+Neither mode injects `~/.ssh`, AWS credentials or kubeconfig by default. Model-provider credentials stored in the OpenCode home remain available to the OpenCode process because they are required to use the provider; do not treat the OpenCode process itself as hostile credential isolation.
 
 ## Configuration
 
@@ -123,16 +154,16 @@ Useful settings:
 ```bash
 OAT_RUNTIME=docker
 OAT_RUNTIME_IMAGE=opencode-agent-toolkit:local
+OAT_DIND_IMAGE=docker:29-dind
+OAT_TASK_DIND_IMAGE=docker:29-dind-rootless
+OAT_TASK_HOME_VOLUME=opencode-agent-toolkit-task-home-v2
 OAT_OC_PORT=4095
 OAT_OC2_PORT=4096
 OAT_IMPORT_HOST_AUTH=1
-# OAT_OPENCODE_V1_VERSION=latest
-# OAT_OPENCODE_V2_VERSION=beta
-# OAT_DOCKER_SOCKET=$HOME/.docker/run/docker.sock
 # OAT_WORKSPACE_ROOT=$HOME/Projects
 # OAT_DATA_DIR=$HOME/.local/share/opencode-agent-toolkit
 # OAT_STATE_DIR=$HOME/.local/state/opencode-agent-toolkit
 # OAT_HOST_AUTH_FILE=$HOME/.local/share/opencode/auth.json
 ```
 
-Set `OAT_RUNTIME=host` only to temporarily use the legacy host launcher.
+Set `OAT_RUNTIME=host` only to temporarily use the legacy host launcher. Managed tasks require the Docker runtime.

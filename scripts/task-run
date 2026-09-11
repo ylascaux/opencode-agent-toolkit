@@ -1,0 +1,299 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+REQUESTED_MAJOR="${OPENCODE_MAJOR:-}"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: oc2 task --repo OWNER/REPO [--base BRANCH] [--title TITLE] --approved [--keep] -- PROMPT
+
+Managed tasks use an ephemeral cloned workspace, dedicated rootless DinD, a
+point-in-time memory snapshot, and a Git broker that creates a PR at the end.
+--approved is intentionally required because this non-interactive path executes
+without the normal plan-approval pause.
+EOF
+  exit 2
+}
+
+repo=""
+base="main"
+title=""
+approved=0
+keep=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo)
+      [[ $# -ge 2 ]] || usage
+      repo="$2"
+      shift 2
+      ;;
+    --base)
+      [[ $# -ge 2 ]] || usage
+      base="$2"
+      shift 2
+      ;;
+    --title)
+      [[ $# -ge 2 ]] || usage
+      title="$2"
+      shift 2
+      ;;
+    --approved)
+      approved=1
+      shift
+      ;;
+    --keep)
+      keep=1
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+[[ -n "$repo" ]] || usage
+[[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "Invalid --repo; expected OWNER/REPO" >&2; exit 2; }
+[[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "Invalid --base" >&2; exit 2; }
+[[ "$approved" == 1 ]] || { echo "Managed execution requires explicit --approved" >&2; exit 2; }
+[[ $# -gt 0 ]] || usage
+prompt="$*"
+[[ -n "${prompt//[[:space:]]/}" ]] || usage
+
+[[ -f "$ROOT/.env" ]] || { echo "Missing $ROOT/.env. Run: just install" >&2; exit 1; }
+set -a
+source "$ROOT/.env"
+[[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
+set +a
+# `oc2` selects V2 before this script starts. Do not let the base .env default
+# overwrite that explicit launcher choice.
+if [[ -n "$REQUESTED_MAJOR" ]]; then
+  OPENCODE_MAJOR="$REQUESTED_MAJOR"
+fi
+export OPENCODE_MAJOR
+
+if [[ "${OPENCODE_MAJOR:-2}" != "2" ]]; then
+  echo "Managed tasks currently require OpenCode V2. Use: oc2 task ..." >&2
+  exit 2
+fi
+command -v docker >/dev/null 2>&1 || { echo "Docker is required" >&2; exit 127; }
+docker info >/dev/null 2>&1 || { echo "Docker daemon is not reachable" >&2; exit 3; }
+
+image="${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  echo "Runtime image missing; building $image" >&2
+  bash "$ROOT/scripts/docker-build"
+fi
+
+token="${OAT_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
+[[ -n "$token" ]] || {
+  echo "Managed tasks require OAT_GITHUB_TOKEN or GITHUB_TOKEN for the trusted Git broker." >&2
+  echo "The token is never passed to the OpenCode worker or its leaf agents." >&2
+  exit 2
+}
+
+data_dir="${OAT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode-agent-toolkit}"
+state_dir="${OAT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit}"
+mkdir -p "$data_dir" "$state_dir"
+data_dir="$(cd "$data_dir" && pwd -P)"
+state_dir="$(cd "$state_dir" && pwd -P)"
+
+stamp="$(date -u +%Y%m%d%H%M%S)"
+slug="$(printf '%s' "$prompt" | LC_ALL=C tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-36)"
+[[ -n "$slug" ]] || slug=task
+run_id="${stamp}-$$-${RANDOM}"
+branch="agent/${stamp}-${slug}"
+resource_id="$(printf '%s' "$run_id" | tr -cd 'a-zA-Z0-9_.-')"
+network="oat-task-${resource_id}"
+dind="oat-dind-${resource_id}"
+workspace_volume="oat-workspace-${resource_id}"
+dind_data_volume="oat-dind-data-${resource_id}"
+task_data_volume="oat-task-data-${resource_id}"
+task_state_volume="oat-task-state-${resource_id}"
+task_home_volume="${OAT_TASK_HOME_VOLUME:-opencode-agent-toolkit-task-home-v2}"
+dind_image="${OAT_TASK_DIND_IMAGE:-docker:29-dind-rootless}"
+
+created_network=0
+created_volumes=()
+cleanup() {
+  local rc=$?
+  if [[ "$keep" == 1 ]]; then
+    echo "Managed task resources preserved:" >&2
+    echo "  network=$network" >&2
+    echo "  dind=$dind" >&2
+    echo "  workspace_volume=$workspace_volume" >&2
+    echo "  task_data_volume=$task_data_volume" >&2
+    echo "  task_state_volume=$task_state_volume" >&2
+    return "$rc"
+  fi
+  docker rm -f "$dind" >/dev/null 2>&1 || true
+  for volume in "${created_volumes[@]:-}"; do
+    [[ -n "$volume" ]] && docker volume rm -f "$volume" >/dev/null 2>&1 || true
+  done
+  [[ "$created_network" == 1 ]] && docker network rm "$network" >/dev/null 2>&1 || true
+  return "$rc"
+}
+trap cleanup EXIT INT TERM
+
+create_volume() {
+  docker volume create "$1" >/dev/null
+  created_volumes+=("$1")
+}
+
+docker network create "$network" >/dev/null
+created_network=1
+create_volume "$workspace_volume"
+create_volume "$dind_data_volume"
+create_volume "$task_data_volume"
+create_volume "$task_state_volume"
+docker volume create "$task_home_volume" >/dev/null
+
+# Snapshot toolkit-owned memory/plugin data into a per-run volume. The worker
+# never receives the durable host memory directory directly.
+docker run --rm \
+  --mount "type=bind,src=$data_dir,dst=/source,readonly" \
+  --mount "type=volume,src=$task_data_volume,dst=/target" \
+  --entrypoint bash "$image" -lc 'cp -a /source/. /target/'
+
+# Reuse an existing OpenCode login without mounting the host home into the task.
+host_auth="${OAT_HOST_AUTH_FILE:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json}"
+if [[ "${OAT_IMPORT_HOST_AUTH:-1}" == 1 && -f "$host_auth" ]]; then
+  if ! docker run --rm --mount "type=volume,src=$task_home_volume,dst=/root" --entrypoint bash "$image" \
+      -lc 'test -s /root/.local/share/opencode/auth.json' >/dev/null 2>&1; then
+    docker run --rm \
+      --mount "type=volume,src=$task_home_volume,dst=/root" \
+      --mount "type=bind,src=$host_auth,dst=/tmp/opencode-auth.json,readonly" \
+      --entrypoint bash "$image" -lc \
+      'mkdir -p /root/.local/share/opencode && cp /tmp/opencode-auth.json /root/.local/share/opencode/auth.json && chmod 600 /root/.local/share/opencode/auth.json'
+  fi
+fi
+
+# Clone is performed by a short-lived trusted broker. The GitHub token exists in
+# this container only; the worker cannot inspect it through its environment.
+docker run --rm --network "$network" \
+  --mount "type=volume,src=$workspace_volume,dst=/workspace" \
+  -e OAT_GITHUB_TOKEN="$token" \
+  -e OAT_TASK_REPO="$repo" \
+  -e OAT_TASK_BASE="$base" \
+  -e OAT_TASK_BRANCH="$branch" \
+  --entrypoint bash "$image" /opt/oat/scripts/workspace-broker clone
+
+# Use the same rootless DinD startup and readiness checks as the CI smoke test.
+# Host policy changes are never performed automatically by this launcher.
+bash "$ROOT/scripts/task-dind" "$dind" "$network" "$workspace_volume" \
+  "$dind_data_volume" "$dind_image" "$image"
+
+worker_env=()
+while IFS='=' read -r key _; do
+  case "$key" in
+    MODEL_*|RELIABILITY_PROFILE|MAX_PARALLEL_*|MAX_SAME_ERROR|MAX_PROVIDER_RETRIES|MAX_SUBAGENT_RETRIES|MAX_STEPS_*|SUBAGENT_*|OPENCODE_PREFLIGHT*|OPENCODE_EXPERIMENTAL_*|OAT_MEMORY_*)
+      worker_env+=(--env "$key")
+      ;;
+  esac
+done < <(env)
+
+memory_project="${OAT_MEMORY_PROJECT:-${repo##*/}}"
+managed_prompt=$(cat <<EOF
+[MANAGED_TASK_ROOT_APPROVED]
+This is an isolated managed task explicitly approved by the root user through --approved.
+Work only inside /workspace. Do not push, create branches, create pull requests, or obtain Git credentials; the trusted workspace broker owns publication. Use the dedicated Docker daemon through DOCKER_HOST when Docker is needed. Complete implementation, tests, independent review, and relevant security gates before returning success.
+
+Original request:
+$prompt
+EOF
+)
+
+# No GitHub token, host Docker socket, host project, SSH directory, AWS config or
+# kubeconfig is mounted or injected into this worker.
+set +e
+docker run --rm --network "$network" --workdir /workspace \
+  --mount "type=volume,src=$workspace_volume,dst=/workspace" \
+  --mount "type=volume,src=$task_home_volume,dst=/root" \
+  --mount "type=volume,src=$task_data_volume,dst=/root/.local/share/opencode-agent-toolkit" \
+  --mount "type=volume,src=$task_state_volume,dst=/root/.local/state/opencode-agent-toolkit" \
+  "${worker_env[@]}" \
+  -e OAT_RUNTIME=container \
+  -e OPENCODE_MAJOR=2 \
+  -e OPENCODE_CONFIG=/opt/oat/opencode.v2.jsonc \
+  -e OAT_MANAGED_TASK=1 \
+  -e OAT_TASK_REPO="$repo" \
+  -e OAT_TASK_BASE="$base" \
+  -e OAT_TASK_BRANCH="$branch" \
+  -e OAT_MEMORY_PROJECT="$memory_project" \
+  -e OAT_MEMORY_DIR=/root/.local/share/opencode-agent-toolkit/memory \
+  -e OAT_MEMORY_PLUGIN_DIR=/root/.local/share/opencode-agent-toolkit/plugins/opencode-memory-plugin \
+  -e OAT_MEMORY_CANDIDATE_DIR=/root/.local/state/opencode-agent-toolkit/memory \
+  -e OAT_MEMORY_AUTO_SYNC=0 \
+  -e OAT_MEMORY_PLUGIN_AUTO_SYNC=0 \
+  -e PLAN_APPROVAL_MODE=off \
+  -e DOCKER_HOST=tcp://docker-agent:2375 \
+  --entrypoint bash "$image" -lc '
+    set -euo pipefail
+    umask 0000
+    cd /opt/oat
+    python3 ./scripts/generate-config >/dev/null
+    python3 ./scripts/apply-memory >/dev/null
+    python3 ./scripts/apply-reliability >/dev/null
+    bash ./scripts/preflight
+    cd /workspace
+    exec opencode2 --standalone run --agent orchestrator "$1"
+  ' managed-task "$managed_prompt"
+worker_status=$?
+set -e
+
+if [[ "$worker_status" -ne 0 ]]; then
+  echo "Managed task failed in the OpenCode worker; no branch was pushed and no PR was created." >&2
+  exit "$worker_status"
+fi
+
+# Only validated quarantine candidates cross back into durable memory state. The
+# worker never gets a writable mount of the durable memory vault or state tree.
+docker run --rm \
+  --mount "type=volume,src=$task_state_volume,dst=/task-state,readonly" \
+  --mount "type=bind,src=$state_dir,dst=/host-state" \
+  --entrypoint python3 "$image" /opt/oat/scripts/memory-broker collect /task-state /host-state
+
+clean_title="$(printf '%s' "${title:-agent: $prompt}" | tr '\r\n' '  ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' | cut -c1-120)"
+[[ -n "$clean_title" ]] || clean_title="agent: managed task"
+pr_body=$(cat <<EOF
+## Managed task
+
+- Repository: \`$repo\`
+- Base: \`$base\`
+- Branch: \`$branch\`
+- Runtime: isolated ephemeral workspace + dedicated rootless DinD
+- Git publication: trusted broker; GitHub credentials were not exposed to the OpenCode worker
+
+## Request
+
+$prompt
+
+## Delivery
+
+The orchestrator completed its implementation/validation path before this PR was published. The workspace and DinD state are ephemeral and are removed after successful publication unless \`--keep\` is used.
+EOF
+)
+
+publish_output="$(docker run --rm --network "$network" \
+  --mount "type=volume,src=$workspace_volume,dst=/workspace" \
+  -e OAT_GITHUB_TOKEN="$token" \
+  -e OAT_TASK_REPO="$repo" \
+  -e OAT_TASK_BASE="$base" \
+  -e OAT_TASK_BRANCH="$branch" \
+  -e OAT_TASK_PR_TITLE="$clean_title" \
+  -e OAT_TASK_PR_BODY="$pr_body" \
+  --entrypoint bash "$image" /opt/oat/scripts/workspace-broker publish)"
+printf '%s\n' "$publish_output"
+
+pr_url="$(printf '%s\n' "$publish_output" | sed -n 's/^OAT_PR_URL=//p' | tail -n 1)"
+[[ -n "$pr_url" ]] || { echo "Managed task did not produce a PR URL" >&2; exit 4; }
+
+echo "Managed task complete: $pr_url"

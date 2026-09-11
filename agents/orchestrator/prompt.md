@@ -15,6 +15,17 @@ For implementation, fix, migration, or any task that can mutate state, treat pla
 
 If the runtime blocks a tool with the plan-approval gate, do not retry around it. Convert the blocked attempt into a plan or revised plan and return it to the parent/root for approval.
 
+## Managed isolated delivery
+A root prompt beginning with `[MANAGED_TASK_ROOT_APPROVED]` is a special non-interactive delivery contract. The launcher only emits this marker after the root user explicitly supplied `--approved`; treat the following request as the approved execution scope and do not pause for the normal plan-approval round trip. Still plan internally, keep scope minimal, and stop rather than broadening the request materially.
+
+For a managed task:
+- Work only in the provided `/workspace` clone. Treat it as disposable task state rather than the user's host checkout.
+- Never fetch credentials, push Git refs, modify remotes, create a pull request, merge, or operate on protected branches. A trusted workspace broker performs clone/push/PR publication after this process exits successfully.
+- Docker commands target the task's dedicated daemon through `DOCKER_HOST`; never attempt to discover or access the host Docker socket.
+- Memory is a point-in-time task snapshot. Do not try to update the durable memory repository directly. If capture is enabled, emit ordinary memory candidates only; a trusted broker decides which validated candidate files may cross back into durable quarantine state.
+- Require implementation evidence, relevant tests, independent review, and security gates matching the changed attack surface before returning success. A successful agent response means the workspace is ready for publication; it does **not** mean a PR already exists.
+- Do not claim a PR number or URL. The outer launcher considers the overall task complete only after the broker has successfully created the PR.
+
 ## Delivery policy
 Use leaf agents directly; do not delegate to `review-lead`, `security-lead`, or `platform-architect`, because that would create an unnecessary third level when the orchestrator itself is already a child of the meta-router. For behavioral implementation, the normal order is discovery/plan if needed -> user approval -> implementation specialist -> tester -> independent reviewer -> relevant security leaves -> evidence audit when risk/uncertainty warrants it.
 

@@ -21,6 +21,10 @@ if ! docker compose version >/dev/null 2>&1; then
   echo "Docker Compose v2 is required (docker compose)" >&2
   exit 127
 fi
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker daemon is not reachable from the host" >&2
+  exit 3
+fi
 
 major="${OPENCODE_MAJOR:-1}"
 [[ "$major" == auto ]] && major=2
@@ -63,26 +67,9 @@ case "$cwd/" in
     ;;
 esac
 
-if [[ -n "${OAT_DOCKER_SOCKET:-}" ]]; then
-  docker_socket="$OAT_DOCKER_SOCKET"
-elif [[ "${DOCKER_HOST:-}" == unix://* ]]; then
-  docker_socket="${DOCKER_HOST#unix://}"
-elif [[ -S /var/run/docker.sock ]]; then
-  docker_socket=/var/run/docker.sock
-elif [[ -S "$HOME/.docker/run/docker.sock" ]]; then
-  docker_socket="$HOME/.docker/run/docker.sock"
-else
-  echo "Docker socket not found. Set OAT_DOCKER_SOCKET explicitly." >&2
-  exit 2
-fi
-
-if [[ ! -S "$docker_socket" ]]; then
-  echo "Docker socket is not a Unix socket: $docker_socket" >&2
-  exit 2
-fi
-
-# Persistent toolkit-owned data/state is shared by OC/OC2 while the rest of the
-# host home remains outside the runtime.
+# Persistent toolkit-owned data/state is shared by normal OC/OC2 sessions while
+# the rest of the host home remains outside the runtime. Docker itself is now a
+# dedicated DinD service and the host Docker socket is never mounted in OC/OC2.
 data_dir="${OAT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode-agent-toolkit}"
 state_dir="${OAT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit}"
 mkdir -p "$data_dir" "$state_dir"
@@ -90,7 +77,6 @@ data_dir="$(cd "$data_dir" && pwd -P)"
 state_dir="$(cd "$state_dir" && pwd -P)"
 
 export OAT_WORKSPACE_ROOT="$workspace_root"
-export OAT_DOCKER_SOCKET="$docker_socket"
 export OAT_DATA_DIR="$data_dir"
 export OAT_STATE_DIR="$state_dir"
 export OAT_RUNTIME_IMAGE="${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
@@ -103,12 +89,14 @@ ensure_server() {
     "${compose[@]}" build "$service"
   fi
 
+  # depends_on starts docker-agent first and waits for its healthcheck.
   "${compose[@]}" up -d "$service" >/dev/null
 
   local cid health i
   cid="$("${compose[@]}" ps -q "$service")"
   [[ -n "$cid" ]] || {
     echo "Failed to start $service" >&2
+    "${compose[@]}" logs --tail=80 docker-agent "$service" >&2 || true
     exit 3
   }
 
@@ -118,7 +106,7 @@ ensure_server() {
       healthy|running) return 0 ;;
       unhealthy|exited|dead)
         echo "$service failed to become healthy (state: $health)" >&2
-        "${compose[@]}" logs --tail=80 "$service" >&2 || true
+        "${compose[@]}" logs --tail=80 docker-agent "$service" >&2 || true
         exit 3
         ;;
     esac
@@ -126,7 +114,7 @@ ensure_server() {
   done
 
   echo "Timed out waiting for $service" >&2
-  "${compose[@]}" logs --tail=80 "$service" >&2 || true
+  "${compose[@]}" logs --tail=80 docker-agent "$service" >&2 || true
   exit 3
 }
 
@@ -162,13 +150,14 @@ server_control() {
     status)
       ensure_server
       import_host_auth
-      "${compose[@]}" ps "$service"
+      "${compose[@]}" ps docker-agent "$service"
       printf '%s server: http://127.0.0.1:%s\n' "$bin" "$host_port"
+      printf 'Docker: dedicated DinD service (host docker.sock not mounted)\n'
       ;;
     logs)
       ensure_server
       import_host_auth
-      exec "${compose[@]}" logs -f "$service"
+      exec "${compose[@]}" logs -f docker-agent "$service"
       ;;
     stop|down)
       "${compose[@]}" stop "$service"
