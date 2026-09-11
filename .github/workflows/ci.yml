@@ -82,7 +82,9 @@ jobs:
           OAT_RUNTIME_IMAGE: opencode-agent-toolkit:ci
           OAT_WORKSPACE_ROOT: ${{ github.workspace }}
           OAT_DOCKER_SOCKET: /var/run/docker.sock
+          OAT_DATA_DIR: ${{ runner.temp }}/oat-data
         run: |
+          mkdir -p "$OAT_DATA_DIR"
           cp .env.example .env
           docker compose -f compose.yaml config >/dev/null
 
