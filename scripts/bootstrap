@@ -11,11 +11,6 @@ elif [[ $# -gt 0 ]]; then
   exit 2
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Missing required command: python3" >&2
-  exit 127
-fi
-
 if [[ ! -f .env ]]; then
   cp .env.example .env
   echo "Created .env from .env.example (Copilot LOW/MEDIUM/HIGH profile)"
@@ -48,6 +43,54 @@ else
   fi
 fi
 
+set -a
+source .env
+[[ -f .env.local ]] && source .env.local
+set +a
+
+# Docker is the default runtime. Nothing beyond Docker/Bash/Just is installed on
+# the host: Python, Node, OpenCode, plugin dependencies and Nix live in the image.
+if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Missing required command: docker" >&2
+    exit 127
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose v2 is required (docker compose)" >&2
+    exit 127
+  fi
+
+  build_args=()
+  [[ $refresh -eq 1 ]] && build_args+=(--refresh)
+  bash ./scripts/docker-build "${build_args[@]}"
+
+  echo
+  echo "Setup complete (Docker runtime)."
+  echo "Host installs are limited to Docker and the optional Just wrapper."
+  echo "Recommended next steps:"
+  echo "  just install-user   # ~/.local/bin/oc"
+  echo "  just install-oc2    # ~/.local/bin/oc2"
+  echo "  just oc2-up         # optional; launch V2 server now"
+  echo "  oc2                 # auto-start server and attach TUI"
+  echo "  oc2 run '...'       # run through the persistent V2 server"
+  echo "  oc2 server status   # show server status and URL"
+  echo
+  echo "Security note: the runtime receives the host Docker socket by design."
+  echo "Treat Docker access as host-equivalent privilege."
+
+  if ! command -v just >/dev/null 2>&1; then
+    echo "Note: 'just' is recommended for the friendly command interface."
+    [[ "$(uname -s)" == "Darwin" ]] && echo "macOS: brew install just"
+  fi
+  exit 0
+fi
+
+# Legacy host runtime. Kept for rollback/debugging with OAT_RUNTIME=host.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Missing required command: python3" >&2
+  exit 127
+fi
+
 if [[ ! -d .venv || $refresh -eq 1 ]]; then
   [[ $refresh -eq 1 ]] && rm -rf .venv
   python3 -m venv .venv
@@ -74,13 +117,6 @@ if [[ -f package.json ]]; then
   echo "Installed OpenCode plugin dependencies"
 fi
 
-# Reliability overrides must be loaded before generated configs are capped so
-# `just install` and `oc` produce the same effective runtime configuration.
-set -a
-source .env
-[[ -f .env.local ]] && source .env.local
-set +a
-
 python3 ./scripts/generate-config >/dev/null
 python3 ./scripts/apply-reliability >/dev/null
 python3 -m json.tool opencode.jsonc >/dev/null
@@ -98,22 +134,15 @@ case "$major" in
   *) expected="opencode"; echo "Warning: OPENCODE_MAJOR must be 1, 2, or auto (got: $major)" >&2 ;;
 esac
 
-printf '\nSetup complete.\n'
+printf '\nSetup complete (legacy host runtime).\n'
 echo "Reliability policy was applied to generated OpenCode configs."
 echo "Recommended next steps:"
-echo "  just reliability    # inspect effective watchdog/concurrency/step limits"
-echo "  just models         # inspect LOW/MEDIUM/HIGH and effective agent mappings"
+echo "  just reliability"
+echo "  just models"
 echo "  just doctor"
-echo "  just install-user   # optional: create ~/.local/bin/oc for use from any workspace"
-echo "  just run            # alternatively run directly from this repository"
-echo "  just profile codex  # optional: switch to the personal Codex profile"
-
-if ! command -v just >/dev/null 2>&1; then
-  echo "Note: 'just' is recommended for the friendly command interface."
-  [[ "$(uname -s)" == "Darwin" ]] && echo "macOS: brew install just"
-fi
+echo "  just install-user"
+echo "  just run"
 
 if ! command -v "$expected" >/dev/null 2>&1; then
   echo "Warning: selected OpenCode binary is not installed/found: $expected" >&2
-  [[ "$major" == "2" ]] && echo "OpenCode 2 beta: npm install -g @opencode-ai/cli@beta" >&2
 fi
