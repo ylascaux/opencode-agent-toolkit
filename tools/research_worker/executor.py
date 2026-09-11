@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from .contracts import ExternalResearchJob, ResearchOutput, build_toolkit_job, validate_research_output
 from .settings import WorkerSettings
 
+ROOT = Path(__file__).resolve().parents[2]
 MAX_STDOUT_BYTES = 2 * 1024 * 1024
 MAX_STDERR_CHARS = 4000
 RESULT_MARKER = "OAT_RESEARCH_RESULT:"
@@ -85,12 +88,16 @@ class OpenCodeExecutor:
             "--agent",
             "research-runner",
             "--title",
-            f"research:{job.job_id}",
+            f"research:{job.job_id[:120]}",
             prompt,
         ]
+        env = os.environ.copy()
+        env["OPENCODE_MAJOR"] = self.settings.opencode_major
         try:
             completed = subprocess.run(
                 command,
+                cwd=ROOT,
+                env=env,
                 capture_output=True,
                 text=True,
                 timeout=self.settings.execution_timeout_seconds,
@@ -102,6 +109,7 @@ class OpenCodeExecutor:
             raise ResearchExecutionError(f"Unable to start OpenCode: {error}") from error
 
         if completed.returncode != 0:
-            stderr = completed.stderr[-MAX_STDERR_CHARS:].replace(self.settings.api_token, "[redacted]")
+            stderr = (completed.stderr or completed.stdout or "OpenCode run failed")[-MAX_STDERR_CHARS:]
+            stderr = stderr.replace(self.settings.api_token, "[redacted]")
             raise ResearchExecutionError(f"OpenCode exited with {completed.returncode}: {stderr}")
         return parse_marked_result(completed.stdout)
