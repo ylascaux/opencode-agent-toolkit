@@ -38,6 +38,10 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
     echo "[fail] compose      Docker Compose v2 is required"
     exit 1
   fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "[fail] daemon       host Docker daemon is not reachable"
+    exit 1
+  fi
   echo "[ok]   compose      $(docker compose version --short 2>/dev/null || docker compose version)"
 
   image="${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
@@ -46,6 +50,24 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
     exit 1
   fi
   echo "[ok]   image        $image"
+
+  if grep -q '/var/run/docker.sock' compose.yaml; then
+    echo "[fail] Docker       compose.yaml exposes the host Docker socket"
+    ok=0
+  else
+    echo "[ok]   Docker       host socket not mounted; dedicated DinD configured"
+  fi
+
+  doctor_data="${OAT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode-agent-toolkit}"
+  doctor_state="${OAT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit}"
+  mkdir -p "$doctor_data" "$doctor_state"
+  if OAT_WORKSPACE_ROOT="$ROOT" OAT_DATA_DIR="$doctor_data" OAT_STATE_DIR="$doctor_state" \
+      docker compose -f compose.yaml config >/dev/null 2>&1; then
+    echo "[ok]   runtime cfg   persistent servers + DinD compose valid"
+  else
+    echo "[fail] runtime cfg   docker compose configuration is invalid"
+    ok=0
+  fi
 
   if docker run --rm --entrypoint bash "$image" -lc '
       set -euo pipefail
@@ -59,6 +81,10 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
       command -v npm >/dev/null
       command -v nix >/dev/null
       command -v docker >/dev/null
+      test -f ./scripts/task-run
+      test -f ./scripts/workspace-broker
+      test -f ./scripts/memory-broker
+      bash -n ./scripts/task-run ./scripts/workspace-broker ./scripts/docker-runtime ./scripts/opencode-agents
       python3 ./scripts/generate-config >/dev/null
       python3 ./scripts/apply-reliability >/dev/null
       python3 -m json.tool opencode.jsonc >/dev/null
@@ -66,7 +92,7 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
       python3 -m unittest discover -s tests >/dev/null
       node --test tests/*.test.mjs >/dev/null
     '; then
-    echo "[ok]   container    CLIs, configs and tests valid"
+    echo "[ok]   container    CLIs, managed-task brokers, configs and tests valid"
   else
     echo "[fail] container    runtime validation failed"
     ok=0
@@ -77,7 +103,8 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
   echo "[info] runtime      docker (host Python/Node/OpenCode not required)"
   echo "[info] V1 server    http://127.0.0.1:${OAT_OC_PORT:-4095}"
   echo "[info] V2 server    http://127.0.0.1:${OAT_OC2_PORT:-4096}"
-  echo "[warn] Docker sock  runtime has host-equivalent Docker access by design"
+  echo "[info] Docker       normal sessions -> ${OAT_DIND_IMAGE:-docker:29-dind}"
+  echo "[info] managed      oc2 task -> ${OAT_TASK_DIND_IMAGE:-docker:29-dind-rootless}, ephemeral workspace, brokered PR"
   exit $((1-ok))
 fi
 
