@@ -13,8 +13,16 @@ from memory_plugin import PluginSettings, cli_command, ensure_plugin
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _settings_path() -> Path:
+    runtime_path = os.getenv("OAT_RUNTIME_ENV_FILE", "").strip()
+    if os.getenv("OAT_RUNTIME", "").strip().lower() == "container" and runtime_path:
+        return Path(runtime_path).expanduser()
+    return ROOT / ".env.local"
+
+
 def _write_env_local(updates: dict[str, str]) -> None:
-    path = ROOT / ".env.local"
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     lines = path.read_text().splitlines() if path.exists() else []
     pending = dict(updates)
     output: list[str] = []
@@ -30,6 +38,10 @@ def _write_env_local(updates: dict[str, str]) -> None:
     for key, value in pending.items():
         output.append(f"{key}={shlex.quote(value)}")
     path.write_text("\n".join(output).rstrip() + "\n")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def _apply_updates(updates: dict[str, str]) -> None:
@@ -63,6 +75,7 @@ def cmd_status(_args: argparse.Namespace) -> int:
     print(f"plugin_repo={settings.repo}")
     print(f"plugin_ref={settings.ref}")
     print(f"plugin_dir={settings.directory}")
+    print(f"settings_file={_settings_path()}")
     if os.getenv("OAT_MEMORY_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
         print("memory=off")
         return 0
