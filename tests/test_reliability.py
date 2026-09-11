@@ -72,7 +72,7 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertLessEqual(v2["agents"]["orchestrator"]["steps"], 16)
         self.assertIn("./runtime/plugins/reliability-v1.js", v1["plugin"])
         self.assertIn("./runtime/plugins/reliability-v2.ts", v2["plugins"])
-        self.assertIn("./plugins/reliability-approval", v2["plugins"])
+        self.assertNotIn("./plugins/reliability-approval", v2["plugins"])
         self.assertFalse((ROOT / ".opencode" / "plugins").exists())
 
     def test_every_agent_can_websearch_webfetch_and_use_read_only_git_v1(self):
@@ -122,8 +122,8 @@ class ReliabilityPolicyTests(unittest.TestCase):
             text = (GENERATED_PROMPTS / f"{name}.md").read_text().lower()
             for needle in [
                 "## reliability and child supervision", "runtime slot", "waiting_permission is not stalled",
-                "waiting_on_child", "stall_suspected", "user explicitly approves", "retry only that failed child",
-                "task_id", "checkpoint",
+                "waiting_on_child", "stall_suspected", "approval-based watchdog killing is temporarily disabled",
+                "retry only that failed child", "task_id", "checkpoint",
             ]:
                 self.assertIn(needle, text, f"{name}: {needle}")
 

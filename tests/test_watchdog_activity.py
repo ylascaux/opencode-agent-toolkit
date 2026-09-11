@@ -20,7 +20,20 @@ class WatchdogActivityTests(unittest.TestCase):
             ]:
                 self.assertIn(needle, text, f"{relative}: {needle}")
 
-    def test_v2_approval_plugin_requires_explicit_user_decision(self):
+    def test_v2_kill_approval_plugin_is_temporarily_disabled(self):
+        apply_reliability = (ROOT / "scripts" / "apply-reliability").read_text()
+
+        self.assertIn('approval_plugin = "./plugins/reliability-approval"', apply_reliability)
+        self.assertIn(
+            "plugins[:] = [plugin for plugin in plugins if plugin != approval_plugin]",
+            apply_reliability,
+        )
+        self.assertIn(
+            "approval-based watchdog killing is temporarily disabled",
+            apply_reliability,
+        )
+
+    def test_dormant_v2_approval_plugin_requires_explicit_user_decision(self):
         server = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
         tui = (ROOT / "plugins" / "reliability-approval" / "tui.ts").read_text()
         rpc = (ROOT / "plugins" / "reliability-approval" / "rpc.ts").read_text()
