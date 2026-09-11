@@ -33,6 +33,23 @@ class WatchdogActivityTests(unittest.TestCase):
             apply_reliability,
         )
 
+    def test_preflight_requires_v2_kill_approval_to_stay_disabled(self):
+        preflight = (ROOT / "scripts" / "preflight").read_text()
+
+        self.assertIn(
+            'raise SystemExit(0 if "./plugins/reliability-approval" not in config.get("plugins", []) else 1)',
+            preflight,
+        )
+        self.assertIn(
+            'ok "V2 watchdog kill-approval plugin intentionally disabled"',
+            preflight,
+        )
+        self.assertIn(
+            'error "V2 watchdog kill-approval plugin is unexpectedly wired in selected config"',
+            preflight,
+        )
+        self.assertNotIn('ok "V2 approval plugin wired in selected config"', preflight)
+
     def test_dormant_v2_approval_plugin_requires_explicit_user_decision(self):
         server = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
         tui = (ROOT / "plugins" / "reliability-approval" / "tui.ts").read_text()
