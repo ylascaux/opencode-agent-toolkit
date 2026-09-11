@@ -16,5 +16,6 @@ Recommended reading order:
 12. [SANDBOX.md](./SANDBOX.md) — disposable development sandbox and manual AWS/Kubernetes diagnostics
 13. [PROJECT_DISCOVERY.md](./PROJECT_DISCOVERY.md) — multi-repository project discovery
 14. [RESEARCH_PIPELINE.md](./RESEARCH_PIPELINE.md) — generic external research agents, contracts and escalation
-15. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
-16. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details
+15. [RESEARCH_WORKER.md](./RESEARCH_WORKER.md) — authenticated HTTPS pull worker for external research queues
+16. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
+17. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details
