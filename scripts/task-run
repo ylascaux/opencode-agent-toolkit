@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+REQUESTED_MAJOR="${OPENCODE_MAJOR:-}"
 
 usage() {
   cat >&2 <<'EOF'
@@ -72,6 +73,12 @@ set -a
 source "$ROOT/.env"
 [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
 set +a
+# `oc2` selects V2 before this script starts. Do not let the base .env default
+# overwrite that explicit launcher choice.
+if [[ -n "$REQUESTED_MAJOR" ]]; then
+  OPENCODE_MAJOR="$REQUESTED_MAJOR"
+fi
+export OPENCODE_MAJOR
 
 if [[ "${OPENCODE_MAJOR:-2}" != "2" ]]; then
   echo "Managed tasks currently require OpenCode V2. Use: oc2 task ..." >&2
@@ -205,6 +212,19 @@ for _ in $(seq 1 60); do
 done
 [[ "$ready" == 1 ]] || { docker logs "$dind" >&2 || true; echo "Timed out waiting for managed DinD" >&2; exit 3; }
 
+# RootlessKit has a separate TCP forwarding layer. Validate the exact endpoint
+# the OpenCode worker will use, not only the daemon's internal Unix socket.
+remote_ready=0
+for _ in $(seq 1 20); do
+  if docker run --rm --network "$network" -e DOCKER_HOST=tcp://docker-agent:2375 \
+      --entrypoint docker "$image" info >/dev/null 2>&1; then
+    remote_ready=1
+    break
+  fi
+  sleep 1
+done
+[[ "$remote_ready" == 1 ]] || { docker logs "$dind" >&2 || true; echo "Managed DinD TCP endpoint is not reachable" >&2; exit 3; }
+
 worker_env=()
 while IFS='=' read -r key _; do
   case "$key" in
@@ -242,6 +262,9 @@ docker run --rm --network "$network" --workdir /workspace \
   -e OAT_TASK_BASE="$base" \
   -e OAT_TASK_BRANCH="$branch" \
   -e OAT_MEMORY_PROJECT="$memory_project" \
+  -e OAT_MEMORY_DIR=/root/.local/share/opencode-agent-toolkit/memory \
+  -e OAT_MEMORY_PLUGIN_DIR=/root/.local/share/opencode-agent-toolkit/plugins/opencode-memory-plugin \
+  -e OAT_MEMORY_CANDIDATE_DIR=/root/.local/state/opencode-agent-toolkit/memory \
   -e OAT_MEMORY_AUTO_SYNC=0 \
   -e OAT_MEMORY_PLUGIN_AUTO_SYNC=0 \
   -e PLAN_APPROVAL_MODE=off \
