@@ -77,16 +77,41 @@ jobs:
             python3 -m unittest discover -s tests -v
             node --test tests/*.test.mjs
           '
-      - name: Validate Compose model
+      - name: Validate and start both persistent servers
         env:
           OAT_RUNTIME_IMAGE: opencode-agent-toolkit:ci
           OAT_WORKSPACE_ROOT: ${{ github.workspace }}
           OAT_DOCKER_SOCKET: /var/run/docker.sock
           OAT_DATA_DIR: ${{ runner.temp }}/oat-data
         run: |
+          set -euo pipefail
           mkdir -p "$OAT_DATA_DIR"
           cp .env.example .env
           docker compose -f compose.yaml config >/dev/null
+          trap 'docker compose -f compose.yaml down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
+          docker compose -f compose.yaml up -d --no-build oc-server oc2-server
+
+          for service in oc-server oc2-server; do
+            cid="$(docker compose -f compose.yaml ps -q "$service")"
+            test -n "$cid"
+            healthy=0
+            for _ in $(seq 1 30); do
+              status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")"
+              if [ "$status" = healthy ]; then
+                healthy=1
+                break
+              fi
+              if [ "$status" = unhealthy ] || [ "$status" = exited ] || [ "$status" = dead ]; then
+                docker compose -f compose.yaml logs "$service"
+                exit 1
+              fi
+              sleep 1
+            done
+            test "$healthy" = 1
+          done
+
+          docker compose -f compose.yaml exec -T oc-server opencode --version
+          docker compose -f compose.yaml exec -T oc2-server opencode2 --version
 
   sandbox:
     runs-on: ubuntu-latest
