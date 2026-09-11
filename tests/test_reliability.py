@@ -143,7 +143,14 @@ class ReliabilityPolicyTests(unittest.TestCase):
 
     def test_shared_runtime_core_contains_terminal_and_delegation_retry_policy(self):
         text = (RUNTIME / "reliability-core.js").read_text()
-        for needle in ["terminal", "retry", "MAX_SAME_ERROR", "MAX_SUBAGENT_RETRIES"]:
+        for needle in [
+            "[400, 401, 403, 404]",
+            "createCallIdTracker",
+            "createProgressAwareRepeatDetector",
+            "delegationFailureClass",
+            "delegationTaskKey",
+            "task cancel",
+        ]:
             self.assertIn(needle, text)
 
     def test_legacy_v1_watchdog_keeps_runtime_guards_for_compatibility(self):
