@@ -39,6 +39,13 @@ class ManagedTaskIsolationTests(unittest.TestCase):
         self.assertLess(restore, major_select)
         self.assertIn("export OPENCODE_MAJOR", runtime[restore:major_select])
 
+    def test_oc2_oauth_callback_is_loopback_only(self):
+        compose = (ROOT / "compose.yaml").read_text()
+        env = (ROOT / ".env.example").read_text()
+        self.assertIn('127.0.0.1:${OAT_OC2_OAUTH_PORT:-1455}:1455', compose)
+        self.assertNotIn('0.0.0.0:${OAT_OC2_OAUTH_PORT:-1455}:1455', compose)
+        self.assertIn("OAT_OC2_OAUTH_PORT=1455", env)
+
     def test_managed_task_requires_explicit_approval_and_rootless_dind(self):
         script = (ROOT / "scripts" / "task-run").read_text()
         self.assertIn("Managed execution requires explicit --approved", script)
