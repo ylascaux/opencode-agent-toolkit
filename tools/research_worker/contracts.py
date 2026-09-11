@@ -6,13 +6,19 @@ from typing import Any
 
 FORBIDDEN_CONTROL_KEYS = {
     "agent",
+    "attach",
     "callback_url",
     "command",
     "local_path",
     "model",
+    "opencode",
+    "opencode_config",
     "prompt",
     "provider",
+    "reasoning",
+    "reasoning_effort",
     "repository_path",
+    "server",
     "shell",
     "temperature",
     "thinking",
@@ -77,10 +83,19 @@ def _dict(value: Any, field: str) -> dict[str, Any]:
     return value
 
 
-def _reject_remote_controls(payload: dict[str, Any]) -> None:
-    present = sorted(FORBIDDEN_CONTROL_KEYS.intersection(payload))
-    if present:
-        raise ContractError("remote execution controls are forbidden: " + ", ".join(present))
+def _normalized_key(value: Any) -> str:
+    return str(value).strip().lower().replace("-", "_")
+
+
+def _reject_remote_controls(value: Any, path: str = "job") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if _normalized_key(key) in FORBIDDEN_CONTROL_KEYS:
+                raise ContractError(f"remote execution control is forbidden at {path}.{key}")
+            _reject_remote_controls(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _reject_remote_controls(item, f"{path}[{index}]")
 
 
 def parse_external_job(payload: Any) -> ExternalResearchJob:
@@ -97,6 +112,7 @@ def parse_external_job(payload: Any) -> ExternalResearchJob:
         "requirements",
         "schema_version",
         "target_schema",
+        "result_schema",
         "metadata",
         "priority",
         "lease",
@@ -134,11 +150,13 @@ def parse_external_job(payload: Any) -> ExternalResearchJob:
     if len(json.dumps(metadata, ensure_ascii=False)) > 16_384:
         raise ContractError("metadata exceeds 16 KiB")
 
-    target_schema = payload.get("target_schema")
+    target_schema = payload.get("target_schema", payload.get("result_schema"))
+    if payload.get("target_schema") is not None and payload.get("result_schema") is not None and payload["target_schema"] != payload["result_schema"]:
+        raise ContractError("target_schema and result_schema disagree")
     if target_schema is not None and not isinstance(target_schema, dict):
-        raise ContractError("target_schema must be an object when supplied")
+        raise ContractError("target_schema/result_schema must be an object when supplied")
     if target_schema is not None and len(json.dumps(target_schema, ensure_ascii=False)) > 32_768:
-        raise ContractError("target_schema exceeds 32 KiB")
+        raise ContractError("target schema exceeds 32 KiB")
 
     lease = _dict(payload.get("lease"), "lease")
     lease_generation = lease.get("generation")
