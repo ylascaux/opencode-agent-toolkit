@@ -14,16 +14,28 @@ RESEARCH_AGENTS = {
 
 
 class ResearchPipelineTests(unittest.TestCase):
-    def test_research_agents_are_generic_orchestrator_leaves(self):
+    def test_research_agents_are_generic_bounded_leaves(self):
         for name, (tier, profile) in RESEARCH_AGENTS.items():
             config = json.loads((AGENTS / name / "agent.json").read_text())
             prompt = (AGENTS / name / "prompt.md").read_text().lower()
-            self.assertEqual(config["parents"], ["orchestrator"], name)
+            self.assertIn("orchestrator", config["parents"], name)
+            self.assertIn("research-runner", config["parents"], name)
             self.assertEqual(config["mode"], "subagent", name)
             self.assertEqual(config["tier"], tier, name)
             self.assertEqual(config["model_profile"], profile, name)
             self.assertNotIn("livalyo", prompt, name)
             self.assertIn("do not", prompt, name)
+
+    def test_external_runner_has_no_local_mutation_capabilities(self):
+        config = json.loads((AGENTS / "research-runner" / "agent.json").read_text())
+        permissions = json.loads((AGENTS / "research-runner" / "permissions.json").read_text())
+        prompt = (AGENTS / "research-runner" / "prompt.md").read_text().lower()
+        self.assertEqual(config["parents"], ["meta-router"])
+        self.assertEqual(config["tier"], "low")
+        for permission in ["edit", "bash", "read", "skill"]:
+            self.assertEqual(permissions[permission], "deny")
+        self.assertIn("untrusted", prompt)
+        self.assertIn("never mutate", prompt)
 
     def test_research_contracts_are_strict_generic_envelopes(self):
         job = json.loads((CONTRACTS / "research-job.schema.json").read_text())
