@@ -99,6 +99,7 @@ services:
         target: /root/.local/state/opencode-agent-toolkit
     ports:
       - "127.0.0.1:${OAT_OC2_PORT:-4096}:4096"
+      - "127.0.0.1:${OAT_OC2_OAUTH_PORT:-1455}:1455"
     command: ["2"]
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/4096'"]
