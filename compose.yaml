@@ -1,0 +1,90 @@
+name: opencode-agent-toolkit
+
+x-runtime-common: &runtime-common
+  image: ${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}
+  build:
+    context: .
+    dockerfile: runtime/Dockerfile
+    args:
+      OPENCODE_V1_VERSION: ${OAT_OPENCODE_V1_VERSION:-latest}
+      OPENCODE_V2_VERSION: ${OAT_OPENCODE_V2_VERSION:-beta}
+  restart: unless-stopped
+  env_file:
+    - path: ./.env
+      required: true
+    - path: ./.env.local
+      required: false
+  environment:
+    OAT_RUNTIME: container
+    OAT_SANDBOX_HOST_SHELL: /bin/bash
+
+services:
+  oc-server:
+    <<: *runtime-common
+    environment:
+      OAT_RUNTIME: container
+      OAT_SANDBOX_HOST_SHELL: /bin/bash
+      OPENCODE_MAJOR: "1"
+      OPENCODE_CONFIG: /opt/oat/opencode.jsonc
+    volumes:
+      # Keep the workspace path identical on host and in-container so Docker
+      # bind mounts emitted by an agent are valid for the host Docker daemon.
+      - type: bind
+        source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
+        target: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
+      - type: bind
+        source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
+        target: /var/run/docker.sock
+      - oc-home:/root
+      # Share only toolkit-owned persistent data/state across V1/V2. The rest
+      # of the host home, including ~/.ssh, remains outside the runtime.
+      - type: bind
+        source: ${OAT_DATA_DIR:?set OAT_DATA_DIR through scripts/docker-runtime}
+        target: /root/.local/share/opencode-agent-toolkit
+      - type: bind
+        source: ${OAT_STATE_DIR:?set OAT_STATE_DIR through scripts/docker-runtime}
+        target: /root/.local/state/opencode-agent-toolkit
+    ports:
+      - "127.0.0.1:${OAT_OC_PORT:-4095}:4096"
+    command: ["1"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/4096'"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
+  oc2-server:
+    <<: *runtime-common
+    environment:
+      OAT_RUNTIME: container
+      OAT_SANDBOX_HOST_SHELL: /bin/bash
+      OPENCODE_MAJOR: "2"
+      OPENCODE_CONFIG: /opt/oat/opencode.v2.jsonc
+    volumes:
+      - type: bind
+        source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
+        target: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
+      - type: bind
+        source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
+        target: /var/run/docker.sock
+      - oc2-home:/root
+      - type: bind
+        source: ${OAT_DATA_DIR:?set OAT_DATA_DIR through scripts/docker-runtime}
+        target: /root/.local/share/opencode-agent-toolkit
+      - type: bind
+        source: ${OAT_STATE_DIR:?set OAT_STATE_DIR through scripts/docker-runtime}
+        target: /root/.local/state/opencode-agent-toolkit
+    ports:
+      - "127.0.0.1:${OAT_OC2_PORT:-4096}:4096"
+    command: ["2"]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/4096'"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  oc-home:
+  oc2-home:

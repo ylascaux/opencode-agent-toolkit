@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+[[ -f "$ROOT/.env" ]] && {
+  set -a
+  source "$ROOT/.env"
+  [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
+  set +a
+}
+
+image="${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
+v1="${OAT_OPENCODE_V1_VERSION:-latest}"
+v2="${OAT_OPENCODE_V2_VERSION:-beta}"
+
+args=(
+  build
+  -f "$ROOT/runtime/Dockerfile"
+  -t "$image"
+  --build-arg "OPENCODE_V1_VERSION=$v1"
+  --build-arg "OPENCODE_V2_VERSION=$v2"
+)
+
+if [[ "${1:-}" == "--no-cache" || "${1:-}" == "--refresh" ]]; then
+  args+=(--no-cache --pull)
+elif [[ $# -gt 0 ]]; then
+  echo "Usage: $0 [--refresh|--no-cache]" >&2
+  exit 2
+fi
+
+args+=("$ROOT")
+
+echo "Building $image (OpenCode V1=$v1, V2=$v2)" >&2
+docker "${args[@]}"

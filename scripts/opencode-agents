@@ -25,22 +25,6 @@ source "$ROOT/.env"
 [[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
 set +a
 
-# Memory is a global toolkit subcommand, not an OpenCode command. Dispatch it
-# before config generation/preflight so `oc memory ...` is fast and keeps the
-# caller's cwd for project-scope detection.
-if [[ "${1:-}" == "memory" ]]; then
-  shift
-  if [[ $# -eq 0 ]]; then
-    exec python3 "$ROOT/scripts/memory" --help
-  fi
-  exec python3 "$ROOT/scripts/memory" "$@"
-fi
-
-# The generated V2 config always points at scripts/sandbox-shell-v2. When sandboxing
-# is disabled, that wrapper delegates to the user's real host shell instead of
-# changing shell semantics merely because the toolkit is installed.
-export OAT_SANDBOX_HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-${SHELL:-/bin/bash}}"
-
 # Explicit launcher/runtime selection wins over .env defaults.
 # `oc2` is a dedicated OpenCode 2 beta entrypoint and always selects V2.
 if [[ "$INVOKED_AS" == "oc2" ]]; then
@@ -55,6 +39,27 @@ fi
 
 export OPENCODE_MAJOR
 [[ -z "${OPENCODE_BIN:-}" ]] || export OPENCODE_BIN
+
+# Docker is now the default runtime: OpenCode, Node, Python, Nix and plugin
+# dependencies stay out of the host. Set OAT_RUNTIME=host to retain the legacy
+# launcher while migrating or debugging.
+if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
+  exec bash "$ROOT/scripts/docker-runtime" "$@"
+fi
+
+# Memory is a global toolkit subcommand in legacy host mode.
+if [[ "${1:-}" == "memory" ]]; then
+  shift
+  if [[ $# -eq 0 ]]; then
+    exec python3 "$ROOT/scripts/memory" --help
+  fi
+  exec python3 "$ROOT/scripts/memory" "$@"
+fi
+
+# The generated V2 config always points at scripts/sandbox-shell-v2. When sandboxing
+# is disabled, that wrapper delegates to the user's real host shell instead of
+# changing shell semantics merely because the toolkit is installed.
+export OAT_SANDBOX_HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-${SHELL:-/bin/bash}}"
 
 python3 "$ROOT/scripts/generate-config" >/dev/null
 if [[ -f "$ROOT/scripts/apply-memory" ]]; then

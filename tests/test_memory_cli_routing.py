@@ -19,7 +19,9 @@ class MemoryCliRoutingTests(unittest.TestCase):
             scripts.mkdir(parents=True)
             shutil.copy2(ROOT / "scripts" / "opencode-agents", scripts / "opencode-agents")
 
-            (toolkit / ".env").write_text("OPENCODE_MAJOR=1\n")
+            # This fixture validates the legacy host routing path in isolation;
+            # Docker routing is covered by the runtime/Compose CI job.
+            (toolkit / ".env").write_text("OPENCODE_MAJOR=1\nOAT_RUNTIME=host\n")
             memory = scripts / "memory"
             memory.write_text(
                 "#!/usr/bin/env python3\n"
@@ -54,7 +56,7 @@ class MemoryCliRoutingTests(unittest.TestCase):
             scripts = toolkit / "scripts"
             scripts.mkdir(parents=True)
             shutil.copy2(ROOT / "scripts" / "opencode-agents", scripts / "opencode-agents")
-            (toolkit / ".env").write_text("OPENCODE_MAJOR=1\n")
+            (toolkit / ".env").write_text("OPENCODE_MAJOR=1\nOAT_RUNTIME=host\n")
             memory = scripts / "memory"
             memory.write_text(
                 "#!/usr/bin/env python3\n"

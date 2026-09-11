@@ -1,0 +1,12 @@
+.git
+.env
+.env.local
+.venv
+node_modules
+.generated
+__pycache__
+*.pyc
+package-lock.json
+architecture-inventory.json
+opencode.jsonc
+opencode.v2.jsonc

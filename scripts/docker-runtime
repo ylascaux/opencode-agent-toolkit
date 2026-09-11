@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+[[ -f "$ROOT/.env" ]] || {
+  echo "Missing $ROOT/.env. Run: just install" >&2
+  exit 1
+}
+
+set -a
+source "$ROOT/.env"
+[[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
+set +a
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is required for the container runtime" >&2
+  exit 127
+fi
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose v2 is required (docker compose)" >&2
+  exit 127
+fi
+
+major="${OPENCODE_MAJOR:-1}"
+[[ "$major" == auto ]] && major=2
+case "$major" in
+  1)
+    service=oc-server
+    bin=opencode
+    host_port="${OAT_OC_PORT:-4095}"
+    ;;
+  2)
+    service=oc2-server
+    bin=opencode2
+    host_port="${OAT_OC2_PORT:-4096}"
+    ;;
+  *)
+    echo "OPENCODE_MAJOR must be 1, 2, or auto for the Docker runtime (got: $major)" >&2
+    exit 2
+    ;;
+esac
+
+cwd="$(pwd -P)"
+if [[ -n "${OAT_WORKSPACE_ROOT:-}" ]]; then
+  if [[ ! -d "$OAT_WORKSPACE_ROOT" ]]; then
+    echo "OAT_WORKSPACE_ROOT does not exist: $OAT_WORKSPACE_ROOT" >&2
+    exit 2
+  fi
+  workspace_root="$(cd "$OAT_WORKSPACE_ROOT" && pwd -P)"
+else
+  workspace_root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$cwd")"
+  workspace_root="$(cd "$workspace_root" && pwd -P)"
+fi
+
+case "$cwd/" in
+  "$workspace_root/"*) ;;
+  *)
+    echo "Current directory is outside OAT_WORKSPACE_ROOT:" >&2
+    echo "  cwd:       $cwd" >&2
+    echo "  workspace: $workspace_root" >&2
+    exit 2
+    ;;
+esac
+
+if [[ -n "${OAT_DOCKER_SOCKET:-}" ]]; then
+  docker_socket="$OAT_DOCKER_SOCKET"
+elif [[ "${DOCKER_HOST:-}" == unix://* ]]; then
+  docker_socket="${DOCKER_HOST#unix://}"
+elif [[ -S /var/run/docker.sock ]]; then
+  docker_socket=/var/run/docker.sock
+elif [[ -S "$HOME/.docker/run/docker.sock" ]]; then
+  docker_socket="$HOME/.docker/run/docker.sock"
+else
+  echo "Docker socket not found. Set OAT_DOCKER_SOCKET explicitly." >&2
+  exit 2
+fi
+
+if [[ ! -S "$docker_socket" ]]; then
+  echo "Docker socket is not a Unix socket: $docker_socket" >&2
+  exit 2
+fi
+
+# Persistent toolkit-owned data/state is shared by OC/OC2 while the rest of the
+# host home remains outside the runtime.
+data_dir="${OAT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode-agent-toolkit}"
+state_dir="${OAT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit}"
+mkdir -p "$data_dir" "$state_dir"
+data_dir="$(cd "$data_dir" && pwd -P)"
+state_dir="$(cd "$state_dir" && pwd -P)"
+
+export OAT_WORKSPACE_ROOT="$workspace_root"
+export OAT_DOCKER_SOCKET="$docker_socket"
+export OAT_DATA_DIR="$data_dir"
+export OAT_STATE_DIR="$state_dir"
+export OAT_RUNTIME_IMAGE="${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
+
+compose=(docker compose --project-directory "$ROOT" -f "$ROOT/compose.yaml")
+
+ensure_server() {
+  if ! docker image inspect "$OAT_RUNTIME_IMAGE" >/dev/null 2>&1; then
+    echo "Runtime image missing; building $OAT_RUNTIME_IMAGE" >&2
+    "${compose[@]}" build "$service"
+  fi
+
+  "${compose[@]}" up -d "$service" >/dev/null
+
+  local cid health i
+  cid="$("${compose[@]}" ps -q "$service")"
+  [[ -n "$cid" ]] || {
+    echo "Failed to start $service" >&2
+    exit 3
+  }
+
+  for i in {1..30}; do
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || true)"
+    case "$health" in
+      healthy|running) return 0 ;;
+      unhealthy|exited|dead)
+        echo "$service failed to become healthy (state: $health)" >&2
+        "${compose[@]}" logs --tail=80 "$service" >&2 || true
+        exit 3
+        ;;
+    esac
+    sleep 1
+  done
+
+  echo "Timed out waiting for $service" >&2
+  "${compose[@]}" logs --tail=80 "$service" >&2 || true
+  exit 3
+}
+
+# Preserve an existing local OpenCode login without mounting the whole host home.
+# The import is one-time per V1/V2 home volume and can be disabled explicitly.
+import_host_auth() {
+  [[ "${OAT_IMPORT_HOST_AUTH:-1}" == "1" ]] || return 0
+
+  local host_auth cid
+  host_auth="${OAT_HOST_AUTH_FILE:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json}"
+  [[ -f "$host_auth" ]] || return 0
+
+  if "${compose[@]}" exec -T "$service" test -s /root/.local/share/opencode/auth.json >/dev/null 2>&1; then
+    return 0
+  fi
+
+  cid="$("${compose[@]}" ps -q "$service")"
+  [[ -n "$cid" ]] || return 0
+  docker exec "$cid" mkdir -p /root/.local/share/opencode
+  docker cp "$host_auth" "$cid:/root/.local/share/opencode/auth.json" >/dev/null
+  docker exec "$cid" chmod 600 /root/.local/share/opencode/auth.json
+  echo "Imported existing host OpenCode auth into the persistent $service volume" >&2
+
+  # The server may cache provider credentials at startup. Restart only on this
+  # first import so credentials are guaranteed to be visible to the server.
+  "${compose[@]}" restart "$service" >/dev/null
+  ensure_server
+}
+
+server_control() {
+  local action="${1:-status}"
+  case "$action" in
+    status)
+      ensure_server
+      import_host_auth
+      "${compose[@]}" ps "$service"
+      printf '%s server: http://127.0.0.1:%s\n' "$bin" "$host_port"
+      ;;
+    logs)
+      ensure_server
+      import_host_auth
+      exec "${compose[@]}" logs -f "$service"
+      ;;
+    stop|down)
+      "${compose[@]}" stop "$service"
+      ;;
+    restart)
+      "${compose[@]}" up -d --force-recreate "$service" >/dev/null
+      ensure_server
+      import_host_auth
+      ;;
+    *)
+      echo "Usage: $bin server {status|logs|stop|restart}" >&2
+      exit 2
+      ;;
+  esac
+}
+
+if [[ "${1:-}" == "server" || "${1:-}" == "serve" ]]; then
+  shift || true
+  server_control "${1:-status}"
+  exit $?
+fi
+
+ensure_server
+import_host_auth
+
+exec_opts=()
+if [[ ! -t 1 ]]; then
+  exec_opts+=(-T)
+fi
+
+run_preflight() {
+  [[ "${OPENCODE_PREFLIGHT:-1}" == "1" ]] || return 0
+  "${compose[@]}" exec -T -w "$cwd" "$service" bash /opt/oat/scripts/preflight
+}
+
+if [[ "${1:-}" == "shell" ]]; then
+  shift
+  exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" bash "$@"
+fi
+
+# Memory is toolkit-global rather than an OpenCode CLI command. It runs inside
+# the selected service while data/candidates persist in the shared toolkit dirs.
+if [[ "${1:-}" == "memory" ]]; then
+  shift
+  if [[ $# -eq 0 ]]; then
+    set -- --help
+  fi
+  exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
+    python3 /opt/oat/scripts/memory "$@"
+fi
+
+if [[ "$major" == "1" ]]; then
+  if [[ $# -eq 0 ]]; then
+    run_preflight
+    exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
+      opencode attach http://127.0.0.1:4096 --dir "$cwd"
+  fi
+
+  if [[ "$1" == "run" ]]; then
+    shift
+    run_preflight
+    exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
+      opencode run --attach http://127.0.0.1:4096 --dir "$cwd" "$@"
+  fi
+
+  exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" opencode "$@"
+fi
+
+# OpenCode V2 exposes --server as a global client option. Running the client
+# inside the server container keeps auth/session state in the same persistent
+# volume while the host port remains available to a native opencode2 client.
+if [[ $# -eq 0 ]]; then
+  run_preflight
+  exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
+    opencode2 --server http://127.0.0.1:4096
+fi
+
+# Authentication is local credential state rather than a server RPC. Execute it
+# directly in the shared home volume so /connect and `auth login` remain durable.
+if [[ "$1" == "auth" ]]; then
+  exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" opencode2 "$@"
+fi
+
+if [[ "$1" == "run" ]]; then
+  run_preflight
+fi
+exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
+  opencode2 --server http://127.0.0.1:4096 "$@"

@@ -50,9 +50,20 @@ class InstallationSurfaceTests(unittest.TestCase):
         for name in [
             "bootstrap", "doctor", "configure-models", "generate-config", "opencode-agents",
             "user-link", "apply-profile", "resolve-models", "apply-reliability", "preflight",
-            "show-reliability", "agent_config.py", "new-agent",
+            "show-reliability", "agent_config.py", "new-agent", "docker-build", "docker-runtime",
         ]:
             self.assertTrue((ROOT / "scripts" / name).exists(), name)
+
+    def test_docker_runtime_is_the_default_install_path(self):
+        env_example = (ROOT / ".env.example").read_text()
+        bootstrap = (ROOT / "scripts" / "bootstrap").read_text()
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+
+        self.assertIn("OAT_RUNTIME=docker", env_example)
+        self.assertIn('"${OAT_RUNTIME:-docker}" == "docker"', bootstrap)
+        self.assertIn('bash ./scripts/docker-build', bootstrap)
+        self.assertIn('"${OAT_RUNTIME:-docker}" == "docker"', launcher)
+        self.assertIn('exec bash "$ROOT/scripts/docker-runtime" "$@"', launcher)
 
     def test_opencode_v2_plugin_sdk_dependency_is_pinned(self):
         package = json.loads((ROOT / "package.json").read_text())
@@ -64,8 +75,9 @@ class InstallationSurfaceTests(unittest.TestCase):
         )
         self.assertIn("node_modules/", (ROOT / ".gitignore").read_text().splitlines())
 
-    def test_bootstrap_installs_node_plugin_dependencies(self):
+    def test_bootstrap_keeps_legacy_host_dependency_install_as_explicit_fallback(self):
         text = (ROOT / "scripts" / "bootstrap").read_text()
+        self.assertIn('OAT_RUNTIME=host', text)
         self.assertIn("npm ci --no-audit --no-fund", text)
         self.assertIn("npm install --no-audit --no-fund", text)
         self.assertIn("package-lock.json", text)
@@ -114,6 +126,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             shutil.copy2(ROOT / "reliability.json", toolkit / "reliability.json")
             (toolkit / ".env").write_text(
                 "OPENCODE_MAJOR=1\n"
+                "OAT_RUNTIME=host\n"
                 "OPENCODE_PREFLIGHT=1\n"
                 "OAT_SANDBOX_ENABLED=0\n"
                 "OAT_MEMORY_ENABLED=0\n"
