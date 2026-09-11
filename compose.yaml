@@ -36,11 +36,14 @@ services:
         source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
         target: /var/run/docker.sock
       - oc-home:/root
-      # Toolkit memory/plugin data is shared by V1/V2 and deliberately survives
-      # image/container replacement without exposing the rest of the host home.
+      # Share only toolkit-owned persistent data/state across V1/V2. The rest
+      # of the host home, including ~/.ssh, remains outside the runtime.
       - type: bind
         source: ${OAT_DATA_DIR:?set OAT_DATA_DIR through scripts/docker-runtime}
         target: /root/.local/share/opencode-agent-toolkit
+      - type: bind
+        source: ${OAT_STATE_DIR:?set OAT_STATE_DIR through scripts/docker-runtime}
+        target: /root/.local/state/opencode-agent-toolkit
     ports:
       - "127.0.0.1:${OAT_OC_PORT:-4095}:4096"
     command: ["1"]
@@ -69,6 +72,9 @@ services:
       - type: bind
         source: ${OAT_DATA_DIR:?set OAT_DATA_DIR through scripts/docker-runtime}
         target: /root/.local/share/opencode-agent-toolkit
+      - type: bind
+        source: ${OAT_STATE_DIR:?set OAT_STATE_DIR through scripts/docker-runtime}
+        target: /root/.local/state/opencode-agent-toolkit
     ports:
       - "127.0.0.1:${OAT_OC2_PORT:-4096}:4096"
     command: ["2"]
