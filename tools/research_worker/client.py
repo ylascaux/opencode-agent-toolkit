@@ -7,7 +7,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from .models import ClaimResponse, ExternalResearchJob, ResultSubmission
+from .contracts import ExternalResearchJob, ResearchOutput, parse_external_job
 from .settings import WorkerSettings
 
 MAX_RESPONSE_BYTES = 256 * 1024
@@ -30,11 +30,11 @@ def validate_api_base_url(value: str) -> str:
     if parsed.query or parsed.fragment:
         raise ValueError("Research API URL must not contain a query or fragment")
     hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Research API URL must include a host")
     is_loopback = hostname in {"localhost", "127.0.0.1", "::1"}
     if parsed.scheme != "https" and not (parsed.scheme == "http" and is_loopback):
         raise ValueError("Research API URL must use HTTPS; HTTP is allowed only for loopback development")
-    if not hostname:
-        raise ValueError("Research API URL must include a host")
     return value.rstrip("/")
 
 
@@ -97,13 +97,31 @@ class ResearchApiClient:
         if response.status != 200:
             raise ResearchApiError(f"Unexpected claim response status: {response.status}")
         payload = self._json(response)
+        if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+            raise ResearchApiError("Claim response must contain a jobs array")
+        if len(payload["jobs"]) > self.settings.max_parallel:
+            raise ResearchApiError("Claim response exceeds the worker's local parallelism limit")
         try:
-            return ClaimResponse.model_validate(payload).jobs
+            return [parse_external_job(item) for item in payload["jobs"]]
         except Exception as error:
             raise ResearchApiError(f"Claim response failed validation: {error}") from error
 
-    def submit(self, job: ExternalResearchJob, submission: ResultSubmission) -> None:
-        path = self.settings.result_path_template.format(job_id=urllib.parse.quote(job.id, safe=""))
-        response = self._request("POST", path, submission.model_dump(mode="json"))
+    def submit(self, job: ExternalResearchJob, result_id: str, result: ResearchOutput) -> None:
+        if job.lease_generation is None:
+            raise ResearchApiError("Claimed job is missing lease.generation")
+        path = self.settings.result_path_template.format(job_id=urllib.parse.quote(job.job_id, safe=""))
+        response = self._request(
+            "POST",
+            path,
+            {
+                "job_id": job.job_id,
+                "result_id": result_id,
+                "worker_id": self.settings.worker_id,
+                "worker_version": self.settings.worker_version,
+                "lease_generation": job.lease_generation,
+                "schema_version": job.schema_version,
+                **result.as_dict(),
+            },
+        )
         if response.status not in {200, 201, 202, 204}:
             raise ResearchApiError(f"Unexpected result response status: {response.status}")
