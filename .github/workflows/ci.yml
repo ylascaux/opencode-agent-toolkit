@@ -142,10 +142,13 @@ jobs:
           docker volume create "$data" >/dev/null
           docker run --rm --mount "type=volume,src=$workspace,dst=/workspace" alpine:3.22 \
             sh -c 'chown -R 1000:1000 /workspace && chmod 0777 /workspace'
+          # docker:dind-rootless already configures both the daemon TCP listener
+          # and the matching RootlessKit port forwarding when TLS is disabled.
+          # Supplying our own identical -p flag duplicates that mapping and can
+          # prevent the rootless daemon from becoming ready.
           docker run -d --name "$dind" --privileged \
             --network "$network" --network-alias docker-agent \
             -e DOCKER_TLS_CERTDIR= \
-            -e 'DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS=-p 0.0.0.0:2375:2375/tcp' \
             --mount "type=volume,src=$workspace,dst=/workspace" \
             --mount "type=volume,src=$data,dst=/home/rootless/.local/share/docker" \
             docker:29-dind-rootless >/dev/null
@@ -156,9 +159,16 @@ jobs:
               ready=1
               break
             fi
+            if ! docker inspect --format '{{.State.Running}}' "$dind" 2>/dev/null | grep -qx true; then
+              docker logs "$dind" >&2 || true
+              exit 1
+            fi
             sleep 1
           done
-          test "$ready" = 1
+          if [ "$ready" != 1 ]; then
+            docker logs "$dind" >&2 || true
+            exit 1
+          fi
 
           remote=0
           for _ in $(seq 1 20); do
@@ -170,7 +180,10 @@ jobs:
             fi
             sleep 1
           done
-          test "$remote" = 1
+          if [ "$remote" != 1 ]; then
+            docker logs "$dind" >&2 || true
+            exit 1
+          fi
 
   sandbox:
     runs-on: ubuntu-latest
