@@ -31,6 +31,7 @@ elif [[ "${OAT_MEMORY_ENABLED:-0}" == "1" ]]; then
   echo "Memory is enabled but /opt/oat/scripts/apply-memory is missing" >&2
   exit 1
 fi
+eval "$(python3 ./scripts/resolve-models)"
 python3 ./scripts/apply-reliability >/dev/null
 python3 -m json.tool "$config" >/dev/null
 
