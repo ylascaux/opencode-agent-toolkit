@@ -6,7 +6,8 @@
   "model_profile": "general",
   "steps": 16,
   "parents": [
-    "orchestrator"
+    "orchestrator",
+    "research-runner"
   ],
   "opencode": {}
 }
