@@ -120,31 +120,6 @@ ensure_server() {
   exit 3
 }
 
-server_control() {
-  local action="${1:-status}"
-  case "$action" in
-    status)
-      ensure_server
-      "${compose[@]}" ps "$service"
-      printf '%s server: http://127.0.0.1:%s\n' "$bin" "$host_port"
-      ;;
-    logs)
-      ensure_server
-      exec "${compose[@]}" logs -f "$service"
-      ;;
-    stop|down)
-      "${compose[@]}" stop "$service"
-      ;;
-    restart)
-      "${compose[@]}" up -d --force-recreate "$service"
-      ;;
-    *)
-      echo "Usage: $bin server {status|logs|stop|restart}" >&2
-      exit 2
-      ;;
-  esac
-}
-
 # Preserve an existing local OpenCode login without mounting the whole host home.
 # The import is one-time per V1/V2 home volume and can be disabled explicitly.
 import_host_auth() {
@@ -171,6 +146,35 @@ import_host_auth() {
   ensure_server
 }
 
+server_control() {
+  local action="${1:-status}"
+  case "$action" in
+    status)
+      ensure_server
+      import_host_auth
+      "${compose[@]}" ps "$service"
+      printf '%s server: http://127.0.0.1:%s\n' "$bin" "$host_port"
+      ;;
+    logs)
+      ensure_server
+      import_host_auth
+      exec "${compose[@]}" logs -f "$service"
+      ;;
+    stop|down)
+      "${compose[@]}" stop "$service"
+      ;;
+    restart)
+      "${compose[@]}" up -d --force-recreate "$service" >/dev/null
+      ensure_server
+      import_host_auth
+      ;;
+    *)
+      echo "Usage: $bin server {status|logs|stop|restart}" >&2
+      exit 2
+      ;;
+  esac
+}
+
 if [[ "${1:-}" == "server" || "${1:-}" == "serve" ]]; then
   shift || true
   server_control "${1:-status}"
@@ -193,6 +197,17 @@ run_preflight() {
 if [[ "${1:-}" == "shell" ]]; then
   shift
   exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" bash "$@"
+fi
+
+# Memory is toolkit-global rather than an OpenCode CLI command. It runs inside
+# the selected service but persists in the shared oat-data volume used by V1/V2.
+if [[ "${1:-}" == "memory" ]]; then
+  shift
+  if [[ $# -eq 0 ]]; then
+    set -- --help
+  fi
+  exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
+    python3 /opt/oat/scripts/memory "$@"
 fi
 
 if [[ "$major" == "1" ]]; then
