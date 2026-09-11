@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /opt/oat
+
+case "${1:-}" in
+  1|v1)
+    major=1
+    bin=opencode
+    config=/opt/oat/opencode.jsonc
+    ;;
+  2|v2)
+    major=2
+    bin=opencode2
+    config=/opt/oat/opencode.v2.jsonc
+    ;;
+  *)
+    exec "$@"
+    ;;
+esac
+
+export OPENCODE_MAJOR="$major"
+export OPENCODE_CONFIG="$config"
+export OAT_RUNTIME=container
+export OAT_SANDBOX_HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-/bin/bash}"
+
+python3 ./scripts/generate-config >/dev/null
+if [[ -f ./scripts/apply-memory ]]; then
+  python3 ./scripts/apply-memory >/dev/null
+elif [[ "${OAT_MEMORY_ENABLED:-0}" == "1" ]]; then
+  echo "Memory is enabled but /opt/oat/scripts/apply-memory is missing" >&2
+  exit 1
+fi
+python3 ./scripts/apply-reliability >/dev/null
+python3 -m json.tool "$config" >/dev/null
+
+if ! command -v "$bin" >/dev/null 2>&1; then
+  echo "OpenCode binary not found in runtime image: $bin" >&2
+  exit 127
+fi
+
+printf 'Starting OpenCode V%s server (%s) on 0.0.0.0:4096\n' "$major" "$($bin --version 2>/dev/null || echo unknown)" >&2
+exec "$bin" serve --hostname 0.0.0.0 --port 4096
