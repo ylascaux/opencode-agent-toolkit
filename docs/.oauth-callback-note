@@ -1,0 +1,1 @@
+OpenAI OAuth callback is exposed only on host loopback by compose.yaml.
