@@ -70,7 +70,7 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
   echo "Recommended next steps:"
   echo "  just install-user   # ~/.local/bin/oc"
   echo "  just install-oc2    # ~/.local/bin/oc2"
-  echo "  just oc2-up         # optional; launch V2 server now"
+  echo "  just serve-v2       # optional; launch/show the V2 server now"
   echo "  oc2                 # auto-start server and attach TUI"
   echo "  oc2 run '...'       # run through the persistent V2 server"
   echo "  oc2 server status   # show server status and URL"
