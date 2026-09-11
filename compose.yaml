@@ -14,8 +14,8 @@ x-runtime-common: &runtime-common
       required: true
     - path: ./.env.local
       required: false
-    - path: ${OAT_RUNTIME_ENV_FILE_HOST:?set OAT_RUNTIME_ENV_FILE_HOST through scripts/docker-runtime}
-      required: true
+    - path: ${OAT_RUNTIME_ENV_FILE_HOST:-./.runtime.env}
+      required: false
   environment:
     OAT_RUNTIME: container
     OAT_SANDBOX_HOST_SHELL: /bin/bash
