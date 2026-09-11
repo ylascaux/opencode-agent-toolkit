@@ -11,7 +11,7 @@ Two persistent services share one runtime image but keep separate OpenCode home 
 - `oc-home`: V1 auth, sessions, cache and local state
 - `oc2-home`: V2 auth, sessions, cache and local state
 
-Only toolkit-owned persistent data is shared between the two services and the host. By default that is `~/.local/share/opencode-agent-toolkit`, containing memory/plugin state and related toolkit data. The rest of the host home, including `~/.ssh`, is not mounted.
+Only toolkit-owned persistent data and state are shared between the two services and the host. By default those are `~/.local/share/opencode-agent-toolkit` and `~/.local/state/opencode-agent-toolkit`, containing memory/plugin data, candidates, reliability checkpoints and related toolkit state. The rest of the host home, including `~/.ssh`, is not mounted.
 
 The active workspace is bind-mounted at the **same absolute path** inside the runtime container as on the host. This is intentional: the Docker CLI inside the container talks to the host Docker daemon. Keeping identical paths means `docker build`, `docker run -v`, and `docker compose` can pass bind-mount paths that the host daemon understands.
 
@@ -65,7 +65,7 @@ Open an interactive shell in the runtime with:
 oc2 shell
 ```
 
-Toolkit memory commands also execute inside the runtime while using the shared toolkit data directory:
+Toolkit memory commands also execute inside the runtime while using the shared toolkit data/state directories:
 
 ```bash
 oc2 memory status
@@ -131,6 +131,7 @@ OAT_IMPORT_HOST_AUTH=1
 # OAT_DOCKER_SOCKET=$HOME/.docker/run/docker.sock
 # OAT_WORKSPACE_ROOT=$HOME/Projects
 # OAT_DATA_DIR=$HOME/.local/share/opencode-agent-toolkit
+# OAT_STATE_DIR=$HOME/.local/state/opencode-agent-toolkit
 # OAT_HOST_AUTH_FILE=$HOME/.local/share/opencode/auth.json
 ```
 
