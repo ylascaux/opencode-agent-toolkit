@@ -49,7 +49,8 @@ RUN apt-get update \
       'experimental-features = nix-command flakes' \
       'accept-flake-config = true' \
       'sandbox = false' \
-      > /etc/nix/nix.conf
+      > /etc/nix/nix.conf \
+    && git config --system --add safe.directory '*'
 
 # Keep the two CLIs side-by-side. V2 currently ships as @opencode/cli@beta
 # and exposes the opencode2 binary; V1 exposes opencode.
