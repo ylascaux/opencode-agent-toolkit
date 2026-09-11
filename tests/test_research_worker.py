@@ -49,27 +49,39 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(job.requested_fields, ("security_support_end",))
         self.assertEqual(job.lease_generation, 3)
 
-    def test_nested_remote_model_is_rejected(self):
+    def test_top_level_remote_model_is_rejected(self):
         payload = job_payload()
-        payload["requirements"] = {"routing": {"model": "remote-model"}}
+        payload["model"] = "remote-model"
         with self.assertRaises(ContractError):
             parse_external_job(payload)
 
-    def test_nested_remote_command_is_rejected(self):
+    def test_top_level_remote_command_is_rejected(self):
         payload = job_payload()
-        payload["subject"]["metadata"] = {"command": "rm -rf /"}
+        payload["command"] = "rm -rf /"
         with self.assertRaises(ContractError):
             parse_external_job(payload)
+
+    def test_nested_model_is_opaque_domain_data_not_execution_control(self):
+        payload = job_payload()
+        payload["subject"]["model"] = "Pixel 8"
+        payload["result_schema"] = {
+            "type": "object",
+            "properties": {"model": {"type": "string"}},
+        }
+        job = parse_external_job(payload)
+        envelope = build_toolkit_job(job, max_tier="medium", max_attempts=2, max_parallel=1)
+        self.assertEqual(envelope["input"]["subject"]["model"], "Pixel 8")
+        self.assertEqual(envelope["policy"]["max_tier"], "medium")
+        self.assertNotIn("model", envelope["policy"])
+        self.assertNotIn("agent", envelope["policy"])
+        self.assertNotIn("provider", envelope["policy"])
 
     def test_local_policy_controls_toolkit_envelope(self):
         job = parse_external_job(job_payload())
         envelope = build_toolkit_job(job, max_tier="medium", max_attempts=2, max_parallel=1)
         self.assertEqual(envelope["policy"]["max_tier"], "medium")
         self.assertEqual(envelope["policy"]["max_attempts"], 2)
-        serialized = repr(envelope)
-        self.assertNotIn("remote-model", serialized)
-        self.assertNotIn("provider", envelope)
-        self.assertNotIn("agent", envelope)
+        self.assertEqual(envelope["policy"]["max_parallel"], 1)
 
 
 class UrlTests(unittest.TestCase):
