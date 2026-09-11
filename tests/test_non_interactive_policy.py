@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPTS = ROOT / ".generated" / "prompts"
+RESTRICTED_RESEARCH_AGENTS = {"research-runner"}
 
 
 class NonInteractivePolicyTests(unittest.TestCase):
@@ -67,15 +68,21 @@ class NonInteractivePolicyTests(unittest.TestCase):
         ]
         for name, agent in self.config["agent"].items():
             shell = agent["permission"]["bash"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(shell, "deny", name)
+                continue
             for pattern in denied:
                 self.assertEqual(shell[pattern], "deny", f"{name}: {pattern}")
             for pattern in allowed_non_paging_git:
                 self.assertEqual(shell[pattern], "allow", f"{name}: {pattern}")
 
-    def test_safe_validation_builtins_are_allowed_for_every_agent(self):
+    def test_safe_validation_builtins_are_allowed_for_shell_enabled_agents(self):
         allowed = ["test*", "printf*", "echo*", "true"]
         for name, agent in self.config["agent"].items():
             shell = agent["permission"]["bash"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(shell, "deny", name)
+                continue
             for pattern in allowed:
                 self.assertEqual(shell[pattern], "allow", f"{name}: {pattern}")
             self.assertEqual(shell.get("for*", "ask"), "ask", f"{name}: shell loops must not be blanket-allowed")
