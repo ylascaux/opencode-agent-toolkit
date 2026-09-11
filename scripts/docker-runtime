@@ -81,15 +81,18 @@ if [[ ! -S "$docker_socket" ]]; then
   exit 2
 fi
 
-# Persistent toolkit-owned state (memory repo, external plugins, candidates) is
-# shared by OC/OC2 but remains the only host home subtree exposed to the runtime.
+# Persistent toolkit-owned data/state is shared by OC/OC2 while the rest of the
+# host home remains outside the runtime.
 data_dir="${OAT_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode-agent-toolkit}"
-mkdir -p "$data_dir"
+state_dir="${OAT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/opencode-agent-toolkit}"
+mkdir -p "$data_dir" "$state_dir"
 data_dir="$(cd "$data_dir" && pwd -P)"
+state_dir="$(cd "$state_dir" && pwd -P)"
 
 export OAT_WORKSPACE_ROOT="$workspace_root"
 export OAT_DOCKER_SOCKET="$docker_socket"
 export OAT_DATA_DIR="$data_dir"
+export OAT_STATE_DIR="$state_dir"
 export OAT_RUNTIME_IMAGE="${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
 
 compose=(docker compose --project-directory "$ROOT" -f "$ROOT/compose.yaml")
@@ -207,7 +210,7 @@ if [[ "${1:-}" == "shell" ]]; then
 fi
 
 # Memory is toolkit-global rather than an OpenCode CLI command. It runs inside
-# the selected service but persists in the shared OAT_DATA_DIR bind mount.
+# the selected service while data/candidates persist in the shared toolkit dirs.
 if [[ "${1:-}" == "memory" ]]; then
   shift
   if [[ $# -eq 0 ]]; then
