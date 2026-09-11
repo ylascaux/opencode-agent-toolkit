@@ -26,7 +26,7 @@ research-runner
 structured candidate result
 ```
 
-The application may say **what** facts are needed. It may not remotely choose models, providers, agents, prompts, shell commands, callbacks, tools, local paths or OpenCode configuration. These control fields are rejected recursively before execution.
+The application may say **what** facts are needed. It may not remotely choose models, providers, agents, prompts, shell commands, callbacks, tools, local paths or OpenCode configuration. Execution-control fields are forbidden at the job-envelope level. Nested subject, requirements, metadata and schema values remain opaque untrusted domain data and are never interpreted as local execution configuration; this allows legitimate domain fields such as a product `model`.
 
 The `research-runner` agent is intentionally restricted: local file reads, edits, shell execution, skills and external-directory access are denied. Source/job content is untrusted data and must never become instructions.
 
@@ -97,7 +97,7 @@ The worker sends its identity, version, supported neutral job types and local co
 }
 ```
 
-No model/provider/agent information belongs in this contract.
+No model/provider/agent information belongs at the job-envelope level.
 
 ## Execution and escalation
 
@@ -127,7 +127,8 @@ This prevents two independent retry systems from acknowledging the same failure 
 - HTTPS required outside loopback development;
 - Bearer authentication supplied from local environment configuration;
 - no arbitrary remote callback URL;
-- no arbitrary remote shell/command/path/model/agent/provider control;
+- no remote envelope control of shell/command/path/model/agent/provider;
+- nested business data is opaque and never interpreted as execution configuration;
 - bounded request/response/result sizes;
 - remote job and source text treated as untrusted data;
 - `research-runner` cannot edit/read local project files or use shell commands;
