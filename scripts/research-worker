@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+
+[[ -f "$ROOT/.env" ]] || {
+  echo "Missing $ROOT/.env. Run: just install" >&2
+  exit 1
+}
+
+set -a
+source "$ROOT/.env"
+[[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
+set +a
+
+if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
+  # Ensure the persistent V2 server (and its private credential volume) is up.
+  # The worker itself runs inside that container, so no Python/OpenCode install is
+  # required on the host and the research API token never becomes a CLI argument.
+  OPENCODE_MAJOR=2 bash "$ROOT/scripts/opencode-agents" server status >/dev/null
+  OPENCODE_MAJOR=2 exec bash "$ROOT/scripts/docker-runtime" shell -lc \
+    'exec python3 -m tools.research_worker "$@"' research-worker "$@"
+fi
+
+python="${ROOT}/.venv/bin/python"
+if [[ ! -x "$python" ]]; then
+  python="$(command -v python3 || true)"
+fi
+[[ -n "$python" ]] || {
+  echo "python3 is required for the legacy host runtime" >&2
+  exit 127
+}
+
+cd "$ROOT"
+exec "$python" -m tools.research_worker "$@"
