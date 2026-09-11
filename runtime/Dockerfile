@@ -60,14 +60,11 @@ RUN npm install -g \
 
 WORKDIR /opt/oat
 
-# Local plugin dependencies. A committed lock file is preferred when present,
-# but the image can still be built while the repository is migrating to one.
-COPY package*.json ./
-RUN if [ -f package-lock.json ]; then \
-      npm ci --ignore-scripts --no-audit --no-fund; \
-    else \
-      npm install --ignore-scripts --no-audit --no-fund; \
-    fi
+# The host may still contain an old, uncommitted package-lock.json from the
+# pre-container workflow. Build only from the committed package.json so a stale
+# host lock cannot break the image build.
+COPY package.json ./
+RUN npm install --ignore-scripts --no-audit --no-fund
 
 COPY requirements.txt ./
 RUN python3 -m venv /opt/oat/.venv \
