@@ -186,44 +186,10 @@ docker run --rm --network "$network" \
   -e OAT_TASK_BRANCH="$branch" \
   --entrypoint bash "$image" /opt/oat/scripts/workspace-broker clone
 
-# The per-run Docker daemon has no host Docker socket and no host project bind.
-# Rootless DinD still needs a privileged outer container for RootlessKit, but its
-# writable filesystem exposure is limited to ephemeral named volumes.
-docker run -d --name "$dind" --privileged \
-  --network "$network" --network-alias docker-agent \
-  -e DOCKER_TLS_CERTDIR= \
-  -e 'DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS=-p 0.0.0.0:2375:2375/tcp' \
-  --mount "type=volume,src=$workspace_volume,dst=/workspace" \
-  --mount "type=volume,src=$dind_data_volume,dst=/home/rootless/.local/share/docker" \
-  "$dind_image" >/dev/null
-
-ready=0
-for _ in $(seq 1 60); do
-  if docker exec "$dind" sh -c 'DOCKER_HOST=unix:///run/user/1000/docker.sock docker info >/dev/null 2>&1'; then
-    ready=1
-    break
-  fi
-  if ! docker inspect --format '{{.State.Running}}' "$dind" 2>/dev/null | grep -qx true; then
-    docker logs "$dind" >&2 || true
-    echo "Managed DinD exited before becoming ready" >&2
-    exit 3
-  fi
-  sleep 1
-done
-[[ "$ready" == 1 ]] || { docker logs "$dind" >&2 || true; echo "Timed out waiting for managed DinD" >&2; exit 3; }
-
-# RootlessKit has a separate TCP forwarding layer. Validate the exact endpoint
-# the OpenCode worker will use, not only the daemon's internal Unix socket.
-remote_ready=0
-for _ in $(seq 1 20); do
-  if docker run --rm --network "$network" -e DOCKER_HOST=tcp://docker-agent:2375 \
-      --entrypoint docker "$image" info >/dev/null 2>&1; then
-    remote_ready=1
-    break
-  fi
-  sleep 1
-done
-[[ "$remote_ready" == 1 ]] || { docker logs "$dind" >&2 || true; echo "Managed DinD TCP endpoint is not reachable" >&2; exit 3; }
+# Use the same rootless DinD startup and readiness checks as the CI smoke test.
+# Host policy changes are never performed automatically by this launcher.
+bash "$ROOT/scripts/task-dind" "$dind" "$network" "$workspace_volume" \
+  "$dind_data_volume" "$dind_image" "$image"
 
 worker_env=()
 while IFS='=' read -r key _; do

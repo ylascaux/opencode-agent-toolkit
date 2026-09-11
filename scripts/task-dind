@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Shared by managed tasks and the real Docker CI smoke test. This script never
+# installs host policies or changes sysctls; Linux policy setup is operator-owned.
+if [[ $# -ne 6 ]]; then
+  echo "Usage: task-dind NAME NETWORK WORKSPACE_VOLUME DATA_VOLUME DIND_IMAGE CLIENT_IMAGE" >&2
+  exit 2
+fi
+name="$1"
+network="$2"
+workspace="$3"
+data="$4"
+dind_image="$5"
+client_image="$6"
+for value in "$name" "$network" "$workspace" "$data"; do
+  [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || {
+    echo "task-dind: invalid container/network/volume name" >&2
+    exit 2
+  }
+done
+wait_seconds="${OAT_TASK_DIND_WAIT_SECONDS:-120}"
+[[ "$wait_seconds" =~ ^[1-9][0-9]{0,2}$ && "$wait_seconds" -le 600 ]] || {
+  echo "task-dind: OAT_TASK_DIND_WAIT_SECONDS must be between 1 and 600" >&2
+  exit 2
+}
+
+args=(run -d --name "$name" --privileged
+  --network "$network" --network-alias docker-agent
+  -e DOCKER_TLS_CERTDIR=
+  --mount "type=volume,src=$workspace,dst=/workspace"
+  --mount "type=volume,src=$data,dst=/home/rootless/.local/share/docker")
+profile="${OAT_TASK_DIND_APPARMOR_PROFILE:-}"
+if [[ -n "$profile" ]]; then
+  [[ "$profile" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || {
+    echo "task-dind: invalid AppArmor profile name" >&2
+    exit 2
+  }
+  args+=(--security-opt "apparmor=$profile")
+fi
+# The official entrypoint adds the TCP listener AND the RootlessKit forwarding.
+# Do not set DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS with a duplicate port mapping.
+# There is no host port publication and no host Docker socket or project bind.
+docker "${args[@]}" "$dind_image" >/dev/null
+
+probe_log="$(mktemp)"
+trap 'rm -f "$probe_log"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+diagnostics() {
+  echo "task-dind: $*" >&2
+  cat "$probe_log" >&2
+  docker logs --tail 100 "$name" >&2 || true
+  echo "On Ubuntu 24.04+, RootlessKit may need the dedicated AppArmor userns profile." >&2
+  echo "See docs/task-dind.md; this launcher never changes host kernel policy." >&2
+}
+
+# RootlessKit gives dockerd its own mount namespace (including a copy-up of
+# /run). Probing a guessed Unix socket via outer 'docker exec' is unreliable.
+# Check exactly the TCP endpoint used by the worker, from a sibling container.
+deadline=$((SECONDS + wait_seconds))
+while (( SECONDS < deadline )); do
+  if [[ "$(docker inspect --format '{{.State.Running}}' "$name" 2>/dev/null || true)" != true ]]; then
+    diagnostics "rootless daemon exited before becoming ready"
+    exit 3
+  fi
+  if docker run --rm --network "$network" \
+      -e DOCKER_HOST=tcp://docker-agent:2375 \
+      --entrypoint timeout "$client_image" 5s \
+      docker info --format '{{json .SecurityOptions}}' >"$probe_log" 2>&1; then
+    if ! grep -q 'name=rootless' "$probe_log"; then
+      diagnostics "refusing a daemon that is not rootless"
+      exit 3
+    fi
+    echo "task-dind: rootless Docker API ready on the task network" >&2
+    exit 0
+  fi
+  sleep 1
+done
+
+diagnostics "timed out waiting for the rootless Docker API"
+exit 3

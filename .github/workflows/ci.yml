@@ -27,7 +27,10 @@ jobs:
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
       - name: Managed task shell syntax
-        run: bash -n scripts/task-run scripts/workspace-broker scripts/docker-runtime scripts/opencode-agents
+        run: |
+          for script in scripts/task-run scripts/task-dind scripts/workspace-broker scripts/docker-runtime scripts/opencode-agents; do
+            bash -n "$script"
+          done
       - name: Reliability, plan and sandbox core JavaScript syntax
         run: |
           node --check runtime/plugins/reliability-core.js
@@ -55,6 +58,7 @@ jobs:
 
   runtime:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker runtime
@@ -125,65 +129,48 @@ jobs:
           docker compose -f compose.yaml exec -T oc2-server opencode2 --version
 
       - name: Validate managed-task rootless DinD endpoint
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           network=oat-ci-rootless-$RANDOM
           dind=oat-ci-rootless-$RANDOM
           workspace=oat-ci-workspace-$RANDOM
           data=oat-ci-dind-data-$RANDOM
+          profile_loaded=0
           cleanup() {
             docker rm -f "$dind" >/dev/null 2>&1 || true
             docker network rm "$network" >/dev/null 2>&1 || true
             docker volume rm -f "$workspace" "$data" >/dev/null 2>&1 || true
+            if [ "$profile_loaded" = 1 ]; then
+              sudo apparmor_parser -R runtime/apparmor/oat-dind-rootless || true
+            fi
           }
           trap cleanup EXIT
+          # Permit userns for this DinD container only. Do not disable Ubuntu's
+          # host-wide AppArmor restriction to make the rootless test pass.
+          if docker info --format '{{json .SecurityOptions}}' | grep -q apparmor; then
+            sudo apparmor_parser -r runtime/apparmor/oat-dind-rootless
+            profile_loaded=1
+            export OAT_TASK_DIND_APPARMOR_PROFILE=oat-dind-rootless
+          fi
           docker network create "$network" >/dev/null
           docker volume create "$workspace" >/dev/null
           docker volume create "$data" >/dev/null
           docker run --rm --mount "type=volume,src=$workspace,dst=/workspace" alpine:3.22 \
-            sh -c 'chown -R 1000:1000 /workspace && chmod 0777 /workspace'
-          # docker:dind-rootless already configures both the daemon TCP listener
-          # and the matching RootlessKit port forwarding when TLS is disabled.
-          # Supplying our own identical -p flag duplicates that mapping and can
-          # prevent the rootless daemon from becoming ready.
-          docker run -d --name "$dind" --privileged \
-            --network "$network" --network-alias docker-agent \
-            -e DOCKER_TLS_CERTDIR= \
-            --mount "type=volume,src=$workspace,dst=/workspace" \
-            --mount "type=volume,src=$data,dst=/home/rootless/.local/share/docker" \
-            docker:29-dind-rootless >/dev/null
-
-          ready=0
-          for _ in $(seq 1 60); do
-            if docker exec "$dind" sh -c 'DOCKER_HOST=unix:///run/user/1000/docker.sock docker info >/dev/null 2>&1'; then
-              ready=1
-              break
-            fi
-            if ! docker inspect --format '{{.State.Running}}' "$dind" 2>/dev/null | grep -qx true; then
-              docker logs "$dind" >&2 || true
-              exit 1
-            fi
-            sleep 1
-          done
-          if [ "$ready" != 1 ]; then
-            docker logs "$dind" >&2 || true
-            exit 1
-          fi
-
-          remote=0
-          for _ in $(seq 1 20); do
-            if docker run --rm --network "$network" \
-              -e DOCKER_HOST=tcp://docker-agent:2375 \
-              --entrypoint docker opencode-agent-toolkit:ci info >/dev/null 2>&1; then
-              remote=1
-              break
-            fi
-            sleep 1
-          done
-          if [ "$remote" != 1 ]; then
-            docker logs "$dind" >&2 || true
-            exit 1
-          fi
+            sh -c 'chown 1000:1000 /workspace && chmod 0755 /workspace'
+          bash scripts/task-dind "$dind" "$network" "$workspace" "$data" \
+            docker:29-dind-rootless opencode-agent-toolkit:ci
+          # Go beyond docker info: start a nested container and verify that its
+          # rootless bind-mount write is visible in the shared workspace volume.
+          docker run --rm --network "$network" \
+            -e DOCKER_HOST=tcp://docker-agent:2375 \
+            --entrypoint timeout opencode-agent-toolkit:ci 60s \
+            docker run --rm --mount type=bind,src=/workspace,dst=/workspace \
+            alpine:3.22 sh -ec 'printf "rootless-ok\n" > /workspace/.dind-smoke'
+          docker run --rm --mount "type=volume,src=$workspace,dst=/workspace,readonly" \
+            alpine:3.22 grep -qx rootless-ok /workspace/.dind-smoke
+          docker inspect "$dind" --format '{{json .Mounts}}' | \
+            python3 -c 'import json,sys; assert all(m["Type"] == "volume" for m in json.load(sys.stdin))'
 
   sandbox:
     runs-on: ubuntu-latest
