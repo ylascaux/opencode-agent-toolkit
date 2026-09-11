@@ -8,6 +8,7 @@
   "parents": [
     "meta-router",
     "orchestrator",
+    "research-runner",
     "review-lead",
     "platform-architect",
     "security-lead"
