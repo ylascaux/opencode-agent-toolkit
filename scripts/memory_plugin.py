@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,14 +74,48 @@ class PluginSettings:
         )
 
 
-def _git(args: list[str], *, cwd: Path | None = None, timeout: int = 30) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
+def _git_askpass_path() -> Path:
+    path = Path(tempfile.gettempdir()) / f"opencode-memory-plugin-git-askpass-{os.getuid() if hasattr(os, 'getuid') else 'user'}.sh"
+    if not path.exists():
+        path.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            "  *Username*) printf '%s\\n' 'x-access-token' ;;\n"
+            "  *Password*) printf '%s\\n' \"$OAT_GIT_ASKPASS_TOKEN\" ;;\n"
+            "  *) printf '%s\\n' '' ;;\n"
+            "esac\n"
+        )
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
+    return path
+
+
+def _git_env(source: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(source or os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
-    env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    token = (env.get("OAT_GITHUB_TOKEN") or env.get("GITHUB_TOKEN") or "").strip()
+    if token:
+        env["GIT_ASKPASS"] = str(_git_askpass_path())
+        env["GIT_ASKPASS_REQUIRE"] = "force"
+        env["OAT_GIT_ASKPASS_TOKEN"] = token
+        env["GIT_CONFIG_COUNT"] = "2"
+        env["GIT_CONFIG_KEY_0"] = "url.https://github.com/.insteadOf"
+        env["GIT_CONFIG_VALUE_0"] = "git@github.com:"
+        env["GIT_CONFIG_KEY_1"] = "url.https://github.com/.insteadOf"
+        env["GIT_CONFIG_VALUE_1"] = "ssh://git@github.com/"
+        env.pop("GIT_SSH_COMMAND", None)
+    else:
+        env.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
+    return env
+
+
+def _git(args: list[str], *, cwd: Path | None = None, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         cwd=str(cwd) if cwd else None,
-        env=env,
+        env=_git_env(),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
