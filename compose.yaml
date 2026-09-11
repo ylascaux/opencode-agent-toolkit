@@ -17,15 +17,6 @@ x-runtime-common: &runtime-common
   environment:
     OAT_RUNTIME: container
     OAT_SANDBOX_HOST_SHELL: /bin/bash
-  volumes:
-    # Mount at the exact host path. Docker commands executed by the agent then
-    # send valid host paths to the Docker daemon instead of container-only paths.
-    - type: bind
-      source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
-      target: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
-    - type: bind
-      source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
-      target: /var/run/docker.sock
 
 services:
   oc-server:
@@ -36,6 +27,8 @@ services:
       OPENCODE_MAJOR: "1"
       OPENCODE_CONFIG: /opt/oat/opencode.jsonc
     volumes:
+      # Keep the workspace path identical on host and in-container so Docker
+      # bind mounts emitted by an agent are valid for the host Docker daemon.
       - type: bind
         source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
         target: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
@@ -43,6 +36,8 @@ services:
         source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
         target: /var/run/docker.sock
       - oc-home:/root
+      # Toolkit memory/plugin state is intentionally shared across V1 and V2.
+      - oat-data:/root/.local/share/opencode-agent-toolkit
     ports:
       - "127.0.0.1:${OAT_OC_PORT:-4095}:4096"
     command: ["1"]
@@ -68,6 +63,7 @@ services:
         source: ${OAT_DOCKER_SOCKET:?set OAT_DOCKER_SOCKET through scripts/docker-runtime}
         target: /var/run/docker.sock
       - oc2-home:/root
+      - oat-data:/root/.local/share/opencode-agent-toolkit
     ports:
       - "127.0.0.1:${OAT_OC2_PORT:-4096}:4096"
     command: ["2"]
@@ -81,3 +77,4 @@ services:
 volumes:
   oc-home:
   oc2-home:
+  oat-data:
