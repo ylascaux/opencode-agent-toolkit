@@ -21,8 +21,11 @@ class Oc2LauncherTests(unittest.TestCase):
             path.write_text("#!/usr/bin/env python3\n")
             path.chmod(0o755)
 
+        # These tests exercise the launcher selection logic with fake binaries.
+        # Keep them on the legacy host path; Docker behavior has dedicated CI.
         (toolkit / ".env").write_text(
             "OPENCODE_MAJOR=1\n"
+            "OAT_RUNTIME=host\n"
             "OPENCODE_PREFLIGHT=0\n"
             "OAT_SANDBOX_ENABLED=0\n"
         )
