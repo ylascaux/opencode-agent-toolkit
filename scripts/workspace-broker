@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+command="${1:-}"
+workspace="${OAT_TASK_WORKSPACE:-/workspace}"
+repo="${OAT_TASK_REPO:-}"
+base="${OAT_TASK_BASE:-main}"
+branch="${OAT_TASK_BRANCH:-}"
+token="${OAT_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
+
+fail() {
+  echo "workspace-broker: $*" >&2
+  exit 2
+}
+
+[[ -n "$command" ]] || fail "missing command (clone|publish)"
+[[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "OAT_TASK_REPO must be OWNER/REPO"
+[[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || fail "unsafe base ref"
+[[ "$branch" =~ ^agent/[A-Za-z0-9._/-]+$ ]] || fail "managed branches must start with agent/"
+[[ "$branch" != "$base" && "$branch" != main && "$branch" != master ]] || fail "refusing protected/base branch"
+[[ -n "$token" ]] || fail "OAT_GITHUB_TOKEN (or GITHUB_TOKEN) is required"
+
+remote="https://github.com/${repo}.git"
+auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$token" | base64 -w0)"
+
+case "$command" in
+  clone)
+    if [[ -e "$workspace/.git" ]]; then
+      fail "workspace is already initialized"
+    fi
+    mkdir -p "$workspace"
+    git -c "http.extraHeader=$auth" clone --branch "$base" --single-branch "$remote" "$workspace"
+    cd "$workspace"
+    git switch -c "$branch"
+    git config user.name "${OAT_GIT_AUTHOR_NAME:-OpenCode Agent Toolkit}"
+    git config user.email "${OAT_GIT_AUTHOR_EMAIL:-opencode-agent-toolkit@users.noreply.github.com}"
+    # Keep credentials transient. The persisted remote never contains a token.
+    git remote set-url origin "$remote"
+    ;;
+
+  publish)
+    cd "$workspace"
+    [[ -d .git ]] || fail "workspace does not contain a Git repository"
+
+    current="$(git branch --show-current)"
+    [[ "$current" == "$branch" ]] || fail "current branch '$current' does not match managed branch '$branch'"
+
+    if [[ -z "$(git status --porcelain)" ]]; then
+      fail "no changes to publish"
+    fi
+
+    git add -A
+    if git diff --cached --quiet; then
+      fail "no staged changes to publish"
+    fi
+
+    title="${OAT_TASK_PR_TITLE:-agent: managed task}"
+    body="${OAT_TASK_PR_BODY:-Managed by opencode-agent-toolkit.}"
+    git commit -m "$title"
+
+    # Push exactly HEAD to the generated agent branch. Never accept an arbitrary
+    # destination ref from an agent-controlled workspace.
+    git -c "http.extraHeader=$auth" push origin "HEAD:refs/heads/$branch"
+
+    payload="$(jq -n \
+      --arg title "$title" \
+      --arg head "$branch" \
+      --arg base "$base" \
+      --arg body "$body" \
+      '{title:$title, head:$head, base:$base, body:$body}')"
+
+    response="$(curl --fail-with-body --silent --show-error \
+      -X POST \
+      -H "Accept: application/vnd.github+json" \
+      -H "Authorization: Bearer $token" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      "https://api.github.com/repos/${repo}/pulls" \
+      -d "$payload")"
+
+    pr_url="$(jq -r '.html_url // empty' <<<"$response")"
+    pr_number="$(jq -r '.number // empty' <<<"$response")"
+    [[ -n "$pr_url" && -n "$pr_number" ]] || fail "GitHub did not return a pull request"
+
+    printf 'OAT_PR_NUMBER=%s\n' "$pr_number"
+    printf 'OAT_PR_URL=%s\n' "$pr_url"
+    ;;
+
+  *)
+    fail "unknown command '$command' (expected clone|publish)"
+    ;;
+esac
