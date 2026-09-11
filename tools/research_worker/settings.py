@@ -37,7 +37,6 @@ class WorkerSettings:
     max_attempts: int
     max_tier: str
     opencode_command: str
-    opencode_major: str
     claim_path: str
     result_path_template: str
 
@@ -53,10 +52,6 @@ def load_settings() -> WorkerSettings:
     max_tier = os.getenv("OAT_RESEARCH_MAX_TIER", "high").strip().lower()
     if max_tier not in {"low", "medium", "high"}:
         raise ValueError("OAT_RESEARCH_MAX_TIER must be low, medium, or high")
-
-    opencode_major = os.getenv("OAT_RESEARCH_OPENCODE_MAJOR", "2").strip() or "2"
-    if opencode_major not in {"1", "2", "auto"}:
-        raise ValueError("OAT_RESEARCH_OPENCODE_MAJOR must be 1, 2, or auto")
 
     poll_min = _int_env("OAT_RESEARCH_POLL_MIN_SECONDS", 5, 1, 3600)
     poll_max = _int_env("OAT_RESEARCH_POLL_MAX_SECONDS", 30, poll_min, 3600)
@@ -74,15 +69,13 @@ def load_settings() -> WorkerSettings:
         execution_timeout_seconds=_int_env("OAT_RESEARCH_EXECUTION_TIMEOUT_SECONDS", 900, 30, 7200),
         max_attempts=_int_env("OAT_RESEARCH_MAX_ATTEMPTS", 2, 1, 5),
         max_tier=max_tier,
-        # The toolkit launcher is the safe default because it preserves the user's
-        # configured native/Docker runtime and persistent OpenCode server behavior.
-        # A custom command remains a trusted LOCAL setting; it is never accepted
-        # from a claimed research job.
+        # scripts/research-worker runs inside the persistent OC2 container by default,
+        # so this attaches to the already-running local server in that container.
+        # The command is trusted local configuration and is never read from a job.
         opencode_command=os.getenv(
             "OAT_RESEARCH_OPENCODE_COMMAND",
-            "bash scripts/opencode-agents",
+            "opencode2 --server http://127.0.0.1:4096",
         ).strip(),
-        opencode_major=opencode_major,
         claim_path=os.getenv("OAT_RESEARCH_CLAIM_PATH", "/api/internal/research/v2/jobs/claim").strip(),
         result_path_template=os.getenv(
             "OAT_RESEARCH_RESULT_PATH_TEMPLATE",
