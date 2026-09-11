@@ -4,12 +4,14 @@ The toolkit uses Docker as its default OpenCode runtime. The host only needs Doc
 
 ## Architecture
 
-Two persistent services share one runtime image but keep separate home volumes:
+Two persistent services share one runtime image but keep separate OpenCode home volumes:
 
 - `oc-server`: OpenCode V1, host URL `http://127.0.0.1:4095`
 - `oc2-server`: OpenCode V2 beta, host URL `http://127.0.0.1:4096`
 - `oc-home`: V1 auth, sessions, cache and local state
 - `oc2-home`: V2 auth, sessions, cache and local state
+
+Only toolkit-owned persistent data is shared between the two services and the host. By default that is `~/.local/share/opencode-agent-toolkit`, containing memory/plugin state and related toolkit data. The rest of the host home, including `~/.ssh`, is not mounted.
 
 The active workspace is bind-mounted at the **same absolute path** inside the runtime container as on the host. This is intentional: the Docker CLI inside the container talks to the host Docker daemon. Keeping identical paths means `docker build`, `docker run -v`, and `docker compose` can pass bind-mount paths that the host daemon understands.
 
@@ -23,9 +25,11 @@ just install-user
 just install-oc2
 ```
 
-`just install` builds `opencode-agent-toolkit:local`. It does not create a host Python virtualenv or install npm packages on the host when `OAT_RUNTIME=docker`.
+`just install` builds `opencode-agent-toolkit:local`. It does not create a host Python virtualenv or install npm/OpenCode packages on the host when `OAT_RUNTIME=docker`.
 
 Use `just refresh` to rebuild the runtime image without the Docker build cache.
+
+On first use, if `~/.local/share/opencode/auth.json` already exists, the wrapper copies it once into the selected private runtime home (`oc-home` or `oc2-home`) and restarts that server. This preserves an existing OpenCode login without exposing the whole host data directory. Disable this with `OAT_IMPORT_HOST_AUTH=0`.
 
 ## Daily usage
 
@@ -61,26 +65,43 @@ Open an interactive shell in the runtime with:
 oc2 shell
 ```
 
-## Connecting with a native client
-
-The servers are also published on loopback, so a native client can connect if one happens to be installed on the host:
+Toolkit memory commands also execute inside the runtime while using the shared toolkit data directory:
 
 ```bash
-opencode attach http://127.0.0.1:4095
+oc2 memory status
+oc2 memory sync
+```
+
+## Connecting with a native client
+
+The servers are published on loopback, so a native client can connect if one happens to be installed on the host:
+
+```bash
+opencode attach http://127.0.0.1:4095 --dir "$PWD"
 opencode2 --server http://127.0.0.1:4096
 ```
 
 A host installation is optional; the `oc` and `oc2` wrappers already run their clients from inside the image.
 
+The native client must reference a path visible to the running server. If you regularly switch repositories while keeping the same server alive, set a broader `OAT_WORKSPACE_ROOT` such as `$HOME/Projects`.
+
 ## Workspace scope
 
-By default only the current Git repository is exposed read/write. To deliberately grant a broader tree, set an absolute path in `.env.local`:
+By default only the current Git repository is exposed read/write. Switching to a repository outside the current bind causes Compose to recreate the service with the new workspace mount, while the OpenCode home volume keeps its persistent state.
+
+To deliberately grant a broader tree and avoid recreating the server when moving between repositories, set an absolute path in `.env.local`:
 
 ```bash
 OAT_WORKSPACE_ROOT=$HOME/Projects
 ```
 
-Then any invocation whose current directory is under that path can use the persistent server without changing its bind mount. This is useful for multi-repository architecture work.
+Then any invocation whose current directory is under that path can use the same persistent server. This is useful for multi-repository architecture work.
+
+## Memory and private plugin repositories
+
+The toolkit data bind mount reuses an existing local memory vault and `opencode-memory-plugin` checkout. This is particularly useful because the default memory plugin repository is private and uses an SSH Git URL.
+
+The container does **not** receive `~/.ssh` or the host SSH agent. If an existing private checkout cannot be updated, the memory plugin's non-strict mode keeps using the local snapshot. A completely fresh private clone still needs an explicit authentication method; do not solve that by mounting the whole SSH directory into the runtime.
 
 ## Docker access and security
 
@@ -104,10 +125,13 @@ OAT_RUNTIME=docker
 OAT_RUNTIME_IMAGE=opencode-agent-toolkit:local
 OAT_OC_PORT=4095
 OAT_OC2_PORT=4096
+OAT_IMPORT_HOST_AUTH=1
 # OAT_OPENCODE_V1_VERSION=latest
 # OAT_OPENCODE_V2_VERSION=beta
 # OAT_DOCKER_SOCKET=$HOME/.docker/run/docker.sock
 # OAT_WORKSPACE_ROOT=$HOME/Projects
+# OAT_DATA_DIR=$HOME/.local/share/opencode-agent-toolkit
+# OAT_HOST_AUTH_FILE=$HOME/.local/share/opencode/auth.json
 ```
 
 Set `OAT_RUNTIME=host` only to temporarily use the legacy host launcher.
