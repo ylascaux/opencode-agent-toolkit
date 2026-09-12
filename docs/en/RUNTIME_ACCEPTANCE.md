@@ -1,12 +1,12 @@
 # Runtime acceptance
 
-`scripts/runtime-acceptance` validates the integrated local multi-runtime workflow from a disposable external Git repository.
+`scripts/runtime-acceptance` validates the integrated local multi-runtime workflow from a disposable external Git repository and a disposable copy of the toolkit.
 
-The command copies the toolkit into a temporary directory, writes a synthetic `.env`, isolates `HOME` and all XDG directories, and forwards only a small allowlist of non-secret environment variables. The developer checkout, its `.env` / `.env.local`, generated artifacts, private memory vault, and normal OpenCode state are never used as acceptance state.
+The command writes a synthetic `.env`, isolates `HOME` and all XDG directories, and forwards only a small allowlist of non-secret environment variables. The developer checkout, its `.env` / `.env.local`, generated artifacts, private memory vault, and normal OpenCode state are never used as mutable acceptance state.
 
 ## Mandatory core acceptance
 
-The mandatory CI jobs run with `OAT_ACCEPTANCE_SKIP_MEMORY=1`. This is an explicit skip, not a synthetic MCP implementation. They still validate:
+The mandatory CI jobs run `scripts/runtime-acceptance` with `OAT_ACCEPTANCE_SKIP_MEMORY=1`. This is an explicit skip, not a synthetic MCP implementation. The harness validates:
 
 - OpenCode V1/V2 launcher routing from an external project;
 - portable toolkit skill-source registration;
@@ -16,7 +16,7 @@ The mandatory CI jobs run with `OAT_ACCEPTANCE_SKIP_MEMORY=1`. This is an explic
 - manifest v1 compatibility;
 - Docker/DinD isolation policy.
 
-The Docker job also starts the current OpenCode V2 runtime from the external project and uses a real V2 plugin calling `ctx.skill.list()` to verify both the canonical toolkit skills and a project-local skill are actually discovered.
+The Docker job additionally starts the actual OpenCode V2 CLI from `/workspace` in the freshly built runtime image and queries `GET /api/skill`. The smoke must observe all canonical toolkit skills plus a project-local `project-skill`. It does not invoke a model and does not rely on a synthetic OpenCode response.
 
 ## Real private memory MCP acceptance
 
@@ -37,13 +37,12 @@ To intentionally run only the non-memory contracts:
 OAT_ACCEPTANCE_SKIP_MEMORY=1 python3 -B scripts/runtime-acceptance
 ```
 
-For the real OpenCode V2 discovery smoke, provide a freshly built runtime image:
+For the real OpenCode V2 discovery smoke, build the image from the current checkout and run:
 
 ```bash
-OAT_ACCEPTANCE_SKIP_MEMORY=1 \
-OAT_ACCEPTANCE_DOCKER=1 \
+docker build -t opencode-agent-toolkit:acceptance -f runtime/Dockerfile .
 OAT_RUNTIME_IMAGE=opencode-agent-toolkit:acceptance \
-  python3 -B scripts/runtime-acceptance
+  python3 -B scripts/opencode-v2-skill-smoke
 ```
 
-Acceptance resources are temporary and Docker probe containers are removed on exit.
+Acceptance resources are temporary and Docker smoke containers are removed on exit.
