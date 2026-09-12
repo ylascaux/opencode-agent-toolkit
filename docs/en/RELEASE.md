@@ -9,7 +9,7 @@
 3. Run the complete release gate:
 
 ```bash
-just release-check
+python3 -B scripts/release-check
 ```
 
 This validates release metadata, runs `just check`, then runs the isolated offline runtime acceptance suite. Private-memory acceptance remains a separate CI integration because it requires dedicated access to the private memory-plugin repository.
