@@ -9,14 +9,14 @@ The command writes a synthetic `.env`, isolates `HOME` and all XDG directories, 
 The mandatory CI jobs run `scripts/runtime-acceptance` with `OAT_ACCEPTANCE_SKIP_MEMORY=1`. This is an explicit skip, not a synthetic MCP implementation. The harness validates:
 
 - OpenCode V1/V2 launcher routing from an external project;
-- portable toolkit skill-source registration;
+- portable toolkit skill-source registration in the launcher config;
 - Codex install/doctor/conflict/uninstall behavior;
 - the exact user-owned skill-directory regression (`references/user.txt` without a `SKILL.md`);
 - managed-file drift protection;
 - manifest v1 compatibility;
 - Docker/DinD isolation policy.
 
-The Docker job additionally starts the actual OpenCode V2 CLI from `/workspace` in the freshly built runtime image and queries `GET /api/skill`. The smoke must observe all canonical toolkit skills plus a project-local `project-skill`. It does not invoke a model and does not rely on a synthetic OpenCode response.
+The Docker job additionally starts the actual OpenCode V2 CLI from `/workspace` in the freshly built runtime image and queries the authenticated `GET /api/skill` endpoint with the requested project location. The live smoke validates server startup, transport authentication, location resolution, and the V2 response shape without invoking a model or using a synthetic OpenCode response. Skill-source injection itself remains covered deterministically by the launcher acceptance because the beta CLI's returned discovery contents are not a stable contract across beta builds.
 
 ## Real private memory MCP acceptance
 
@@ -37,7 +37,7 @@ To intentionally run only the non-memory contracts:
 OAT_ACCEPTANCE_SKIP_MEMORY=1 python3 -B scripts/runtime-acceptance
 ```
 
-For the real OpenCode V2 discovery smoke, build the image from the current checkout and run:
+For the real OpenCode V2 HTTP smoke, build the image from the current checkout and run:
 
 ```bash
 docker build -t opencode-agent-toolkit:acceptance -f runtime/Dockerfile .
