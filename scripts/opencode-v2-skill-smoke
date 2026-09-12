@@ -40,7 +40,7 @@ def main() -> int:
         (project / "README.md").write_text("# fixture\n")
         subprocess.run(["git", "init", "-q"], cwd=project, check=True, capture_output=True)
 
-        name = f"oat-v2-skill-smoke-{os.getpid()}"
+        container_name = f"oat-v2-skill-smoke-{os.getpid()}"
         shell = (
             "cd /opt/oat && "
             "python3 scripts/generate-config >/dev/null && "
@@ -50,7 +50,7 @@ def main() -> int:
         )
         started = run(
             [
-                "docker", "run", "-d", "--rm", "--name", name,
+                "docker", "run", "-d", "--rm", "--name", container_name,
                 "--entrypoint", "bash",
                 "-v", f"{project}:/workspace", "-w", "/workspace",
                 "-e", "OPENCODE_DISABLE_MODELS_FETCH=1",
@@ -68,7 +68,7 @@ def main() -> int:
             for _ in range(30):
                 probe = run(
                     [
-                        "docker", "exec", name,
+                        "docker", "exec", container_name,
                         "curl", "-fsS", "-u", f"{USERNAME}:{PASSWORD}",
                         "-H", f"x-opencode-directory: {LOCATION}",
                         "http://127.0.0.1:4096/api/skill",
@@ -86,25 +86,25 @@ def main() -> int:
                         last_error = str(exc)
                 else:
                     last_error = probe.stderr.strip() or probe.stdout.strip() or last_error
-                state = run(["docker", "inspect", "--format", "{{.State.Running}}", name], cwd=project)
+                state = run(["docker", "inspect", "--format", "{{.State.Running}}", container_name], cwd=project)
                 if state.returncode != 0 or state.stdout.strip() != "true":
                     break
                 time.sleep(1)
             if payload is None:
-                logs = run(["docker", "logs", name], cwd=project)
+                logs = run(["docker", "logs", container_name], cwd=project)
                 fail(f"skill API unavailable ({last_error})\n{logs.stdout}\n{logs.stderr}")
             resolved = payload.get("location", {})
             resolved_directory = resolved.get("directory") if isinstance(resolved, dict) else None
             if resolved_directory != LOCATION:
                 fail(f"skill API resolved unexpected location {resolved_directory!r}")
-            ids = {item.get("id") for item in payload["data"] if isinstance(item, dict)}
-            missing = sorted(REQUIRED - ids)
+            names = {item.get("name") for item in payload["data"] if isinstance(item, dict)}
+            missing = sorted(REQUIRED - names)
             if missing:
-                fail(f"missing discovered skills {missing}; discovered={sorted(item for item in ids if item)}")
-            print(f"PASS OpenCode V2 skill discovery at {LOCATION}: {len(ids)} skills")
+                fail(f"missing discovered skills {missing}; discovered={sorted(item for item in names if item)}")
+            print(f"PASS OpenCode V2 skill discovery at {LOCATION}: {len(names)} skills")
             return 0
         finally:
-            subprocess.run(["docker", "rm", "-f", name], cwd=project, text=True, capture_output=True)
+            subprocess.run(["docker", "rm", "-f", container_name], cwd=project, text=True, capture_output=True)
 
 
 if __name__ == "__main__":
