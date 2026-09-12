@@ -49,7 +49,7 @@ class InstallationSurfaceTests(unittest.TestCase):
     def test_installation_scripts_exist(self):
         for name in [
             "bootstrap", "doctor", "configure-models", "generate-config", "opencode-agents",
-            "user-link", "apply-profile", "resolve-models", "apply-reliability", "preflight",
+            "opencode-skill-source", "user-link", "apply-profile", "resolve-models", "apply-reliability", "preflight",
             "show-reliability", "agent_config.py", "new-agent", "docker-build", "docker-runtime",
         ]:
             self.assertTrue((ROOT / "scripts" / name).exists(), name)
@@ -90,6 +90,26 @@ class InstallationSurfaceTests(unittest.TestCase):
         self.assertIn('npm --prefix "$ROOT" ls @opencode/plugin --depth=0', text)
         self.assertIn("@opencode/plugin is missing; run 'just install'", text)
 
+    def test_opencode_skill_source_preserves_user_inline_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skills = Path(tmp) / "skills"
+            skills.mkdir()
+            env = os.environ.copy()
+            env["OPENCODE_CONFIG_CONTENT"] = json.dumps({
+                "experimental": {"user-setting": True},
+                "skills": ["/user/skills"],
+            })
+            result = subprocess.run(
+                ["python3", str(ROOT / "scripts" / "opencode-skill-source"), str(skills)],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            config = json.loads(result.stdout)
+            self.assertEqual(config["experimental"], {"user-setting": True})
+            self.assertEqual(config["skills"], ["/user/skills", str(skills.resolve())])
+
     def test_user_link_install_is_idempotent_and_reversible(self):
         with tempfile.TemporaryDirectory() as tmp:
             bin_dir = Path(tmp) / "bin"
@@ -116,7 +136,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             scripts.mkdir(parents=True)
 
             for name in [
-                "opencode-agents", "generate-config", "user-link", "resolve-models",
+                "opencode-agents", "opencode-skill-source", "generate-config", "user-link", "resolve-models",
                 "apply-reliability", "apply-memory", "memory_plugin.py", "preflight",
                 "agent_config.py",
             ]:
@@ -148,7 +168,7 @@ class InstallationSurfaceTests(unittest.TestCase):
                 "  printf '%s\\n' \"${MODEL_LOW:-}\" \"${MODEL_MEDIUM:-}\" \"${MODEL_HIGH:-}\"\n"
                 "  exit 0\n"
                 "fi\n"
-                "printf 'cwd=%s\\nconfig=%s\\nargs=%s\\nmodel=%s\\n' \"$PWD\" \"${OPENCODE_CONFIG:-}\" \"$*\" \"${MODEL_BUILDER:-}\"\n"
+                "printf 'cwd=%s\\nconfig=%s\\nargs=%s\\nmodel=%s\\ninline=%s\\n' \"$PWD\" \"${OPENCODE_CONFIG:-}\" \"$*\" \"${MODEL_BUILDER:-}\" \"${OPENCODE_CONFIG_CONTENT:-}\"\n"
             )
             fake_opencode.chmod(0o755)
 
@@ -159,6 +179,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             for key in [key for key in env if key.startswith("MODEL_")]:
                 env.pop(key)
             env.pop("OPENCODE_MAJOR", None)
+            env["OPENCODE_CONFIG_CONTENT"] = json.dumps({"experimental": {"user-setting": True}})
             env["OPENCODE_TOOLKIT_BIN_DIR"] = str(bin_dir)
             env["OPENCODE_BIN"] = str(fake_opencode)
             env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
@@ -187,6 +208,10 @@ class InstallationSurfaceTests(unittest.TestCase):
             self.assertEqual(Path(output["config"]).resolve(), (toolkit / "opencode.jsonc").resolve())
             self.assertEqual(output["args"], "run hello")
             self.assertEqual(output["model"], "test/medium")
+            inline = json.loads(output["inline"])
+            self.assertEqual(inline["experimental"], {"user-setting": True})
+            self.assertIn(str((toolkit / ".opencode" / "skills").resolve()), inline["skills"])
+            self.assertTrue((toolkit / ".opencode" / "skills" / "test-review" / "SKILL.md").is_file())
 
     def test_user_link_refuses_to_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as tmp:
