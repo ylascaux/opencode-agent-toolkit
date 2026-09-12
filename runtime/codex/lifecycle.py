@@ -269,10 +269,14 @@ def install_plan(root: Path, project: Path, *, with_memory: bool) -> CodexInstal
             plan.conflicts.append(f"{destination}: not a regular file")
         elif relative not in managed:
             plan.conflicts.append(f"{destination}: user-owned agent would be overwritten")
-        elif destination.read_bytes() == content:
-            plan.add("SKIP", destination)
         else:
-            plan.add("UPDATE", destination, content)
+            current = destination.read_bytes()
+            if digest(current) != managed[relative]:
+                plan.conflicts.append(f"{destination}: managed agent was modified; preserving it")
+            elif current == content:
+                plan.add("SKIP", destination)
+            else:
+                plan.add("UPDATE", destination, content)
     # A renamed/removed generated agent can be removed only if it still matches
     # the installed hash recorded by the prior manifest.
     for relative, installed_hash in managed.items():
