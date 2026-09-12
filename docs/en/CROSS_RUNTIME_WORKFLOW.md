@@ -112,7 +112,7 @@ Do not assume this surface has the same local shell/runtime access as Codex or O
 
 ## Standard task handoff
 
-For local Codex, prepare the staged bundle with `oc sync codex --dry-run`, generate with `oc sync codex`, and verify with `oc sync codex --check`. Use the [opt-in installation workflow](CODEX_ADAPTER.md#opt-in-use-in-a-project); staging does not change root instructions or the session's default agent. Export local Codex model/reasoning settings before syncing. Neither dry-run nor check writes files.
+For local Codex, prepare the staged bundle with `oc sync codex --dry-run`, generate with `oc sync codex`, and verify with `oc sync codex --check`. From the target project, use `oc codex install` and read-only `oc codex doctor`; `oc codex uninstall` removes only manifest-owned artifacts. Use `oc codex install --with-memory` only for explicit local memory MCP registration. Staging and installation never change root instructions, the session's default agent, or global Codex configuration. Export local Codex model/reasoning settings before syncing. Neither sync dry-run/check nor lifecycle doctor writes files.
 
 `oc sync all` renders both adapters deterministically. `oc sync opencode` is raw generation only; retain `just config` or the existing launch workflow for OpenCode's memory/reliability postprocessing. Do not interpret a raw adapter drift check as verification of postprocessed OpenCode configuration.
 
