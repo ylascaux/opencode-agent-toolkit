@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline end-to-end acceptance from a disposable toolkit + project copy."""
+"""End-to-end acceptance from disposable toolkit and external-project copies."""
 
 from __future__ import annotations
 
@@ -45,13 +45,13 @@ def write(path: Path, content: str) -> None:
 def snapshot(root: Path) -> dict[str, str]:
     result: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
-        rel = str(path.relative_to(root))
+        relative = str(path.relative_to(root))
         if path.is_symlink():
-            result[rel] = "symlink:" + os.readlink(path)
+            result[relative] = "symlink:" + os.readlink(path)
         elif path.is_dir():
-            result[rel] = "directory"
+            result[relative] = "directory"
         else:
-            result[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+            result[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     return result
 
 
@@ -110,10 +110,12 @@ def copy_toolkit(temp: Path) -> Path:
 
 
 def fake_opencode(path: Path) -> None:
+    """Probe only launcher routing; runtime discovery is tested separately with real V2."""
     write(
         path,
         "#!/usr/bin/env python3\n"
-        "import json, os, sys\nfrom pathlib import Path\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
         "Path(os.environ['OAT_ACCEPTANCE_CAPTURE']).write_text(json.dumps({"
         "'cwd':os.getcwd(),'config':os.environ.get('OPENCODE_CONFIG'),"
         "'content':json.loads(os.environ.get('OPENCODE_CONFIG_CONTENT','{}')),'argv':sys.argv[1:]},sort_keys=True))\n",
@@ -191,7 +193,7 @@ def assert_codex_conflicts(root: Path, fixtures: Path, env: dict[str, str]) -> N
     before = snapshot(conflict)
     result = subprocess.run(["bash", str(launcher), "codex", "install", "--cwd", str(conflict)], cwd=conflict, env=env, text=True, capture_output=True)
     require(result.returncode == 2 and "CONFLICT" in result.stdout, "user-owned skill directory was adopted")
-    require(snapshot(conflict) == before, "skill-directory conflict caused partial install")
+    require(snapshot(conflict) == before, "skill-directory conflict caused partial writes")
 
     modified = external_project(fixtures, "modified-project")
     run(["bash", str(launcher), "codex", "install", "--cwd", str(modified)], cwd=modified, env=env)
@@ -242,21 +244,32 @@ def assert_real_opencode_v2_skills(root: Path, project: Path, env: dict[str, str
     write(
         plugin / "index.ts",
         "import { writeFileSync } from 'node:fs'\n"
-        "export default { async setup(ctx:any) {\n"
-        "  const result:any = await ctx.skill.list()\n"
-        "  const list:any[] = Array.isArray(result) ? result : (result.skills || [])\n"
-        "  writeFileSync(process.env.OAT_ACCEPTANCE_SKILL_OUTPUT!, JSON.stringify(list.map((s:any)=>s.id).sort()))\n"
-        "} }\n",
+        "export default {\n"
+        "  id: 'oat.acceptance-skill-probe',\n"
+        "  setup: async (ctx:any) => {\n"
+        "    const result:any = await ctx.skill.list()\n"
+        "    const list:any[] = Array.isArray(result) ? result : (result.data || result.skills || [])\n"
+        "    writeFileSync(process.env.OAT_ACCEPTANCE_SKILL_OUTPUT!, JSON.stringify(list.map((s:any)=>s.id).sort()))\n"
+        "  }\n"
+        "}\n",
     )
     name = f"oat-acceptance-{os.getpid()}"
+    shell = (
+        "cd /opt/oat && "
+        "python3 scripts/generate-config >/dev/null && "
+        "export OPENCODE_CONFIG=/opt/oat/opencode.v2.jsonc && "
+        "export OPENCODE_CONFIG_CONTENT=\"$(python3 -B scripts/opencode-skill-source /opt/oat/.opencode/skills)\" && "
+        "cd /workspace && exec opencode2 serve --hostname 127.0.0.1 --port 4096"
+    )
     process = subprocess.Popen(
         [
             "docker", "run", "--rm", "--name", name,
+            "--entrypoint", "bash",
             "-v", f"{project}:/workspace", "-w", "/workspace",
             "-e", "OPENCODE_CONFIG_CONTENT={}",
             "-e", "OAT_ACCEPTANCE_SKILL_OUTPUT=/workspace/.acceptance-skills.json",
             "-e", "OPENCODE_DISABLE_MODELS_FETCH=1",
-            image, "2",
+            image, "-lc", shell,
         ],
         cwd=root,
         env=env,
@@ -281,15 +294,21 @@ def assert_real_opencode_v2_skills(root: Path, project: Path, env: dict[str, str
 
 
 def main() -> int:
+    skip_memory = os.environ.get("OAT_ACCEPTANCE_SKIP_MEMORY") == "1"
     with tempfile.TemporaryDirectory(prefix="oat-acceptance-") as directory:
         temp = Path(directory)
         root = copy_toolkit(temp)
         env = sanitized_environment(temp)
-        plugin_value = os.environ.get("OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR") or os.environ.get("OAT_MEMORY_PLUGIN_DIR")
-        require(bool(plugin_value), "real memory plugin is required; run just install or set OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR")
-        plugin = Path(plugin_value).expanduser().resolve()
-        require((plugin / "dist" / "cli.js").is_file() and (plugin / "dist" / "mcp.js").is_file(), "real memory plugin must be prebuilt")
-        env["OAT_MEMORY_PLUGIN_DIR"] = str(plugin)
+
+        if skip_memory:
+            env["OAT_ACCEPTANCE_SKIP_MEMORY"] = "1"
+        else:
+            plugin_value = os.environ.get("OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR") or os.environ.get("OAT_MEMORY_PLUGIN_DIR")
+            require(bool(plugin_value), "real memory plugin is required; run just install, configure OAT_MEMORY_PLUGIN_DIR, or explicitly set OAT_ACCEPTANCE_SKIP_MEMORY=1")
+            plugin = Path(plugin_value).expanduser().resolve()
+            require((plugin / "dist" / "cli.js").is_file() and (plugin / "dist" / "mcp.js").is_file(), "real memory plugin must be prebuilt")
+            env["OAT_MEMORY_PLUGIN_DIR"] = str(plugin)
+
         if os.environ.get("OAT_ACCEPTANCE_DOCKER") == "1":
             env["OAT_ACCEPTANCE_DOCKER"] = "1"
             env["OAT_RUNTIME_IMAGE"] = os.environ.get("OAT_RUNTIME_IMAGE", "opencode-agent-toolkit:local")
@@ -310,8 +329,12 @@ def main() -> int:
         require(snapshot(project) == before, "launcher probes mutated external project")
         print("[ok] OpenCode V1/V2 launcher routing")
 
-        assert_real_memory_mcp(root, project, env)
-        print("[ok] real portable memory MCP")
+        if skip_memory:
+            print("[skip] real portable memory MCP (explicit OAT_ACCEPTANCE_SKIP_MEMORY=1)")
+        else:
+            assert_real_memory_mcp(root, project, env)
+            print("[ok] real portable memory MCP")
+
         assert_codex(root, project, env)
         assert_codex_conflicts(root, fixtures, env)
         assert_manifest_v1(root, fixtures, env)
