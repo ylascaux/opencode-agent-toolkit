@@ -56,6 +56,13 @@ class SandboxConfigTests(unittest.TestCase):
             "reliability-v1.js", "reliability-v2.ts",
         ]:
             self.assertTrue((runtime / filename).is_file(), filename)
+        for dirname in ["plan-approval-v2", "reliability-v2"]:
+            self.assertTrue((runtime / dirname).is_dir(), dirname)
+            self.assertTrue((runtime / dirname / "index.ts").is_file(), dirname)
+
+        preflight = (ROOT / "scripts" / "preflight").read_text()
+        self.assertIn("V2 plugin entries resolve to directories with index.ts or index.js", preflight)
+        self.assertIn("V2 plugin entries must resolve to directories with index.ts or index.js", preflight)
 
     def test_aws_and_kubectl_are_manual_only(self):
         permissions = json.loads((ROOT / "agents" / "_defaults" / "permissions.json").read_text())

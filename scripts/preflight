@@ -25,16 +25,16 @@ case "$major" in
   2)
     bin="${OPENCODE_BIN:-opencode2}"
     config="$ROOT/opencode.v2.jsonc"
-    plugin_file="$ROOT/runtime/plugins/reliability-v2.ts"
-    plugin_entry="./runtime/plugins/reliability-v2.ts"
+    plugin_file="$ROOT/runtime/plugins/reliability-v2/index.ts"
+    plugin_entry="./runtime/plugins/reliability-v2"
     plugin_key="plugins"
     ;;
   auto)
     if command -v opencode2 >/dev/null 2>&1; then
       bin="${OPENCODE_BIN:-opencode2}"
       config="$ROOT/opencode.v2.jsonc"
-      plugin_file="$ROOT/runtime/plugins/reliability-v2.ts"
-      plugin_entry="./runtime/plugins/reliability-v2.ts"
+      plugin_file="$ROOT/runtime/plugins/reliability-v2/index.ts"
+      plugin_entry="./runtime/plugins/reliability-v2"
       plugin_key="plugins"
     else
       bin="${OPENCODE_BIN:-opencode}"
@@ -129,6 +129,13 @@ PY
   fi
 
   if [[ "$config" == *"opencode.v2.jsonc" ]]; then
+    if python3 "$ROOT/scripts/validate-v2-plugin-entries" "$config" >/dev/null 2>&1
+    then
+      ok "V2 plugin entries resolve to directories with index.ts or index.js"
+    else
+      error "V2 plugin entries must resolve to directories with index.ts or index.js"
+    fi
+
     if python3 - "$config" <<'PY' >/dev/null 2>&1
 import json, sys
 from pathlib import Path

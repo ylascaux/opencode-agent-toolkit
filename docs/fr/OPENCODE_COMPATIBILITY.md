@@ -38,6 +38,18 @@ Pour forcer un runtime sur une commande : `just v1` ou `just v2`.
 
 Le générateur traduit la même politique logique vers les deux formats.
 
+## Points d’entrée des plugins V2
+
+La build OpenCode V2 bêta-19425 observée rejetait les chemins de fichiers dans
+la liste `plugins` générée et exigeait des répertoires. Comme le tag de package
+`beta` est flottant, le toolkit utilise des wrappers de répertoire comme
+contournement de compatibilité ; chaque répertoire configuré expose un point
+d’entrée `index.ts` ou `index.js`. Le bridge mémoire génère son wrapper
+localement et réexporte l’adaptateur du plugin externe sans modifier son
+checkout.
+
+V1 conserve ses points d’entrée directs vers des fichiers.
+
 ## Compaction de contexte native en V2
 
 OpenCode V2 fournit maintenant une compaction de contexte native. Le toolkit n’installe donc pas et ne dépend pas de plugins tiers de type DCP/context-compression.

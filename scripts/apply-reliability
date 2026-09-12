@@ -63,8 +63,16 @@ def patch_config(path: Path, *, v2: bool) -> None:
         agent["steps"] = min(current, cap)
 
     plugins = data.setdefault("plugins" if v2 else "plugin", [])
+    if v2:
+        # beta-19425 rejects configured file paths. Clean entries emitted by
+        # earlier toolkit versions before adding the directory entrypoints.
+        legacy_file_entries = {
+            "./runtime/plugins/reliability-v2.ts",
+            "./runtime/plugins/plan-approval-v2.ts",
+        }
+        plugins[:] = [plugin for plugin in plugins if plugin not in legacy_file_entries]
     runtime_plugin = (
-        "./runtime/plugins/reliability-v2.ts"
+        "./runtime/plugins/reliability-v2"
         if v2
         else "./runtime/plugins/reliability-v1.js"
     )
@@ -72,7 +80,7 @@ def patch_config(path: Path, *, v2: bool) -> None:
         plugins.append(runtime_plugin)
 
     if v2:
-        plan_approval_plugin = "./runtime/plugins/plan-approval-v2.ts"
+        plan_approval_plugin = "./runtime/plugins/plan-approval-v2"
         if plan_approval_plugin not in plugins:
             plugins.append(plan_approval_plugin)
 

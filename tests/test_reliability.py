@@ -72,7 +72,8 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertLessEqual(v1["agent"]["orchestrator"]["steps"], 16)
         self.assertLessEqual(v2["agents"]["orchestrator"]["steps"], 16)
         self.assertIn("./runtime/plugins/reliability-v1.js", v1["plugin"])
-        self.assertIn("./runtime/plugins/reliability-v2.ts", v2["plugins"])
+        self.assertIn("./runtime/plugins/reliability-v2", v2["plugins"])
+        self.assertTrue((ROOT / "runtime" / "plugins" / "reliability-v2").is_dir())
         self.assertNotIn("./plugins/reliability-approval", v2["plugins"])
         self.assertFalse((ROOT / ".opencode" / "plugins").exists())
 

@@ -22,7 +22,8 @@ class PlanApprovalTests(unittest.TestCase):
 
     def test_only_v2_loads_the_plan_gate(self):
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
-        self.assertIn("./runtime/plugins/plan-approval-v2.ts", v2["plugins"])
+        self.assertIn("./runtime/plugins/plan-approval-v2", v2["plugins"])
+        self.assertTrue((ROOT / "runtime" / "plugins" / "plan-approval-v2").is_dir())
 
     def test_plan_approval_markers_are_v2_only(self):
         v1 = json.loads((ROOT / "opencode.jsonc").read_text())
