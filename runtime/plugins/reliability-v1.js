@@ -1,5 +1,9 @@
 import { applyNonInteractiveShellEnv } from "./non-interactive-shell.js"
 import { ReliabilityV1Plugin as LegacyReliabilityV1Plugin } from "./reliability-v1-legacy.js"
+import {
+  hasActiveDelegatedChildren,
+  isDelegationAlreadyRunningError,
+} from "./reliability-core.js"
 
 const FAIL_OPEN_OVERRIDES = {
   MAX_CHILD_COST: "0",
@@ -37,6 +41,8 @@ const enabled = (name, fallback = true) => {
 
 const eventProps = (event) => event?.properties ?? event?.data ?? {}
 const unwrap = (value) => value?.data ?? value
+const hookSessionID = (input) =>
+  input?.sessionID ?? input?.sessionId ?? input?.context?.sessionID ?? input?.context?.sessionId
 const compactSessionID = (id) => {
   const value = String(id ?? "")
   if (value.length <= 20) return value
@@ -67,6 +73,7 @@ export const ReliabilityV1Plugin = async (input) => {
   const hooks = await withFailOpenWatchdog(() => LegacyReliabilityV1Plugin(input))
   const inheritedShellEnv = hooks?.["shell.env"]
   const inheritedEvent = hooks?.event
+  const inheritedBefore = hooks?.["tool.execute.before"]
   const parents = new Map()
   const agents = new Map()
   const surfacedPermissions = new Set()
@@ -103,7 +110,39 @@ export const ReliabilityV1Plugin = async (input) => {
         },
       })
     } catch {
-      // Permission surfacing is best effort and must never break the run.
+      // Permission surfacing and recovery logging are best effort and must never break the run.
+    }
+  }
+
+  const activeDelegatedChildren = async (sessionID) => {
+    if (!sessionID || typeof input?.client?.session?.children !== "function") return undefined
+    try {
+      const children = unwrap(await input.client.session.children({ path: { id: sessionID } })) ?? []
+      return hasActiveDelegatedChildren(children)
+    } catch {
+      // Unknown state must fail closed: only release a stale lock after a successful children lookup.
+      return undefined
+    }
+  }
+
+  const runBeforeWithStaleRecovery = async (hookInput, output) => {
+    if (typeof inheritedBefore !== "function") return
+    try {
+      return await inheritedBefore(hookInput, output)
+    } catch (error) {
+      if (!isDelegationAlreadyRunningError(error)) throw error
+      const sessionID = hookSessionID(hookInput)
+      const active = await activeDelegatedChildren(sessionID)
+      if (active !== false) throw error
+      await logBridgeFailure("released stale delegation lock with no active child", {
+        sessionID,
+        tool: hookInput?.tool,
+      })
+      // The legacy state is intentionally left untouched. Allowing this one task
+      // to proceed gives the next real child outcome a chance to reconcile the
+      // existing delegation entry. If child state cannot be proven inactive we
+      // keep the original guard error instead.
+      return
     }
   }
 
@@ -184,6 +223,7 @@ export const ReliabilityV1Plugin = async (input) => {
       clearPermission(event)
       await surfacePermission(event)
     },
+    "tool.execute.before": runBeforeWithStaleRecovery,
     "shell.env": async (shellInput, output = {}) => {
       if (typeof inheritedShellEnv === "function") {
         await inheritedShellEnv(shellInput, output)
