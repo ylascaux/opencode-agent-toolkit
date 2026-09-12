@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import shutil
@@ -8,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
+OPEN_CODE_GOLDEN = ROOT / "tests" / "fixtures" / "opencode-output.sha256.json"
 
 LEADS = {"meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead", "research-runner"}
 RESTRICTED_RESEARCH_AGENTS = {"research-runner"}
@@ -64,6 +66,31 @@ def generated_artifact_snapshot(root: Path) -> dict[str, bytes | None]:
     return snapshot
 
 
+def generated_output_digests(root: Path) -> dict[str, str]:
+    """Digest deterministic OpenCode artifacts while ignoring fixture root paths."""
+    root_marker = str(root.resolve()).encode()
+
+    def digest_file(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes().replace(root_marker, b"<ROOT>")).hexdigest()
+
+    def digest_directory(path: Path) -> str:
+        digest = hashlib.sha256()
+        for artifact in sorted(path.glob("*.md")):
+            digest.update(str(artifact.relative_to(root)).encode())
+            digest.update(b"\0")
+            digest.update(artifact.read_bytes().replace(root_marker, b"<ROOT>"))
+            digest.update(b"\0")
+        return digest.hexdigest()
+
+    return {
+        "opencode.jsonc": digest_file(root / "opencode.jsonc"),
+        "opencode.v2.jsonc": digest_file(root / "opencode.v2.jsonc"),
+        ".generated/agents.json": digest_file(root / ".generated" / "agents.json"),
+        ".generated/prompts": digest_directory(root / ".generated" / "prompts"),
+        ".generated/prompts-v1": digest_directory(root / ".generated" / "prompts-v1"),
+    }
+
+
 class GeneratedArtifactSnapshotTests(unittest.TestCase):
     def test_missing_artifacts_are_snapshotted_and_changes_are_detected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -100,6 +127,7 @@ class ConfigPolicyTests(unittest.TestCase):
         fixture_scripts.mkdir()
         for filename in ["generate-config", "agent_config.py", "apply-reliability"]:
             shutil.copy2(ROOT / "scripts" / filename, fixture_scripts / filename)
+        shutil.copytree(ROOT / "runtime" / "common", cls.fixture_root / "runtime" / "common")
         shutil.copy2(ROOT / "reliability.json", cls.fixture_root / "reliability.json")
 
         subprocess.run(
@@ -129,6 +157,10 @@ class ConfigPolicyTests(unittest.TestCase):
         self.assertEqual(set(self.v1["agent"]), set(self.v2["agents"]))
         self.assertEqual(len(self.v1["agent"]), 41)
         self.assertEqual({path.name for path in source_agent_dirs()}, set(self.v1["agent"]))
+
+    def test_open_code_artifacts_match_the_pre_normalization_golden_snapshot(self):
+        expected = json.loads(OPEN_CODE_GOLDEN.read_text())
+        self.assertEqual(generated_output_digests(self.fixture_root), expected)
 
     def test_every_agent_is_self_contained(self):
         for directory in source_agent_dirs():

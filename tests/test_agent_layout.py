@@ -51,6 +51,15 @@ class AgentDirectoryLayoutTests(unittest.TestCase):
         self.assertIn("entity-resolver", children["research-runner"])
         self.assertEqual(children["builder"], [])
 
+    def test_normalized_agents_keep_runtime_extensions_separate_from_common_intent(self):
+        normalized = MODULE["load_normalized_agents"]()
+        self.assertEqual(len(normalized), 41)
+        self.assertEqual(normalized["builder"].__class__.__module__, "runtime.common.normalization")
+        self.assertEqual(normalized["builder"].extensions, {"opencode": {}})
+        self.assertEqual(normalized["builder"].opencode, {})
+        self.assertEqual(normalized["meta-router"].parents, ())
+        self.assertIn("orchestrator", MODULE["children_by_parent"](normalized)["meta-router"])
+
     def test_generated_manifest_is_derived_and_points_back_to_source(self):
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], check=True)
         manifest = json.loads((ROOT / ".generated" / "agents.json").read_text())
