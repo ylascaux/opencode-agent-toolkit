@@ -4,6 +4,15 @@ All notable toolkit changes are documented here.
 
 The project uses semantic versioning for tagged releases. `VERSION` is the release source of truth; Git tags use the corresponding `v<version>` form.
 
+## [0.1.1] - 2026-09-13
+
+Patch release for stale delegated-task recovery.
+
+### Fixed
+
+- OpenCode V1/V2 no longer remain permanently blocked by a stale `equivalent delegated task is already running` guard after the delegated child has already become terminal.
+- Stale-lock recovery is conservative: it only fails open after a successful child-session lookup proves that no delegated child is active; unknown or active child state keeps the original guard in place.
+
 ## [0.1.0] - 2026-09-13
 
 First tagged multi-runtime release.
