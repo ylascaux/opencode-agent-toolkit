@@ -80,6 +80,20 @@ class CodexLifecycleTests(unittest.TestCase):
         self.assertTrue(removal.conflicts)
         self.assertEqual(installed.read_text(), "user edit\n")
 
+    def test_reinstall_preserves_manually_modified_managed_agent(self):
+        self.install()
+        installed = self.project / ".codex" / "agents" / "builder.toml"
+        installed.write_text("user edit\n")
+        generated = self.root / ".generated" / "codex" / "agents" / "builder.toml"
+        generated.write_text('name = "builder-v2"\n')
+        plan = lifecycle.install_plan(self.root, self.project, with_memory=False)
+        self.assertTrue(plan.conflicts)
+        self.assertTrue(any("managed agent was modified" in conflict for conflict in plan.conflicts))
+        self.assertEqual(installed.read_text(), "user edit\n")
+        with self.assertRaises(lifecycle.LifecycleError):
+            plan.apply()
+        self.assertEqual(installed.read_text(), "user edit\n")
+
     def test_memory_registration_is_explicit_and_preserves_other_tables(self):
         codex = self.project / ".codex"
         codex.mkdir()
