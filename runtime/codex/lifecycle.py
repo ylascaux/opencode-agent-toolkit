@@ -361,6 +361,10 @@ def install_plan(root: Path, project: Path, *, with_memory: bool) -> CodexInstal
     for relative, content in generated_skills.items():
         destination = _safe_project_child(project, relative)
         _check_project_ancestors(project, destination, label="managed skill parent")
+        skill_directory = destination.parent
+        if relative not in managed_skills and skill_directory.exists():
+            plan.conflicts.append(f"{skill_directory}: user-owned skill directory would be adopted")
+            continue
         if destination.is_symlink() or destination.parent.is_symlink():
             plan.conflicts.append(f"{destination}: symlinked managed path")
             continue
