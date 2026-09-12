@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline acceptance entrypoint for the local multi-runtime toolkit."""
+"""Offline end-to-end acceptance from a disposable toolkit + project copy."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-
+import time
 
 ORIGINAL_ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_SKILLS = ("terraform-review", "security-review", "test-review")
@@ -37,26 +37,26 @@ def run(command: list[str], *, cwd: Path, env: dict[str, str], expect: int = 0) 
     return result
 
 
-def snapshot(root: Path) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for path in sorted(root.rglob("*")):
-        relative = str(path.relative_to(root))
-        if path.is_symlink():
-            result[relative] = "symlink:" + os.readlink(path)
-        elif path.is_dir():
-            result[relative] = "directory"
-        else:
-            result[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return result
-
-
 def write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
 
 
-def external_project(root: Path, name: str) -> Path:
-    project = root / name
+def snapshot(root: Path) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        rel = str(path.relative_to(root))
+        if path.is_symlink():
+            result[rel] = "symlink:" + os.readlink(path)
+        elif path.is_dir():
+            result[rel] = "directory"
+        else:
+            result[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return result
+
+
+def external_project(parent: Path, name: str) -> Path:
+    project = parent / name
     write(project / "README.md", "# Runtime acceptance fixture\n")
     write(project / "src" / "example.txt", "fixture\n")
     write(project / "AGENTS.md", "external-project-sentinel\n")
@@ -70,38 +70,26 @@ def external_project(root: Path, name: str) -> Path:
 
 def sanitized_environment(temp: Path) -> dict[str, str]:
     inherited = os.environ
-    allowed = {
-        key: inherited[key]
-        for key in ("PATH", "LANG", "LC_ALL", "TERM", "TMPDIR")
-        if key in inherited
-    }
-    home = temp / "home"
-    xdg_config = temp / "xdg-config"
-    xdg_data = temp / "xdg-data"
-    xdg_state = temp / "xdg-state"
-    xdg_cache = temp / "xdg-cache"
-    for directory in (home, xdg_config, xdg_data, xdg_state, xdg_cache):
-        directory.mkdir(parents=True, exist_ok=True)
-    return {
-        **allowed,
-        "HOME": str(home),
-        "XDG_CONFIG_HOME": str(xdg_config),
-        "XDG_DATA_HOME": str(xdg_data),
-        "XDG_STATE_HOME": str(xdg_state),
-        "XDG_CACHE_HOME": str(xdg_cache),
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "OAT_RUNTIME": "host",
-        "OPENCODE_PREFLIGHT": "0",
-        "OAT_SANDBOX_ENABLED": "0",
-        "OAT_MEMORY_ENABLED": "0",
-        "OAT_MEMORY_PLUGIN_AUTO_SYNC": "0",
-        "OPENCODE_DISABLE_MODELS_FETCH": "1",
-        "OPENCODE_DISABLE_AUTOUPDATE": "1",
-        "MODEL_PROFILE": "acceptance",
-        "MODEL_LOW": "acceptance/low",
-        "MODEL_MEDIUM": "acceptance/medium",
-        "MODEL_HIGH": "acceptance/high",
-    }
+    env = {key: inherited[key] for key in ("PATH", "LANG", "LC_ALL", "TERM", "TMPDIR") if key in inherited}
+    for name in ("home", "xdg-config", "xdg-data", "xdg-state", "xdg-cache"):
+        (temp / name).mkdir(parents=True, exist_ok=True)
+    env.update(
+        {
+            "HOME": str(temp / "home"),
+            "XDG_CONFIG_HOME": str(temp / "xdg-config"),
+            "XDG_DATA_HOME": str(temp / "xdg-data"),
+            "XDG_STATE_HOME": str(temp / "xdg-state"),
+            "XDG_CACHE_HOME": str(temp / "xdg-cache"),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "OPENCODE_DISABLE_MODELS_FETCH": "1",
+            "OPENCODE_DISABLE_AUTOUPDATE": "1",
+            "MODEL_PROFILE": "acceptance",
+            "MODEL_LOW": "acceptance/low",
+            "MODEL_MEDIUM": "acceptance/medium",
+            "MODEL_HIGH": "acceptance/high",
+        }
+    )
+    return env
 
 
 def copy_toolkit(temp: Path) -> Path:
@@ -112,7 +100,12 @@ def copy_toolkit(temp: Path) -> Path:
     shutil.copytree(ORIGINAL_ROOT, target, ignore=ignored, symlinks=True)
     example = target / ".env.example"
     require(example.is_file(), "toolkit copy is missing .env.example")
-    (target / ".env").write_text(example.read_text())
+    (target / ".env").write_text(
+        example.read_text()
+        + "\nOAT_RUNTIME=host\nOPENCODE_PREFLIGHT=0\nOAT_SANDBOX_ENABLED=0\n"
+        + "OAT_MEMORY_ENABLED=0\nOAT_MEMORY_PLUGIN_AUTO_SYNC=0\n"
+        + "MODEL_PROFILE=acceptance\nMODEL_LOW=acceptance/low\nMODEL_MEDIUM=acceptance/medium\nMODEL_HIGH=acceptance/high\n"
+    )
     return target
 
 
@@ -120,8 +113,7 @@ def fake_opencode(path: Path) -> None:
     write(
         path,
         "#!/usr/bin/env python3\n"
-        "import json, os, sys\n"
-        "from pathlib import Path\n"
+        "import json, os, sys\nfrom pathlib import Path\n"
         "Path(os.environ['OAT_ACCEPTANCE_CAPTURE']).write_text(json.dumps({"
         "'cwd':os.getcwd(),'config':os.environ.get('OPENCODE_CONFIG'),"
         "'content':json.loads(os.environ.get('OPENCODE_CONFIG_CONTENT','{}')),'argv':sys.argv[1:]},sort_keys=True))\n",
@@ -131,21 +123,19 @@ def fake_opencode(path: Path) -> None:
 
 def assert_launcher(root: Path, project: Path, env: dict[str, str], binary: Path, major: str) -> None:
     capture = Path(env["OAT_ACCEPTANCE_CAPTURE"])
-    launcher = root / "scripts" / "opencode-agents"
     run(
-        ["bash", str(launcher), "--acceptance-probe"],
+        ["bash", str(root / "scripts" / "opencode-agents"), "--acceptance-probe"],
         cwd=project,
         env={**env, "OPENCODE_MAJOR": major, "OPENCODE_BIN": str(binary)},
     )
     payload = json.loads(capture.read_text())
     require(payload["cwd"] == str(project.resolve()), f"OpenCode V{major} changed external cwd")
-    expected_config = root / ("opencode.v2.jsonc" if major == "2" else "opencode.jsonc")
-    require(payload["config"] == str(expected_config), f"OpenCode V{major} selected wrong config")
-    skills = payload["content"].get("skills", [])
-    require(str(root / ".opencode" / "skills") in skills, f"OpenCode V{major} did not register toolkit skills")
+    expected = root / ("opencode.v2.jsonc" if major == "2" else "opencode.jsonc")
+    require(payload["config"] == str(expected), f"OpenCode V{major} selected wrong config")
+    require(str(root / ".opencode" / "skills") in payload["content"].get("skills", []), f"OpenCode V{major} missed toolkit skill source")
 
 
-def mcp_exchange(root: Path, project: Path, env: dict[str, str]) -> None:
+def assert_real_memory_mcp(root: Path, project: Path, env: dict[str, str]) -> None:
     process = subprocess.Popen(
         [sys.executable, "-B", str(root / "scripts" / "memory-mcp"), "--cwd", str(project)],
         cwd=project,
@@ -155,7 +145,6 @@ def mcp_exchange(root: Path, project: Path, env: dict[str, str]) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    assert process.stdin is not None
     stdout, stderr = process.communicate(
         "\n".join(
             (
@@ -167,13 +156,13 @@ def mcp_exchange(root: Path, project: Path, env: dict[str, str]) -> None:
         )
         + "\n"
     )
-    require(process.returncode == 0, f"real memory MCP exited with {process.returncode}: {stderr}")
+    require(process.returncode == 0, f"real memory MCP failed: {stderr}")
     replies = [json.loads(line) for line in stdout.splitlines() if line.strip()]
-    by_id = {reply.get("id"): reply for reply in replies if "id" in reply}
-    require(2 in by_id and 3 in by_id, f"real memory MCP protocol responses incomplete: {stdout}")
-    visible = tuple(tool["name"] for tool in by_id[2]["result"]["tools"])
-    require(visible == MCP_TOOLS, f"real memory MCP tools differ: {visible}")
-    require(not {"memory_accept", "memory_promote", "memory_push"} & set(visible), "human-only memory tool exposed")
+    by_id = {item.get("id"): item for item in replies if "id" in item}
+    require(2 in by_id and 3 in by_id, f"real memory MCP responses incomplete: {stdout}")
+    tools = tuple(tool["name"] for tool in by_id[2]["result"]["tools"])
+    require(tools == MCP_TOOLS, f"unexpected real MCP tool surface: {tools}")
+    require(not {"memory_accept", "memory_promote", "memory_push"} & set(tools), "human-only memory lifecycle tool exposed")
 
 
 def assert_codex(root: Path, project: Path, env: dict[str, str]) -> None:
@@ -185,9 +174,9 @@ def assert_codex(root: Path, project: Path, env: dict[str, str]) -> None:
     manifest_path = project / ".codex" / ".opencode-agent-toolkit.json"
     manifest = json.loads(manifest_path.read_text())
     require(manifest.get("version") == 2 and manifest.get("agents") and manifest.get("skills"), "Codex install incomplete")
-    require((project / "AGENTS.md").read_text() == "external-project-sentinel\n", "Codex changed project AGENTS.md")
+    require((project / "AGENTS.md").read_text() == "external-project-sentinel\n", "Codex changed root AGENTS.md")
     config = (project / ".codex" / "config.toml").read_text()
-    require("[mcp_servers.other]" in config and "[mcp_servers.opencode_agent_toolkit_memory]" in config, "MCP registration not additive")
+    require("[mcp_servers.other]" in config and "[mcp_servers.opencode_agent_toolkit_memory]" in config, "Codex MCP registration was not additive")
     before = snapshot(project)
     run(["bash", str(launcher), "codex", "uninstall", "--dry-run", "--cwd", str(project)], cwd=project, env=env)
     require(snapshot(project) == before, "Codex uninstall --dry-run wrote files")
@@ -200,15 +189,9 @@ def assert_codex_conflicts(root: Path, fixtures: Path, env: dict[str, str]) -> N
     conflict = external_project(fixtures, "conflict-project")
     write(conflict / ".agents" / "skills" / "security-review" / "references" / "user.txt", "user-owned\n")
     before = snapshot(conflict)
-    result = subprocess.run(
-        ["bash", str(launcher), "codex", "install", "--cwd", str(conflict)],
-        cwd=conflict,
-        env=env,
-        text=True,
-        capture_output=True,
-    )
-    require(result.returncode == 2 and "CONFLICT" in result.stdout, "pre-existing user skill directory was adopted")
-    require(snapshot(conflict) == before, "Codex conflict caused partial writes")
+    result = subprocess.run(["bash", str(launcher), "codex", "install", "--cwd", str(conflict)], cwd=conflict, env=env, text=True, capture_output=True)
+    require(result.returncode == 2 and "CONFLICT" in result.stdout, "user-owned skill directory was adopted")
+    require(snapshot(conflict) == before, "skill-directory conflict caused partial install")
 
     modified = external_project(fixtures, "modified-project")
     run(["bash", str(launcher), "codex", "install", "--cwd", str(modified)], cwd=modified, env=env)
@@ -218,15 +201,14 @@ def assert_codex_conflicts(root: Path, fixtures: Path, env: dict[str, str]) -> N
     agent.write_text("manual edit\n")
     result = subprocess.run(["bash", str(launcher), "codex", "install", "--cwd", str(modified)], cwd=modified, env=env, text=True, capture_output=True)
     require(result.returncode == 2 and "managed agent was modified" in result.stdout, "modified managed agent did not block reinstall")
-    require(agent.read_text() == "manual edit\n" and manifest.read_bytes() == manifest_before, "conflicting reinstall mutated managed state")
+    require(agent.read_text() == "manual edit\n" and manifest.read_bytes() == manifest_before, "conflicting reinstall mutated state")
 
 
 def assert_manifest_v1(root: Path, fixtures: Path, env: dict[str, str]) -> None:
     launcher = root / "scripts" / "opencode-agents"
     project = external_project(fixtures, "v1-project")
-    staged = sorted((root / ".generated" / "codex" / "agents").glob("*.toml"))
     agents: dict[str, str] = {}
-    for source in staged:
+    for source in sorted((root / ".generated" / "codex" / "agents").glob("*.toml")):
         destination = project / ".codex" / "agents" / source.name
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(source.read_bytes())
@@ -234,9 +216,9 @@ def assert_manifest_v1(root: Path, fixtures: Path, env: dict[str, str]) -> None:
     manifest = project / ".codex" / ".opencode-agent-toolkit.json"
     manifest.write_text(json.dumps({"version": 1, "agents": agents}) + "\n")
     before = snapshot(project)
-    doctor = subprocess.run(["bash", str(launcher), "codex", "doctor", "--cwd", str(project)], cwd=project, env=env, text=True, capture_output=True)
-    require(doctor.returncode in (0, 1), "v1 manifest doctor failed")
-    require(snapshot(project) == before, "v1 doctor mutated project")
+    result = subprocess.run(["bash", str(launcher), "codex", "doctor", "--cwd", str(project)], cwd=project, env=env, text=True, capture_output=True)
+    require(result.returncode in (0, 1), "v1 manifest doctor failed")
+    require(snapshot(project) == before, "v1 manifest doctor wrote files")
     run(["bash", str(launcher), "codex", "uninstall", "--cwd", str(project)], cwd=project, env=env)
     run(["bash", str(launcher), "codex", "install", "--cwd", str(project)], cwd=project, env=env)
     require(json.loads(manifest.read_text())["version"] == 2, "v1 manifest did not upgrade after successful install")
@@ -244,46 +226,37 @@ def assert_manifest_v1(root: Path, fixtures: Path, env: dict[str, str]) -> None:
 
 def assert_isolation(root: Path) -> None:
     compose = (root / "compose.yaml").read_text()
-    managed = (root / "scripts" / "task-run").read_text()
-    require("/var/run/docker.sock" not in compose and "/var/run/docker.sock" not in managed, "host Docker socket exposed")
-    require("docker-agent:" in compose and "dind-data:/var/lib/docker" in compose, "dedicated DinD missing")
-    require("docker:29-dind-rootless" in managed, "managed-task rootless DinD missing")
+    task = (root / "scripts" / "task-run").read_text()
+    require("/var/run/docker.sock" not in compose and "/var/run/docker.sock" not in task, "host Docker socket exposed")
+    require("docker-agent:" in compose and "dind-data:/var/lib/docker" in compose, "normal dedicated DinD missing")
+    require("docker:29-dind-rootless" in task, "managed-task rootless DinD missing")
 
 
 def assert_real_opencode_v2_skills(root: Path, project: Path, env: dict[str, str]) -> None:
-    if os.environ.get("OAT_ACCEPTANCE_DOCKER") != "1":
+    if env.get("OAT_ACCEPTANCE_DOCKER") != "1":
         return
-    image = os.environ.get("OAT_RUNTIME_IMAGE", "opencode-agent-toolkit:local")
-    require(shutil.which("docker") is not None, "Docker acceptance requested but docker is unavailable")
-    plugin_dir = project / ".opencode" / "plugins" / "acceptance-skill-probe"
+    require(shutil.which("docker") is not None, "Docker acceptance requested but Docker is unavailable")
+    image = env.get("OAT_RUNTIME_IMAGE", "opencode-agent-toolkit:local")
     output = project / ".acceptance-skills.json"
+    plugin = project / ".opencode" / "plugins" / "acceptance-skill-probe"
     write(
-        plugin_dir / "index.ts",
-        "import type { Plugin } from '@opencode/plugin'\n"
+        plugin / "index.ts",
         "import { writeFileSync } from 'node:fs'\n"
-        "export const AcceptanceSkillProbe: Plugin = async (ctx) => {\n"
-        "  const skills = await ctx.skill.list()\n"
-        "  writeFileSync(process.env.OAT_ACCEPTANCE_SKILL_OUTPUT!, JSON.stringify(skills.map((s:any)=>s.id).sort()))\n"
-        "  return {}\n"
-        "}\n",
+        "export default { async setup(ctx:any) {\n"
+        "  const result:any = await ctx.skill.list()\n"
+        "  const list:any[] = Array.isArray(result) ? result : (result.skills || [])\n"
+        "  writeFileSync(process.env.OAT_ACCEPTANCE_SKILL_OUTPUT!, JSON.stringify(list.map((s:any)=>s.id).sort()))\n"
+        "} }\n",
     )
-    write(plugin_dir / "package.json", '{"type":"module"}\n')
-    merged = run(
-        [sys.executable, "-B", str(root / "scripts" / "opencode-skill-source"), "/opt/oat/.opencode/skills"],
-        cwd=root,
-        env={**env, "OPENCODE_CONFIG_CONTENT": "{}"},
-    ).stdout.strip()
     name = f"oat-acceptance-{os.getpid()}"
     process = subprocess.Popen(
         [
             "docker", "run", "--rm", "--name", name,
-            "-v", f"{project}:/workspace",
-            "-w", "/workspace",
-            "-e", f"OPENCODE_CONFIG_CONTENT={merged}",
+            "-v", f"{project}:/workspace", "-w", "/workspace",
+            "-e", "OPENCODE_CONFIG_CONTENT={}",
             "-e", "OAT_ACCEPTANCE_SKILL_OUTPUT=/workspace/.acceptance-skills.json",
             "-e", "OPENCODE_DISABLE_MODELS_FETCH=1",
-            image,
-            "2",
+            image, "2",
         ],
         cwd=root,
         env=env,
@@ -292,7 +265,6 @@ def assert_real_opencode_v2_skills(root: Path, project: Path, env: dict[str, str
         stderr=subprocess.PIPE,
     )
     try:
-        import time
         for _ in range(30):
             if output.exists():
                 break
@@ -303,46 +275,9 @@ def assert_real_opencode_v2_skills(root: Path, project: Path, env: dict[str, str
         require(output.exists(), "real OpenCode V2 did not emit discovered skills")
         ids = set(json.loads(output.read_text()))
         require(set(REQUIRED_SKILLS).issubset(ids), f"real OpenCode V2 missed toolkit skills: {ids}")
-        require("project-skill" in ids, f"real OpenCode V2 missed project-local skill: {ids}")
+        require("project-skill" in ids, f"real OpenCode V2 missed project skill: {ids}")
     finally:
         subprocess.run(["docker", "rm", "-f", name], cwd=root, env=env, text=True, capture_output=True)
-
-
-def main_inner(root: Path, temp: Path, env: dict[str, str]) -> None:
-    run([sys.executable, "-B", str(root / "scripts" / "sync-runtime"), "all"], cwd=root, env=env)
-    for name in REQUIRED_SKILLS:
-        require((root / ".opencode" / "skills" / name / "SKILL.md").is_file(), f"missing toolkit skill {name}")
-    fixtures = temp / "projects"
-    project = external_project(fixtures, "external-project")
-    before = snapshot(project)
-    fake_v1 = temp / "fake-opencode-v1"
-    fake_v2 = temp / "fake-opencode-v2"
-    fake_opencode(fake_v1)
-    fake_opencode(fake_v2)
-    env["OAT_ACCEPTANCE_CAPTURE"] = str(temp / "launch.json")
-    assert_launcher(root, project, env, fake_v1, "1")
-    assert_launcher(root, project, env, fake_v2, "2")
-    require(snapshot(project) == before, "launcher probe wrote into external project")
-    print("[ok] launcher routing V1/V2")
-
-    plugin_dir = os.environ.get("OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR") or os.environ.get("OAT_MEMORY_PLUGIN_DIR")
-    require(bool(plugin_dir), "real memory plugin is required; run just install or set OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR")
-    plugin = Path(plugin_dir).expanduser().resolve()
-    require((plugin / "dist" / "cli.js").is_file() and (plugin / "dist" / "mcp.js").is_file(), "real memory plugin must be prebuilt")
-    env["OAT_MEMORY_PLUGIN_DIR"] = str(plugin)
-    mcp_exchange(root, project, env)
-    print("[ok] real portable memory MCP")
-
-    assert_codex(root, project, env)
-    assert_codex_conflicts(root, fixtures, env)
-    assert_manifest_v1(root, fixtures, env)
-    print("[ok] Codex lifecycle/conflicts/v1 migration")
-
-    assert_isolation(root)
-    print("[ok] isolation policy")
-    assert_real_opencode_v2_skills(root, project, env)
-    if os.environ.get("OAT_ACCEPTANCE_DOCKER") == "1":
-        print("[ok] real OpenCode V2 skill discovery")
 
 
 def main() -> int:
@@ -350,13 +285,43 @@ def main() -> int:
         temp = Path(directory)
         root = copy_toolkit(temp)
         env = sanitized_environment(temp)
-        plugin_dir = os.environ.get("OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR") or os.environ.get("OAT_MEMORY_PLUGIN_DIR")
-        if plugin_dir:
-            env["OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR"] = plugin_dir
+        plugin_value = os.environ.get("OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR") or os.environ.get("OAT_MEMORY_PLUGIN_DIR")
+        require(bool(plugin_value), "real memory plugin is required; run just install or set OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR")
+        plugin = Path(plugin_value).expanduser().resolve()
+        require((plugin / "dist" / "cli.js").is_file() and (plugin / "dist" / "mcp.js").is_file(), "real memory plugin must be prebuilt")
+        env["OAT_MEMORY_PLUGIN_DIR"] = str(plugin)
         if os.environ.get("OAT_ACCEPTANCE_DOCKER") == "1":
             env["OAT_ACCEPTANCE_DOCKER"] = "1"
             env["OAT_RUNTIME_IMAGE"] = os.environ.get("OAT_RUNTIME_IMAGE", "opencode-agent-toolkit:local")
-        main_inner(root, temp, env)
+
+        run([sys.executable, "-B", str(root / "scripts" / "sync-runtime"), "all"], cwd=root, env=env)
+        for name in REQUIRED_SKILLS:
+            require((root / ".opencode" / "skills" / name / "SKILL.md").is_file(), f"missing toolkit skill {name}")
+
+        fixtures = temp / "projects"
+        project = external_project(fixtures, "external-project")
+        before = snapshot(project)
+        fake_v1, fake_v2 = temp / "fake-v1", temp / "fake-v2"
+        fake_opencode(fake_v1)
+        fake_opencode(fake_v2)
+        env["OAT_ACCEPTANCE_CAPTURE"] = str(temp / "launcher.json")
+        assert_launcher(root, project, env, fake_v1, "1")
+        assert_launcher(root, project, env, fake_v2, "2")
+        require(snapshot(project) == before, "launcher probes mutated external project")
+        print("[ok] OpenCode V1/V2 launcher routing")
+
+        assert_real_memory_mcp(root, project, env)
+        print("[ok] real portable memory MCP")
+        assert_codex(root, project, env)
+        assert_codex_conflicts(root, fixtures, env)
+        assert_manifest_v1(root, fixtures, env)
+        print("[ok] Codex lifecycle/conflicts/v1 compatibility")
+        assert_isolation(root)
+        print("[ok] isolation policy")
+        assert_real_opencode_v2_skills(root, project, env)
+        if env.get("OAT_ACCEPTANCE_DOCKER") == "1":
+            print("[ok] real OpenCode V2 toolkit + project skill discovery")
+
     print("PASS runtime acceptance")
     return 0
 
