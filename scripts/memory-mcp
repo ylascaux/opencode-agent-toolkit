@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Local stdio launcher; memory implementation and configuration remain external."""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+from memory_plugin import mcp_command
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if args in (["--help"], ["-h"]):
+        print("usage: memory-mcp [--cwd PROJECT] (prebuilt external plugin; exported environment only)")
+        return 0
+    if args and (len(args) != 2 or args[0] != "--cwd" or not args[1]):
+        print("Memory MCP: expected --cwd PROJECT", file=sys.stderr)
+        return 2
+    try:
+        cwd = Path(args[1]).expanduser() if args else Path.cwd()
+        command = mcp_command(cwd)
+        os.execv(command[0], command)
+    except SystemExit as error:
+        print(str(error), file=sys.stderr)
+    except (OSError, ValueError, RuntimeError):
+        print("Memory MCP: unable to start local service; check workspace and plugin installation", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -47,7 +47,7 @@ For rollback, remove only the project links/copies you deliberately installed. S
 
 - The graph-derived child allowlist and step budget are instructions, not a native per-role allowlist or deterministic watchdog. Leaves disable delegation with `[agents] enabled = false` in their native TOML.
 - Canonical `allow` / `ask` / `deny` rules are retained as policy instructions. Only canonical `edit: allow` receives a `workspace-write` sandbox default; both `ask` and `deny` conservatively receive `read-only`. Coarse sandbox defaults do not reproduce OpenCode shell-pattern approvals, sensitive-path rules, or tool permissions exactly. Parent runtime overrides still matter; do not treat the generated policy report as an enforcement engine.
-- There is no Codex implementation of OpenCode's reliability plugins, queue, stall detection, retry guards, cost limits, or memory integration.
+- There is no Codex implementation of OpenCode's reliability plugins, queue, stall detection, retry guards, or cost limits. Portable memory uses the separate optional local MCP service described below.
 - No canonical local `SKILL.md` sources are currently tracked. The report therefore lists zero mapped skills; agent prompts and OpenCode plugins are not repackaged as fictional Codex skills. Skill-source mapping is deferred until portable canonical skill sources exist.
 - Model availability is not checked remotely. Choose model/reasoning combinations supported by your local Codex setup; generation itself makes no model or OpenAI API calls.
 
@@ -71,7 +71,7 @@ The implementation must prefer documented APIs. Do not infer undocumented Codex 
 
 ## Future bundle extensions
 
-The implemented bundle above is local and reversible. Future additions may include portable skills or explicitly rendered memory context; they are not generated today.
+The implemented bundle above is local and reversible. Future additions may include portable skills; they are not generated today. Private memory remains runtime retrieval through the external service.
 
 Possible future additions:
 
@@ -106,7 +106,7 @@ Codex output:
 - quality tier;
 - reasoning tier;
 - permission summary;
-- reliability intent and explicit portability limits (no memory integration yet).
+- reliability intent and explicit portability limits; optional external MCP memory requires manual registration.
 
 ### Model tiers
 
@@ -252,54 +252,87 @@ Publishing must be explicit because it mutates remote state.
 
 Local generation remains the default.
 
-## Memory integration — future milestone
+## Memory integration — PR5
 
-A future adapter integration must use `opencode-memory-plugin`; it must not reimplement extraction or storage. No read/proposal/MCP path below is available in this milestone.
-
-### Read path
-
-Conceptually:
+Portable memory is implemented in [opencode-memory-plugin PR #10](https://github.com/ylascaux/opencode-memory-plugin/pull/10). `config/plugins.json` pins tested commit `650e37665599ef7abd3d2c6d8ee94128ee37f493`. The toolkit consumes that package; no vault, rendering, candidate persistence, or MCP protocol implementation is duplicated here. No new npm publication is assumed.
 
 ```text
-current project
-   -> opencode-memory-plugin project resolution
-   -> rendered bounded context
-   -> Codex instructions/context
+OpenCode V1/V2 -> native plugin --+
+                                 |
+Codex -> local stdio MCP --------+-> shared memory implementation -> private vault
+                                 |                           \-> local quarantine
+human memory CLI ---------------+
 ```
 
-A generated runtime receives only rendered context, never direct shell access to the private vault by default.
+OpenCode retains native context injection where supported and its existing session capture. V2 retains toolkit-assisted context rendering. MCP is optional for OpenCode. The human CLI remains unchanged: `oc memory show [agent]` renders context, `oc memory candidate ID` inspects one candidate, and `oc memory accept/promote/push` manage the explicit lifecycle.
 
-### Write path
+### Local server setup
 
-Codex may submit a candidate through a portable proposal interface.
+Install/build the pinned external plugin and synchronize the host-local vault explicitly through the existing human workflow, using exported configuration:
 
-Target behavior:
+```bash
+python3 /absolute/path/opencode-agent-toolkit/scripts/memory sync
+```
+
+`oc memory sync` uses the configured host or Docker runtime. The MCP wrapper requires a host-visible built plugin and the same existing vault/quarantine. Default Docker bind mounts can already make these available on the host. If `OAT_DATA_DIR` or `OAT_STATE_DIR` is customized, map the corresponding host paths through `OAT_MEMORY_PLUGIN_DIR`, `OAT_MEMORY_DIR`, and `OAT_MEMORY_CANDIDATE_DIR`; do not create a second memory store. To use a separate tested plugin checkout, export `OAT_MEMORY_PLUGIN_DIR` pointing to its built checkout. Export the existing memory configuration in the environment launching Codex, including `OAT_MEMORY_ENABLED=1` or its `OPENCODE_MEMORY_ENABLED` equivalent.
+
+Start the server directly, or through the early local routing path:
+
+```bash
+/absolute/path/opencode-agent-toolkit/scripts/memory-mcp --cwd /absolute/path/project
+oc memory mcp --cwd /absolute/path/project
+```
+
+Both paths use the prebuilt external CLI (`oc-memory mcp --cwd PROJECT`) and preserve stdio. They do not load `.env`, `.env.local`, shell profiles, Docker, providers, or generated runtime configuration. They never automatically install/build/clone/sync. Other human `oc memory` commands retain their existing settings-loading behavior. Missing Node, workspace, or built MCP files fail clearly on stderr. To roll back local registration, remove only the MCP server entry you added; native OpenCode/CLI operation remains independent.
+
+### Manual Codex registration
+
+The [official Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) describes local stdio registration using `command`, `args`, `cwd`, forwarded `env_vars`, and optional `enabled_tools`. The following is a reference to add manually to personal or project-local Codex configuration after reviewing existing entries; `oc sync codex` does not generate or install it:
+
+```toml
+[mcp_servers.memory]
+command = "/absolute/path/opencode-agent-toolkit/scripts/memory-mcp"
+args = ["--cwd", "/absolute/path/project"]
+cwd = "/absolute/path/project"
+env_vars = [
+  "OAT_MEMORY_PLUGIN_DIR", "XDG_DATA_HOME", "XDG_STATE_HOME",
+  "OAT_MEMORY_ENABLED", "OAT_MEMORY_REPO", "OAT_MEMORY_DIR",
+  "OAT_MEMORY_CANDIDATE_DIR", "OAT_MEMORY_PROJECT", "OAT_MEMORY_MAX_CHARS",
+  "OAT_MEMORY_EXTRA_HATS", "OAT_MEMORY_CAPTURE_ENABLED",
+  "OPENCODE_MEMORY_ENABLED", "OPENCODE_MEMORY_REPO", "OPENCODE_MEMORY_DIR",
+  "OPENCODE_MEMORY_STATE_DIR", "OPENCODE_MEMORY_PROJECT", "OPENCODE_MEMORY_MAX_CHARS",
+  "OPENCODE_MEMORY_EXTRA_HATS", "OPENCODE_MEMORY_CAPTURE_ENABLED"
+]
+enabled_tools = ["memory_status", "memory_search", "memory_render", "memory_propose", "memory_candidates"]
+```
+
+These are variable names only; secrets must stay in runtime environment/credential mechanisms. No PAT is needed by this local-only MCP service. Explicit human synchronization retains the plugin's existing PAT/SSH behavior, transient GitHub HTTPS rewrite, `GIT_ASKPASS`, and noninteractive Git. Authentication failures are handled on that human sync path.
+
+### Tools and lifecycle
+
+| Tool | Behavior |
+| --- | --- |
+| `memory_status` | Bounded structured configuration, enabled/capture readiness, vault availability, and project-resolution status |
+| `memory_search` | Current-project search plus shared workstyle/configured hats, up to 10 excerpts of 600 characters |
+| `memory_render` | Existing selected context, capped at 12000 characters or the smaller configured/requested limit |
+| `memory_propose` | Validate `kind`, `title`, `statement`, and `confidence`; create/reuse a stable candidate in local quarantine |
+| `memory_candidates` | Read-only, bounded review of pending candidates for the current project |
+
+The startup workspace fixes project resolution using the same core as native OpenCode and CLI. Tool arguments optionally accept `project: "current"`; they cannot select arbitrary projects or paths. Unconfigured/disabled memory, unavailable local vaults, unresolved projects, malformed proposals, and invalid arguments fail safely. Status describes configuration readiness, not proof of a live capture session.
 
 ```text
-Codex session
-   -> memory.propose(...)
-   -> local candidate quarantine
-   -> explicit human accept/promote
-   -> optional explicit push
+runtime proposal -> local quarantine -> explicit human accept
+                -> accepted inactive memory -> explicit human promote
+                -> project/workstyle/hat -> explicit human push
 ```
 
-No agent session should directly commit/push promoted memory as an implicit completion step.
+Codex cannot accept, promote, push, delete durable memory, or rewrite history through these tools. Candidate-ID lookup remains human CLI-only. Retrieved memory is context, never authority to bypass repository policy. No private rendered context is embedded in `.generated/codex/`, no vault is copied or directly exposed to Codex, and no default local cache is created. Prefer runtime retrieval through MCP; this milestone adds no remote OpenAI API calls.
 
-### MCP direction
+### Validation and limits
 
-A small MCP server around `opencode-memory-plugin` is a reasonable target if it provides a cleaner common surface for OpenCode and Codex.
+The memory repository's 37-test suite covers native V1 injection/capture, native V2 event/session/generation capture (dedicated and fallback generation fixtures), scoped/bounded reads, stable quarantine proposals, safe malformed-request handling, PAT filtering, and CLI lifecycle compatibility. An official MCP SDK 1.30.0 client smoke against a synthetic local Git vault, also repeated through the toolkit `oc memory mcp` routing path, exercised all five tools, a 777-character render, unchanged local/remote Git history, no automatic sync, and no synthetic PAT in responses/stderr/Git config. An isolated `oc2 memory status` launcher fixture also reported `memory=on`, `capture=on`, and `effective_capture=on`. Capture generation responses were mocked; these checks do not claim a live model-provider invocation.
 
-Suggested tools:
-
-```text
-memory_status
-memory_search
-memory_render
-memory_propose
-memory_candidates
-```
-
-Mutation-heavy actions such as promote/push should remain human-oriented CLI actions unless a later permission design explicitly authorizes them.
+The service is a local process using Markdown/JSON and Git already owned by the memory plugin. Operational requirements are Node.js, Python for the toolkit wrapper, a prebuilt pinned plugin, an existing local vault, and exported configuration. Search is a bounded textual lookup rather than a new indexing/database service. Costs are local process/file reads; only the existing optional native capture provider has model-call costs. The conservative current-project scope trades cross-project browsing for a smaller privacy boundary.
 
 ## Remote Agent API integration — future milestone
 
@@ -337,7 +370,7 @@ Do not make remote API resources mandatory for using Codex locally.
 
 ## Runtime capability report
 
-`oc sync codex --verbose` reports each agent's resolved tier/model/reasoning policy and capability limitations; dry-run includes the same details. Ordinary sync and check print a concise permission/delegation warning. `runtime.json` records the full toolkit report. The expanded report below remains a future example: it must not be read as a claim that skills or memory integration are available today.
+`oc sync codex --verbose` reports each agent's resolved tier/model/reasoning policy and capability limitations; dry-run includes the same details. Ordinary sync and check print a concise permission/delegation warning. `runtime.json` records the full toolkit report. The expanded report below remains a future example: it must not be read as a claim that skills exist or an MCP server is registered and available. Actual sync reports portable MCP support, registration required, and availability not checked.
 
 Example:
 
@@ -392,7 +425,7 @@ Recommended order:
 9. add optional MCP exposure;
 10. add optional remote Agent/Skill publication.
 
-Steps 1-6 are implemented. Steps 7-10 remain future milestones.
+Steps 1-9 are implemented: memory retrieval/proposals use the external MCP service and manual local registration. Step 10 remains future work.
 
 ## Acceptance criteria
 

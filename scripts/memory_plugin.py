@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -216,6 +217,23 @@ def ensure_plugin(*, force_sync: bool = False, settings: PluginSettings | None =
 def cli_command(*args: str, force_sync: bool = False) -> list[str]:
     directory = ensure_plugin(force_sync=force_sync)
     return ["node", str(directory / "dist" / "cli.js"), *args]
+
+
+def mcp_command(cwd: Path) -> list[str]:
+    """Resolve a prebuilt external MCP adapter without installing or synchronizing."""
+    try:
+        settings = PluginSettings.from_env()
+    except (SystemExit, ValueError, OSError):
+        raise SystemExit("Memory MCP: invalid external plugin configuration") from None
+    node = shutil.which("node")
+    if not node:
+        raise SystemExit("Memory MCP: Node.js is required")
+    if not cwd.is_dir():
+        raise SystemExit("Memory MCP: workspace directory is unavailable")
+    directory = settings.directory.resolve()
+    if not all((directory / "dist" / name).is_file() for name in ("cli.js", "mcp.js", "service.js")):
+        raise SystemExit("Memory MCP: built external plugin lacks MCP support; install/sync the pinned plugin explicitly first")
+    return [node, str(directory / "dist" / "cli.js"), "mcp", "--cwd", str(cwd.resolve())]
 
 
 if __name__ == "__main__":

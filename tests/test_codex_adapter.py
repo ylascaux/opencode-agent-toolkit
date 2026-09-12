@@ -173,5 +173,29 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertNotIn("mcp_servers", tomllib.loads(path.read_text()))
 
 
+    def test_memory_support_report_is_static_and_never_probes_private_state(self):
+        env = {
+            "OAT_MEMORY_DIR": "/private/fixture-vault",
+            "OAT_MEMORY_REPO": "git@github.com:private/fixture.git",
+            "OAT_GITHUB_TOKEN": "github_pat_fixture_never_embed_123456789",
+        }
+        with patch.object(Path, "read_text", side_effect=AssertionError("no private reads")), \
+             patch("subprocess.run", side_effect=AssertionError("no service startup")):
+            plan = CodexAdapter(self.root, environ=env).plan(self.specs)
+        report = self.report(plan)
+        self.assertEqual(report["capabilities"]["memory"], "portable MCP integration supported; registration required; availability not checked")
+        self.assertIn("availability not checked", report["capabilities"]["mcp"])
+        all_content = b"\n".join(plan.files.values()).decode()
+        for value in env.values():
+            self.assertNotIn(value, all_content)
+        overview = plan.files[self.output / "AGENTS.md"].decode()
+        for name in ("memory_status", "memory_search", "memory_render", "memory_propose", "memory_candidates"):
+            self.assertIn(name, overview)
+        self.assertIn("human CLI operations", overview)
+        self.assertIn("Do not read the private vault directly", overview)
+        self.assertFalse(any(path.name == "memory-context.md" for path in plan.files))
+        self.assertNotIn("mcp_servers", all_content)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 from memory_plugin import PluginSettings, cli_command, ensure_plugin
@@ -210,6 +211,8 @@ def parser() -> argparse.ArgumentParser:
     disable.set_defaults(func=cmd_disable)
     status = sub.add_parser("status", help="show toolkit/plugin memory status")
     status.set_defaults(func=cmd_status)
+    mcp = sub.add_parser("mcp", help="start local MCP from the prebuilt plugin (exported environment only)")
+    mcp.add_argument("--cwd", default=None)
     sync = sub.add_parser("sync", help="force plugin + memory-vault synchronization")
     sync.set_defaults(func=cmd_sync)
 
@@ -264,6 +267,8 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["mcp"]:
+        os.execv(sys.executable, [sys.executable, "-B", str(ROOT / "scripts" / "memory-mcp"), *sys.argv[2:]])
     args = parser().parse_args()
     return args.func(args)
 
