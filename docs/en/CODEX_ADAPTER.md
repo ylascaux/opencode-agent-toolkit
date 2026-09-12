@@ -32,7 +32,24 @@ Markdown and TOML include generated-file notices; JSON carries generated metadat
 
 ### Opt-in use in a project
 
-Synchronization stages files; it does **not** install or launch Codex or change the current session's default agent. After inspecting the bundle:
+Synchronization stages files; it does **not** install or launch Codex or change the current session's default agent. The recommended local lifecycle is:
+
+```bash
+oc sync codex
+cd /path/to/project
+oc codex install --dry-run
+oc codex install
+oc codex doctor
+oc codex doctor --verbose
+oc codex uninstall --dry-run
+oc codex uninstall
+```
+
+`oc codex install` consumes only `.generated/codex/agents/*.toml`; it does not re-read canonical agent definitions. It installs the complete graph into the target project's `.codex/agents/` and records only files it creates in `.codex/.opencode-agent-toolkit.json`. Re-running it is idempotent. Existing unowned agent files, symlinked paths, malformed ownership state, and unsafe paths are conflicts; no write is made. The project's root `AGENTS.md` is always left untouched.
+
+`oc codex doctor` is passive/read-only. It checks bundle drift, the manifest, installed-agent drift, the memory plugin/MCP launcher, Node, and a managed MCP entry without reading private memory or starting MCP. Its exit status is `0` healthy, `1` drift/missing optional component, or `2` invalid configuration. `oc codex uninstall` (and `--dry-run`) removes only unchanged manifest-owned artifacts; it preserves user agents and refuses to silently delete later edits.
+
+After inspecting the bundle manually, the equivalent lower-level workflow is:
 
 1. Copy or link the selected generated TOML files into the target project's `.codex/agents/`. Check each destination first; do not overwrite existing personal/project agents. Select the graph's required lead and child roles together. Each TOML embeds its complete instructions; the adjacent Markdown is a readable representation, not a required relative file dependency. If using Markdown instead of an installed native role, explicitly read the assigned file from the toolkit checkout, not a same-named path in the target project.
 2. Start a new Codex session in the target project and explicitly ask it to read the generated `AGENTS.md` using its absolute toolkit path. Preserve the project's own root instructions.
@@ -41,7 +58,7 @@ Synchronization stages files; it does **not** install or launch Codex or change 
 
 Codex discovers project custom agents under `.codex/agents/`; the generated TOML uses `name`, `description`, `developer_instructions`, and supported model/sandbox settings. Live parent permission overrides can supersede a custom agent's sandbox default. See the [official local subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents). The staged `.generated/codex/AGENTS.md` is not on a typical project's root-to-working-directory discovery path, hence the explicit read above; see [instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
 
-For rollback, remove only the project links/copies you deliberately installed. Staged outputs are disposable and can be regenerated; synchronization does not manage those opt-in installations or unrelated project files. A copied agent must be refreshed manually after regeneration; a link follows the staged source. Sync removes obsolete staged `agents/*.md` and `agents/*.toml` only when their first line bears the toolkit's generated notice. Unmarked user additions are preserved; symlinked output paths are rejected rather than followed.
+For a managed rollback, use `oc codex uninstall`; staged outputs remain disposable and can be regenerated. Synchronization does not manage unrelated project files. Sync removes obsolete staged `agents/*.md` and `agents/*.toml` only when their first line bears the toolkit's generated notice. Unmarked user additions are preserved; symlinked output paths are rejected rather than followed.
 
 ### Local portability limits
 
@@ -307,6 +324,14 @@ enabled_tools = ["memory_status", "memory_search", "memory_render", "memory_prop
 ```
 
 These are variable names only; secrets must stay in runtime environment/credential mechanisms. No PAT is needed by this local-only MCP service. Explicit human synchronization retains the plugin's existing PAT/SSH behavior, transient GitHub HTTPS rewrite, `GIT_ASKPASS`, and noninteractive Git. Authentication failures are handled on that human sync path.
+
+For a safe project-local registration, use the explicit opt-in:
+
+```bash
+oc codex install --with-memory
+```
+
+It adds only `[mcp_servers.opencode_agent_toolkit_memory]` to the target's `.codex/config.toml`, preserving unrelated TOML entries. It uses inherited environment only and records neither secret values nor private memory. Memory is never registered implicitly, and this command does not sync, accept, promote, or push memory. It never changes personal/global Codex configuration.
 
 ### Tools and lifecycle
 
