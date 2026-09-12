@@ -9,7 +9,7 @@
 3. Exécuter le gate complet :
 
 ```bash
-just release-check
+python3 -B scripts/release-check
 ```
 
 Cette commande valide les métadonnées de release, exécute `just check`, puis l’acceptance runtime offline et isolée. Le test de la mémoire privée reste une intégration CI séparée, car il nécessite un accès dédié au dépôt privé du plugin mémoire.
