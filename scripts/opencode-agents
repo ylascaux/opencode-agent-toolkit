@@ -22,6 +22,13 @@ if [[ "${1:-}" == "sync" ]]; then
   exec python3 -B "$ROOT/scripts/sync-runtime" "$@"
 fi
 
+# MCP is a local stdio service and must not load profiles or trigger installation,
+# Docker startup, provider setup, or generated configuration.
+if [[ "${1:-}" == "memory" && "${2:-}" == "mcp" ]]; then
+  shift 2
+  exec python3 -B "$ROOT/scripts/memory-mcp" "$@"
+fi
+
 if [[ ! -f "$ROOT/.env" ]]; then
   echo "Missing $ROOT/.env. Run: just install" >&2
   exit 1

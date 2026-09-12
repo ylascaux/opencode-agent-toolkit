@@ -23,7 +23,7 @@ class MemoryPluginIntegrationTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             settings = memory_plugin.PluginSettings.from_env()
         self.assertEqual(settings.repo, "git@github.com:ylascaux/opencode-memory-plugin.git")
-        self.assertEqual(settings.ref, "5db9868f160cf3f947c3397b5dc8b38f25424274")
+        self.assertEqual(settings.ref, "b573f3ba0b253abeb26bbb01eaee0c5a8b5ab518")
         self.assertTrue(str(settings.directory).endswith("opencode-agent-toolkit/plugins/opencode-memory-plugin"))
 
     def test_environment_can_override_versioned_plugin_config(self) -> None:

@@ -6,7 +6,7 @@ The toolkit should let work move between OpenCode, Codex, and a GitHub-connected
 
 The repository owns engineering policy. The memory plugin owns durable contextual memory. Each runtime is only an execution surface.
 
-Local OpenCode and Codex adapters plus `oc sync` are implemented. Codex currently has no toolkit memory integration, MCP surface, or remote Agents/Skills publication; the shared-memory diagram below is a target architecture.
+Local OpenCode and Codex adapters plus `oc sync` are implemented. PR5 adds portable memory through the external local MCP service with manual Codex registration; remote Agents/Skills publication remains future work. OpenCode retains its native V1/V2 memory plugin.
 
 ```text
                            Git repository
@@ -51,7 +51,7 @@ Store memory behavior here:
 - rendered context;
 - promotion rules;
 - private-vault Git lifecycle;
-- future MCP memory surface.
+- portable application API and local stdio MCP memory surface.
 
 ### Private memory repository
 
@@ -70,7 +70,7 @@ Store disposable artifacts here:
 - generated runtime configuration;
 - resolved model mappings;
 - remote resource IDs/caches;
-- rendered bounded memory context;
+- explicit local ephemeral rendered context, when requested (never generated for Codex by default);
 - temporary session metadata.
 
 This state must be reproducible or safely discardable.
@@ -225,7 +225,7 @@ Do not copy a Codex-specific model slug into `agents/<name>/agent.json` simply b
 
 ## Memory workflow across runtimes
 
-The following describes behavior where an integration exists and the future Codex memory milestone. Local Codex sync does not render context, access a private vault, or propose candidates.
+Codex can retrieve context and propose candidates through the manually registered local MCP service. Local Codex sync does not render context, access a private vault, check service availability, or propose candidates. Follow the [PR5 MCP setup](CODEX_ADAPTER.md#memory-integration--pr5) and explicitly synchronize the plugin/vault before launching MCP.
 
 ### Reading memory
 
@@ -246,7 +246,7 @@ After a meaningful task, a runtime may propose durable facts such as:
 A proposal is not durable memory yet.
 
 ```text
-runtime -> candidate -> human review -> promote -> optional push
+runtime -> candidate quarantine -> human accept -> human promote -> explicit push
 ```
 
 ### What should not become memory
@@ -293,13 +293,11 @@ The multi-runtime migration is intentionally decomposable so different runtimes 
 
 Native agent TOML and instruction files are staged in `.generated/codex/`; opt-in installation remains manual. Fine-grained permission and graph allowlist intent is documented rather than claimed as full OpenCode enforcement parity.
 
-### PR 5 — portable memory surface
+### PR 5 — portable memory surface (implemented)
 
-In `opencode-memory-plugin` when appropriate:
+[Memory-plugin PR #10](https://github.com/ylascaux/opencode-memory-plugin/pull/10) owns the shared portable API and five-tool stdio MCP adapter. The toolkit pins the tested dependency, offers a local prebuilt-service launcher, and documents manual Codex registration. Generated Codex instructions describe support without claiming availability. Native OpenCode capture and human CLI lifecycle remain intact.
 
-- runtime-neutral render/propose API;
-- optional MCP facade;
-- integration tests from toolkit.
+Validation includes full memory tests, toolkit checks, official SDK stdio smoke on a synthetic Git vault, and V1/V2 native capture fixtures. No private memory is copied into generated artifacts and no automatic acceptance, promotion, or push is implemented.
 
 ### PR 6 — optional remote OpenAI resources
 
@@ -309,7 +307,7 @@ In `opencode-memory-plugin` when appropriate:
 - remote dry-run;
 - safe deletion policy.
 
-PRs 5 and 6 should not block useful local Codex support.
+PR 6 remains optional and does not block local Codex or portable memory support.
 
 ## Prompt for Codex
 

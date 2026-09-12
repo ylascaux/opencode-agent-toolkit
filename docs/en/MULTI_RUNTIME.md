@@ -51,7 +51,7 @@ Sync is local and does not launch a model, load `.env` / `.env.local`, or contac
 
 Codex's generated native agent TOML requires manual opt-in installation; the root `AGENTS.md` is untouched, and `runtime.json` is toolkit metadata, not native configuration. See [Codex local use and limitations](CODEX_ADAPTER.md#implemented-local-workflow).
 
-Memory/MCP integration for Codex, remote Agents/Skills publication, and bidirectional sync are **not implemented**. No portable canonical skill files are currently tracked, so local skill packaging is deferred and reported as zero mapped skills. Memory diagrams and expanded capabilities below describe the longer-term target, not current Codex behavior.
+PR5 adds portable memory through the external `opencode-memory-plugin` local MCP service. Codex registration is manual; sync reports support without checking availability or rendering private memory. OpenCode keeps its native V1/V2 plugin and human memory CLI. Remote Agents/Skills publication and bidirectional sync remain **not implemented**. No portable canonical skill files are currently tracked, so local skill packaging is deferred and reported as zero mapped skills. See [local MCP setup](CODEX_ADAPTER.md#memory-integration--pr5).
 
 ## Existing sources of truth
 
@@ -143,27 +143,26 @@ If a runtime cannot enforce a guard deterministically, the adapter must expose t
 Memory does not belong to either runtime.
 
 ```text
-OpenCode ----+
-             |
-Codex -------+---- opencode-memory-plugin ---- private Git memory vault
-             |
-other -------+
+OpenCode native V1/V2 --+
+                       |
+Codex -- local MCP ----+---- shared memory core ---- private Git memory vault
+                       |
+human CLI -------------+
 ```
 
 The toolkit configures access. Capture, candidate extraction, curation, retrieval, Git persistence, and promotion remain owned by `opencode-memory-plugin`.
 
-The long-term portable interface should expose operations equivalent to:
+The implemented portable interface exposes:
 
 ```text
+memory.status
 memory.search
 memory.render
 memory.propose
 memory.list_candidates
-memory.accept
-memory.promote
 ```
 
-Agents may propose candidates. Durable promotion remains explicit and reviewable.
+Agents may propose candidates into local quarantine. Accept, promote, and push remain explicit human CLI operations; none is exposed through MCP. The service never clones or synchronizes the vault on startup or tool calls. Run the human sync command first when needed.
 
 ### 5. Generated artifacts are disposable
 
@@ -319,7 +318,7 @@ At minimum, multi-runtime support must test:
 - check mode detects stale artifacts;
 - idempotent generation;
 - stable ordering;
-- memory integration rendering when that future Codex milestone is implemented;
+- portable MCP launch/configuration without copying or rendering private memory into generated artifacts;
 - invalid runtime configuration fails before launching a model;
 - generated files cannot silently become source inputs.
 
@@ -338,11 +337,11 @@ Initial multi-runtime support does not require:
 
 ## Definition of done
 
-The full multi-runtime roadmap is considered established when (items 5 and broader skill support remain future work):
+The full multi-runtime roadmap is considered established when (broader skill support remains future work):
 
 1. existing OpenCode workflows still pass unchanged;
 2. a single normalized agent graph feeds both OpenCode and Codex adapters;
 3. `oc sync codex --dry-run` explains what would be generated;
 4. Codex can consume the generated instructions/skills/configuration without duplicating source definitions;
-5. memory context can be rendered for Codex without exposing the private vault to the runtime;
+5. memory context can be retrieved by Codex through the local MCP service without exposing the private vault directly;
 6. documentation clearly states which reliability guarantees are deterministic for each runtime.
