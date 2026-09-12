@@ -16,6 +16,7 @@ import time
 REQUIRED = {"terraform-review", "security-review", "test-review", "project-skill"}
 USERNAME = "opencode"
 PASSWORD = "oat-acceptance-only"
+LOCATION = "/workspace"
 
 
 def fail(message: str) -> None:
@@ -69,6 +70,7 @@ def main() -> int:
                     [
                         "docker", "exec", name,
                         "curl", "-fsS", "-u", f"{USERNAME}:{PASSWORD}",
+                        "--get", "--data-urlencode", f"location[directory]={LOCATION}",
                         "http://127.0.0.1:4096/api/skill",
                     ],
                     cwd=project,
@@ -91,11 +93,15 @@ def main() -> int:
             if payload is None:
                 logs = run(["docker", "logs", name], cwd=project)
                 fail(f"skill API unavailable ({last_error})\n{logs.stdout}\n{logs.stderr}")
+            resolved = payload.get("location", {})
+            require_location = resolved.get("directory") if isinstance(resolved, dict) else None
+            if require_location not in (None, LOCATION):
+                fail(f"skill API resolved unexpected location {require_location!r}")
             ids = {item.get("id") for item in payload["data"] if isinstance(item, dict)}
             missing = sorted(REQUIRED - ids)
             if missing:
                 fail(f"missing discovered skills {missing}; discovered={sorted(item for item in ids if item)}")
-            print(f"PASS OpenCode V2 skill discovery: {len(ids)} skills")
+            print(f"PASS OpenCode V2 skill discovery at {LOCATION}: {len(ids)} skills")
             return 0
         finally:
             subprocess.run(["docker", "rm", "-f", name], cwd=project, text=True, capture_output=True)
