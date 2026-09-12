@@ -109,6 +109,7 @@ class CodexLifecycleTests(unittest.TestCase):
         self.assertEqual(skill.read_text(), "user-owned\n")
 
         skill.unlink()
+        target.rmdir()
         self.install()
         generated = self.root / ".generated" / "codex" / "skills" / "test-review" / "SKILL.md"
         generated.write_text("---\nname: test-review\ndescription: changed\n---\n\nbody\n")
@@ -117,6 +118,23 @@ class CodexLifecycleTests(unittest.TestCase):
         plan = lifecycle.install_plan(self.root, self.project, with_memory=False)
         self.assertTrue(plan.conflicts)
         self.assertEqual(installed.read_text(), "manual edit\n")
+
+    def test_preexisting_skill_directory_without_skill_file_is_not_adopted(self):
+        target = self.project / ".agents" / "skills" / "test-review"
+        references = target / "references"
+        references.mkdir(parents=True)
+        marker = references / "user-owned.md"
+        marker.write_text("keep me\n")
+
+        plan = lifecycle.install_plan(self.root, self.project, with_memory=False)
+
+        self.assertTrue(plan.conflicts)
+        self.assertTrue(any("user-owned skill directory would be adopted" in conflict for conflict in plan.conflicts))
+        self.assertFalse((target / "SKILL.md").exists())
+        self.assertEqual(marker.read_text(), "keep me\n")
+        with self.assertRaises(lifecycle.LifecycleError):
+            plan.apply()
+        self.assertEqual(marker.read_text(), "keep me\n")
 
     def test_unchanged_managed_skill_updates_to_new_generated_content(self):
         self.install()
