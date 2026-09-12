@@ -1,0 +1,61 @@
+name: Runtime Acceptance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18.0"
+      - name: Checkout pinned memory plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ylascaux/opencode-memory-plugin
+          ref: b573f3ba0b253abeb26bbb01eaee0c5a8b5ab518
+          path: .acceptance-memory-plugin
+      - name: Build real memory plugin
+        run: npm --prefix .acceptance-memory-plugin run build
+      - name: Offline external-project acceptance
+        env:
+          OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR: ${{ github.workspace }}/.acceptance-memory-plugin
+        run: python3 -B scripts/runtime-acceptance
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18.0"
+      - name: Checkout pinned memory plugin
+        uses: actions/checkout@v4
+        with:
+          repository: ylascaux/opencode-memory-plugin
+          ref: b573f3ba0b253abeb26bbb01eaee0c5a8b5ab518
+          path: .acceptance-memory-plugin
+      - name: Build real memory plugin
+        run: npm --prefix .acceptance-memory-plugin run build
+      - name: Build current runtime image
+        run: docker build -t opencode-agent-toolkit:acceptance -f runtime/Dockerfile .
+      - name: Real OpenCode + full runtime acceptance
+        env:
+          OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR: ${{ github.workspace }}/.acceptance-memory-plugin
+          OAT_ACCEPTANCE_DOCKER: "1"
+          OAT_RUNTIME_IMAGE: opencode-agent-toolkit:acceptance
+        run: python3 -B scripts/runtime-acceptance
