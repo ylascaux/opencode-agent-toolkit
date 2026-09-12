@@ -11,7 +11,7 @@ class RuntimeAcceptanceSurfaceTests(unittest.TestCase):
         self.assertIn("copy_toolkit", text)
         self.assertIn("TemporaryDirectory", text)
         self.assertIn('".env", ".env.local"', text)
-        self.assertIn("sanitized_environment", text)
+        self.assertIn("isolated_environment", text)
         self.assertNotIn("os.environ.copy()", text)
 
     def test_acceptance_uses_real_memory_plugin_or_explicit_skip_only(self):
@@ -28,13 +28,13 @@ class RuntimeAcceptanceSurfaceTests(unittest.TestCase):
         self.assertIn('"security-review" / "references" / "user.txt"', text)
         self.assertIn("partial writes", text)
 
-    def test_docker_acceptance_probes_real_v2_skill_registry(self):
-        text = (ROOT / "scripts" / "runtime-acceptance").read_text()
-        self.assertIn("ctx.skill.list()", text)
-        self.assertIn("result.data", text)
-        self.assertIn("oat.acceptance-skill-probe", text)
-        self.assertIn("project-skill", text)
+    def test_docker_acceptance_uses_real_v2_skill_http_api(self):
+        text = (ROOT / "scripts" / "opencode-v2-skill-smoke").read_text()
+        self.assertIn("/api/skill", text)
         self.assertIn("opencode2 serve", text)
+        self.assertIn("project-skill", text)
+        self.assertIn("terraform-review", text)
+        self.assertNotIn("ctx.skill.list()", text)
 
     def test_acceptance_workflow_keeps_core_jobs_mandatory_and_private_mcp_conditional(self):
         workflow = (ROOT / ".github" / "workflows" / "acceptance.yml").read_text()
@@ -43,7 +43,7 @@ class RuntimeAcceptanceSurfaceTests(unittest.TestCase):
         self.assertIn("ylascaux/opencode-memory-plugin", workflow)
         self.assertIn("b573f3ba0b253abeb26bbb01eaee0c5a8b5ab518", workflow)
         self.assertIn("MEMORY_TOKEN != ''", workflow)
-        self.assertIn("OAT_ACCEPTANCE_DOCKER", workflow)
+        self.assertIn("scripts/opencode-v2-skill-smoke", workflow)
         self.assertIn("opencode-agent-toolkit:acceptance", workflow)
 
 
