@@ -142,7 +142,7 @@ Canonical effects:
 ```text
 allow
 ask
- deny
+deny
 ```
 
 Codex mapping must preserve at least these invariants:
