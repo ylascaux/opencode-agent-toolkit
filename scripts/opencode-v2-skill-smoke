@@ -13,7 +13,9 @@ import tempfile
 import time
 
 
-REQUIRED = {"terraform-review", "security-review", "test-review", "project-skill"}
+ROOT = Path(__file__).resolve().parents[1]
+TOOLKIT_SKILLS = ("terraform-review", "security-review", "test-review")
+REQUIRED = {*TOOLKIT_SKILLS, "project-skill"}
 USERNAME = "opencode"
 PASSWORD = "oat-acceptance-only"
 LOCATION = "/workspace"
@@ -28,15 +30,34 @@ def run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=cwd, text=True, capture_output=True)
 
 
+def stage_real_skills(project: Path) -> None:
+    """Use OpenCode's standard project skill surface for the live API smoke.
+
+    The offline acceptance separately verifies that the toolkit launcher injects its
+    generated skill source through OPENCODE_CONFIG_CONTENT. This live smoke focuses
+    on the independent contract that the installed OpenCode V2 server discovers
+    real skill files for the requested project location and exposes them via HTTP.
+    """
+    destination = project / ".agents" / "skills"
+    for name in TOOLKIT_SKILLS:
+        source = ROOT / "skills" / name
+        if not (source / "SKILL.md").is_file():
+            fail(f"missing canonical toolkit skill {source / 'SKILL.md'}")
+        shutil.copytree(source, destination / name)
+
+    skill = destination / "project-skill" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: project-skill\ndescription: Project acceptance skill\n---\n\nfixture\n")
+
+
 def main() -> int:
     if not shutil.which("docker"):
         fail("docker is unavailable")
     image = os.environ.get("OAT_RUNTIME_IMAGE", "opencode-agent-toolkit:local")
     with tempfile.TemporaryDirectory(prefix="oat-v2-skill-smoke-") as directory:
         project = Path(directory) / "project"
-        skill = project / ".opencode" / "skills" / "project-skill" / "SKILL.md"
-        skill.parent.mkdir(parents=True)
-        skill.write_text("---\nname: project-skill\ndescription: Project acceptance skill\n---\n\nfixture\n")
+        project.mkdir(parents=True)
+        stage_real_skills(project)
         (project / "README.md").write_text("# fixture\n")
         subprocess.run(["git", "init", "-q"], cwd=project, check=True, capture_output=True)
 
