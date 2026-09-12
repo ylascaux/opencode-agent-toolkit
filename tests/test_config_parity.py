@@ -128,6 +128,7 @@ class ConfigPolicyTests(unittest.TestCase):
         for filename in ["generate-config", "agent_config.py", "apply-reliability"]:
             shutil.copy2(ROOT / "scripts" / filename, fixture_scripts / filename)
         shutil.copytree(ROOT / "runtime" / "common", cls.fixture_root / "runtime" / "common")
+        shutil.copytree(ROOT / "runtime" / "opencode", cls.fixture_root / "runtime" / "opencode")
         shutil.copy2(ROOT / "reliability.json", cls.fixture_root / "reliability.json")
 
         subprocess.run(

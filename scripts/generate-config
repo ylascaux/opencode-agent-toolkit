@@ -1,159 +1,21 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-from agent_config import load_agents, v1_permissions, v2_permissions, write_generated_sources
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-COMMANDS = {
-    "auto": (
-        "Automatically classify, plan and route a task",
-        "Route $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement. If the task can mutate state, gather only enough evidence to produce a concrete plan, surface it to the user, end with PLAN_APPROVAL_REQUIRED, and stop until explicit approval. After approval, execute the approved path and finish with evidence and residual risk.",
-    ),
-    "plan": (
-        "Create a user-approvable execution plan without implementing it",
-        "Plan $ARGUMENTS. Route read-only discovery/planning through the minimum sufficient path, include goal/scope, affected files/components, ordered steps, validation/tests, rollback, and delegated agents/gates. Do not mutate state. End with PLAN_APPROVAL_REQUIRED.",
-    ),
-    "ship": (
-        "Plan first, then implement with tests, independent review and adaptive security gates",
-        "Ship $ARGUMENTS. Classify risk first and delegate planning/delivery to orchestrator. Before any mutation, surface the concrete implementation plan and end with PLAN_APPROVAL_REQUIRED. Only after explicit user approval may orchestrator execute the approved scope, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence. Material scope deviations require PLAN_REAPPROVAL_REQUIRED.",
-    ),
-    "review": (
-        "Run independent adaptive review",
-        "Review $ARGUMENTS via review-lead. Select only review dimensions touched by the change, deduplicate findings, arbitrate material disagreement, and audit weak completion claims.",
-    ),
-    "architecture": (
-        "Design architecture with approval before artifact mutation",
-        "Design $ARGUMENTS via platform-architect. Gather evidence and stabilize the design first. If durable documentation or another artifact will be created/updated, surface the write/migration plan and end with PLAN_APPROVAL_REQUIRED before mutation. After explicit approval, have platform-architect delegate writing to docs-writer. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
-    ),
-    "architecture-review": (
-        "Independently review an existing architecture artifact",
-        "Independently review $ARGUMENTS via review-lead. Re-establish repository evidence with project-scanner when needed, select only relevant platform and security dimensions, do not treat the producer handoff as proof, and report contradictions, missing assumptions, rollback gaps, residual risks and confidence.",
-    ),
-    "security": (
-        "Run adaptive defense-in-depth security review",
-        "Security-review $ARGUMENTS via security-lead. Select only relevant threat-model/AppSec/IaC/supply-chain/secrets gates; pentest only explicitly authorized runtime scope. Deduplicate, rank and verify findings.",
-    ),
-    "debug": (
-        "Evidence-first debugging with approval before fixes",
-        "Debug $ARGUMENTS via orchestrator. Start with read-only reproduction/evidence and the affected specialist. Before applying a fix, surface the proposed fix/regression-test plan and end with PLAN_APPROVAL_REQUIRED. After explicit approval, implement the approved fix, add regression coverage, independently review it and add security gates if a trust boundary changes. Material deviations require PLAN_REAPPROVAL_REQUIRED.",
-    ),
-    "incident": (
-        "Investigate an incident and gate remediation behind a plan",
-        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses and identify blast radius. Investigation may stay read-only; before remediation or rollback mutation, surface the mitigation plan and end with PLAN_APPROVAL_REQUIRED. Execute only after explicit approval and re-request approval for material scope changes.",
-    ),
-    "cost": (
-        "Analyze platform cost and cost-performance trade-offs",
-        "Analyze $ARGUMENTS via platform-architect using FinOps plus only relevant AWS/Kubernetes/database/networking/performance perspectives. State source data, assumptions, trade-offs and confidence.",
-    ),
-}
-
-# V1 intentionally has no plan-approval workflow. Keep command wording aligned
-# with the V1 prompt/runtime configuration so commands do not recreate a pause.
-V1_COMMANDS = {
-    "auto": (
-        "Automatically classify, plan and route a task",
-        "Route $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement. Execute the requested path and finish with evidence and residual risk.",
-    ),
-    "plan": (
-        "Create an execution plan without implementing it",
-        "Plan $ARGUMENTS. Route discovery/planning through the minimum sufficient path, include goal/scope, affected files/components, ordered steps, validation/tests, rollback, and delegated agents/gates. Do not implement the plan.",
-    ),
-    "ship": (
-        "Implement with tests, independent review and adaptive security gates",
-        "Ship $ARGUMENTS. Classify risk first and delegate delivery to orchestrator, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence.",
-    ),
-    "architecture": (
-        "Design architecture and produce durable artifacts when requested",
-        "Design $ARGUMENTS via platform-architect. Gather evidence and stabilize the design, then have platform-architect delegate durable writing to docs-writer when requested. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
-    ),
-    "debug": (
-        "Evidence-first debugging with regression coverage",
-        "Debug $ARGUMENTS via orchestrator. Start with read-only reproduction/evidence and the affected specialist, then apply the fix, add regression coverage, independently review it and add security gates if a trust boundary changes.",
-    ),
-    "incident": (
-        "Investigate and remediate an incident",
-        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses, identify blast radius, then execute the required remediation or rollback and report the evidence.",
-    ),
-}
-
-GENERATED_AGENT_KEYS = {
-    "description", "mode", "model", "prompt", "system", "steps", "permission", "permissions",
-}
-
-V2_COMPACTION = {
-    "auto": True,
-    "keep": {"tokens": 15000},
-    "buffer": 20000,
-}
-
-
-def agent_entry(name: str, specs, *, v2: bool) -> dict:
-    spec = specs[name]
-    collisions = GENERATED_AGENT_KEYS & set(spec.opencode)
-    if collisions:
-        raise SystemExit(
-            f"{name}: opencode cannot override generated keys: {', '.join(sorted(collisions))}"
-        )
-    entry = {
-        "description": spec.description,
-        "mode": spec.mode,
-        "model": f"{{env:{spec.model_env}}}",
-        ("system" if v2 else "prompt"): f"{{file:./.generated/prompts{'-v1' if not v2 else ''}/{name}.md}}",
-        "steps": spec.steps,
-        ("permissions" if v2 else "permission"): (
-            v2_permissions(name, specs) if v2 else v1_permissions(name, specs)
-        ),
-    }
-    entry.update(spec.opencode)
-    return entry
-
-
-def build(specs, *, v2: bool) -> dict:
-    primary = next(name for name, spec in specs.items() if spec.mode == "primary")
-    agents = {name: agent_entry(name, specs, v2=v2) for name in sorted(specs)}
-    command_specs = COMMANDS if v2 else {**COMMANDS, **V1_COMMANDS}
-    commands = {
-        name: {"description": desc, "template": template, "agent": primary}
-        for name, (desc, template) in command_specs.items()
-    }
-    if v2:
-        return {
-            "$schema": "https://opencode.ai/config.json",
-            "default_agent": primary,
-            # V2 native compaction replaces third-party context-pruning plugins.
-            # Keep the documented defaults explicit so generated configs are deterministic.
-            "compaction": V2_COMPACTION,
-            # V2 uses this shell for terminal and shell tool calls, including child sessions.
-            # The wrapper is a pass-through when sandboxing is disabled and fail-closed when enabled.
-            "shell": str(ROOT / "scripts" / "sandbox-shell-v2"),
-            "agents": agents,
-            "commands": commands,
-            "plugins": [],
-            "experimental": {"subagent_depth": 2},
-        }
-    return {
-        "$schema": "https://opencode.ai/config.json",
-        "default_agent": primary,
-        "subagent_depth": 2,
-        "agent": agents,
-        "command": commands,
-        "plugin": ["./runtime/plugins/sandbox-v1.js"],
-    }
+from runtime.common.normalization import load_normalized_agents  # noqa: E402
+from runtime.opencode.adapter import OpenCodeAdapter  # noqa: E402
 
 
 def main() -> None:
-    specs = load_agents()
-    write_generated_sources(specs)
-    outputs = (
-        (ROOT / "opencode.jsonc", build(specs, v2=False)),
-        (ROOT / "opencode.v2.jsonc", build(specs, v2=True)),
-    )
-    for path, data in outputs:
-        path.write_text(json.dumps(data, indent=2) + "\n")
+    specs = load_normalized_agents()
+    outputs = OpenCodeAdapter().generate(specs)
+    for path in outputs:
         print(f"generated {path.name}: {len(specs)} agents")
     print("agent source: agents/<name>/{agent.json,prompt.md,permissions.json}")
 
