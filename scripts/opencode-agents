@@ -90,6 +90,12 @@ fi
 export OAT_SANDBOX_HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-${SHELL:-/bin/bash}}"
 
 python3 "$ROOT/scripts/generate-config" >/dev/null
+# OpenCode resolves relative skill sources from the active project cwd rather
+# than from OPENCODE_CONFIG. Register the toolkit-owned generated source through
+# inline config while preserving any user-provided inline settings.
+export OPENCODE_CONFIG_CONTENT="$(
+  python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills"
+)"
 if [[ -f "$ROOT/scripts/apply-memory" ]]; then
   python3 "$ROOT/scripts/apply-memory" >/dev/null
 elif [[ "${OAT_MEMORY_ENABLED:-0}" == "1" ]]; then
