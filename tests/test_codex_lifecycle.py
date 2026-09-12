@@ -155,6 +155,10 @@ class CodexLifecycleTests(unittest.TestCase):
         removal.apply()
         self.assertFalse(skill.exists())
 
+        # Directory ownership is deliberately conservative: the manifest owns
+        # SKILL.md, not its containing directory. Remove the now-empty directory
+        # before simulating a fresh independent installation.
+        skill.parent.rmdir()
         self.install()
         manifest_path = self.project / ".codex" / lifecycle.MANIFEST
         current = json.loads(manifest_path.read_text())
