@@ -25,6 +25,8 @@ The generated bundle is contained in the toolkit checkout:
   agents/
     <agent-name>.md        # composed instructions and policy intent
     <agent-name>.toml      # native local custom-agent configuration
+  skills/
+    <skill-name>/SKILL.md  # staged portable local skill
   runtime.json              # toolkit report, NOT native Codex configuration
 ```
 
@@ -45,7 +47,7 @@ oc codex uninstall --dry-run
 oc codex uninstall
 ```
 
-`oc codex install` consumes only `.generated/codex/agents/*.toml`; it does not re-read canonical agent definitions. It installs the complete graph into the target project's `.codex/agents/` and records only files it creates in `.codex/.opencode-agent-toolkit.json`. Re-running it is idempotent. Existing unowned agent files, symlinked paths, malformed ownership state, and unsafe paths are conflicts; no write is made. The project's root `AGENTS.md` is always left untouched.
+`oc codex install` consumes only staged `.generated/codex/agents/*.toml` and `.generated/codex/skills/*/SKILL.md`; it does not re-read canonical agent or skill definitions. It installs agents into `.codex/agents/` and skills into Codex's documented repository-local `.agents/skills/`, while recording only files it creates in the sole `.codex/.opencode-agent-toolkit.json` manifest. Re-running it is idempotent. Existing unowned files, symlinked paths, malformed ownership state, and unsafe paths are conflicts; no write is made. The project's root `AGENTS.md` is always left untouched.
 
 `oc codex doctor` is passive/read-only. It checks bundle drift, the manifest, installed-agent drift, the memory plugin/MCP launcher, Node, and a managed MCP entry without reading private memory or starting MCP. Its exit status is `0` healthy, `1` drift/missing optional component, or `2` invalid configuration. `oc codex uninstall` (and `--dry-run`) removes only unchanged manifest-owned artifacts; it preserves user agents and refuses to silently delete later edits.
 
@@ -65,7 +67,7 @@ For a managed rollback, use `oc codex uninstall`; staged outputs remain disposab
 - The graph-derived child allowlist and step budget are instructions, not a native per-role allowlist or deterministic watchdog. Leaves disable delegation with `[agents] enabled = false` in their native TOML.
 - Canonical `allow` / `ask` / `deny` rules are retained as policy instructions. Only canonical `edit: allow` receives a `workspace-write` sandbox default; both `ask` and `deny` conservatively receive `read-only`. Coarse sandbox defaults do not reproduce OpenCode shell-pattern approvals, sensitive-path rules, or tool permissions exactly. Parent runtime overrides still matter; do not treat the generated policy report as an enforcement engine.
 - There is no Codex implementation of OpenCode's reliability plugins, queue, stall detection, retry guards, or cost limits. Portable memory uses the separate optional local MCP service described below.
-- No canonical local `SKILL.md` sources are currently tracked. The report therefore lists zero mapped skills; agent prompts and OpenCode plugins are not repackaged as fictional Codex skills. Skill-source mapping is deferred until portable canonical skill sources exist.
+- Canonical skills are normalized from `skills/<name>/skill.json` and `SKILL.md`, then staged with native YAML frontmatter under `.generated/codex/skills/`. Installation places them in `.agents/skills/`, which Codex discovers from the working directory up to the repository root. They are supplemental and never override runtime policy, repository instructions, agent permissions, approvals, sandboxing, or memory lifecycle.
 - Model availability is not checked remotely. Choose model/reasoning combinations supported by your local Codex setup; generation itself makes no model or OpenAI API calls.
 
 ## Future remote building blocks
@@ -88,7 +90,7 @@ The implementation must prefer documented APIs. Do not infer undocumented Codex 
 
 ## Future bundle extensions
 
-The implemented bundle above is local and reversible. Future additions may include portable skills; they are not generated today. Private memory remains runtime retrieval through the external service.
+The implemented bundle is local and reversible. Portable skills are generated and installed locally; remote Skills publication is not implemented. Private memory remains runtime retrieval through the external service.
 
 Possible future additions:
 

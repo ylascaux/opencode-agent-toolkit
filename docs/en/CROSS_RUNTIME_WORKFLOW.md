@@ -6,7 +6,7 @@ The toolkit should let work move between OpenCode, Codex, and a GitHub-connected
 
 The repository owns engineering policy. The memory plugin owns durable contextual memory. Each runtime is only an execution surface.
 
-Local OpenCode and Codex adapters plus `oc sync` are implemented. PR5 adds portable memory through the external local MCP service with manual Codex registration; remote Agents/Skills publication remains future work. OpenCode retains its native V1/V2 memory plugin.
+Local OpenCode and Codex adapters plus `oc sync` are implemented. Portable skills use a single canonical `skills/<name>/` definition and are generated locally for both runtimes; remote Agents/Skills publication remains future work. PR5 adds portable memory through the external local MCP service with manual Codex registration. OpenCode retains its native V1/V2 memory plugin.
 
 ```text
                            Git repository
@@ -37,6 +37,7 @@ Store durable, shareable engineering behavior here:
 - model quality tiers;
 - reliability policy;
 - runtime adapter code;
+- portable `skills/<name>/skill.json` metadata and `SKILL.md` instruction bodies;
 - schemas/contracts;
 - documentation;
 - tests.
@@ -112,9 +113,9 @@ Do not assume this surface has the same local shell/runtime access as Codex or O
 
 ## Standard task handoff
 
-For local Codex, prepare the staged bundle with `oc sync codex --dry-run`, generate with `oc sync codex`, and verify with `oc sync codex --check`. From the target project, use `oc codex install` and read-only `oc codex doctor`; `oc codex uninstall` removes only manifest-owned artifacts. Use `oc codex install --with-memory` only for explicit local memory MCP registration. Staging and installation never change root instructions, the session's default agent, or global Codex configuration. Export local Codex model/reasoning settings before syncing. Neither sync dry-run/check nor lifecycle doctor writes files.
+For local Codex, prepare the staged bundle with `oc sync codex --dry-run`, generate with `oc sync codex`, and verify with `oc sync codex --check`. From the target project, use `oc codex install` and read-only `oc codex doctor`; `oc codex uninstall` removes only manifest-owned agents and `.agents/skills` artifacts. The manifest accepts existing v1 agent-only installations and upgrades to v2 only after a successful install; dry-run, doctor, and uninstall do not migrate it. Use `oc codex install --with-memory` only for explicit local memory MCP registration. Staging and installation never change root instructions, the session's default agent, or global Codex configuration. Export local Codex model/reasoning settings before syncing. Neither sync dry-run/check nor lifecycle doctor writes files.
 
-`oc sync all` renders both adapters deterministically. `oc sync opencode` is raw generation only; retain `just config` or the existing launch workflow for OpenCode's memory/reliability postprocessing. Do not interpret a raw adapter drift check as verification of postprocessed OpenCode configuration.
+`oc sync all` normalizes all agents and skills once, then plans both adapters before writing either artifact set. `oc sync opencode` generates OpenCode's documented `.opencode/skills/<name>/SKILL.md` form in the toolkit checkout as well as its raw config; retain `just config` or the existing launch workflow for OpenCode's memory/reliability postprocessing. Do not interpret a raw adapter drift check as verification of postprocessed OpenCode configuration.
 
 Every meaningful task should be recoverable from Git rather than depending on chat history.
 

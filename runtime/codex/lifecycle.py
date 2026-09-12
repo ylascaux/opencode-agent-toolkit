@@ -23,10 +23,12 @@ from typing import Iterable
 
 
 MANIFEST = ".opencode-agent-toolkit.json"
-MANIFEST_VERSION = 1
+MANIFEST_VERSION = 2
+SUPPORTED_MANIFEST_VERSIONS = {1, MANIFEST_VERSION}
 MCP_SECTION = "opencode_agent_toolkit_memory"
 MCP_HEADER = f"[mcp_servers.{MCP_SECTION}]"
 MCP_COMMENT = "# Managed by opencode-agent-toolkit. Remove with: oc codex uninstall"
+SKILL_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 class LifecycleError(ValueError):
@@ -35,6 +37,10 @@ class LifecycleError(ValueError):
 
 def digest(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def _valid_skill_name(value: str) -> bool:
+    return len(value) <= 64 and bool(SKILL_NAME_RE.fullmatch(value))
 
 
 def _check_directory(path: Path, *, label: str, create_ok: bool = True) -> None:
@@ -58,6 +64,31 @@ def _safe_child(parent: Path, relative: str) -> Path:
     return candidate
 
 
+def _safe_project_child(project: Path, relative: str) -> Path:
+    """Return a lexical project-contained child without resolving symlinks."""
+    candidate = project / relative
+    try:
+        candidate.relative_to(project)
+    except ValueError as exc:
+        raise LifecycleError(f"Artifact path escapes project: {relative}") from exc
+    if ".." in Path(relative).parts or Path(relative).is_absolute():
+        raise LifecycleError(f"Invalid managed artifact path: {relative}")
+    return candidate
+
+
+def _check_project_ancestors(project: Path, path: Path, *, label: str) -> None:
+    """Reject a redirecting or non-directory ancestor before any lifecycle write."""
+    try:
+        parts = path.parent.relative_to(project).parts
+    except ValueError as exc:
+        raise LifecycleError(f"Unsafe {label} outside project: {path}") from exc
+    current = project
+    _check_directory(current, label="target project", create_ok=False)
+    for part in parts:
+        current /= part
+        _check_directory(current, label=label)
+
+
 def _validate_project(project: Path) -> Path:
     project = project.expanduser().absolute()
     if not project.exists() or not project.is_dir():
@@ -79,7 +110,11 @@ def _read_manifest(codex_dir: Path) -> dict | None:
         value = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
         raise LifecycleError(f"Invalid ownership manifest: {path}") from exc
-    if not isinstance(value, dict) or set(value) - {"version", "agents", "memory_mcp"} or value.get("version") != MANIFEST_VERSION:
+    if not isinstance(value, dict) or value.get("version") not in SUPPORTED_MANIFEST_VERSIONS:
+        raise LifecycleError(f"Unsupported ownership manifest: {path}")
+    version = value["version"]
+    allowed = {"version", "agents", "memory_mcp"} if version == 1 else {"version", "agents", "skills", "memory_mcp"}
+    if set(value) - allowed or (version == MANIFEST_VERSION and "skills" not in value):
         raise LifecycleError(f"Unsupported ownership manifest: {path}")
     agents = value.get("agents", {})
     if not isinstance(agents, dict) or not all(
@@ -91,6 +126,18 @@ def _read_manifest(codex_dir: Path) -> dict | None:
         for key, value in agents.items()
     ):
         raise LifecycleError(f"Invalid managed agents in manifest: {path}")
+    skills = value.get("skills", {})
+    if not isinstance(skills, dict) or not all(
+        isinstance(key, str)
+        and len(Path(key).parts) == 4
+        and Path(key).parts[:2] == (".agents", "skills")
+        and Path(key).parts[-1] == "SKILL.md"
+        and _valid_skill_name(Path(key).parts[2])
+        and isinstance(item, str)
+        and re.fullmatch(r"[0-9a-f]{64}", item)
+        for key, item in skills.items()
+    ):
+        raise LifecycleError(f"Invalid managed skills in manifest: {path}")
     memory = value.get("memory_mcp")
     if memory is not None and not isinstance(memory, dict):
         raise LifecycleError(f"Invalid memory MCP state in manifest: {path}")
@@ -103,7 +150,7 @@ def _read_manifest(codex_dir: Path) -> dict | None:
         or not re.fullmatch(r"[0-9a-f]{64}", memory["hash"])
     ):
         raise LifecycleError(f"Invalid memory MCP state in manifest: {path}")
-    return value
+    return {**value, "skills": skills}
 
 
 def _bundle_agents(root: Path) -> dict[str, bytes]:
@@ -118,6 +165,24 @@ def _bundle_agents(root: Path) -> dict[str, bytes]:
         result[f"agents/{path.name}"] = path.read_bytes()
     if not result:
         raise LifecycleError(f"No generated Codex TOML agents found in {agents}; run: oc sync codex")
+    return result
+
+
+def _bundle_skills(root: Path) -> dict[str, bytes]:
+    bundle = root / ".generated" / "codex"
+    skills = bundle / "skills"
+    _check_directory(bundle, label="generated Codex bundle", create_ok=False)
+    if not skills.exists():
+        return {}
+    _check_directory(skills, label="generated Codex skills", create_ok=False)
+    result: dict[str, bytes] = {}
+    for directory in sorted(skills.iterdir(), key=lambda path: path.name):
+        if directory.is_symlink() or not directory.is_dir() or not _valid_skill_name(directory.name):
+            raise LifecycleError(f"Refusing unsafe generated skill directory: {directory}")
+        path = directory / "SKILL.md"
+        if path.is_symlink() or not path.is_file():
+            raise LifecycleError(f"Refusing non-regular generated skill: {path}")
+        result[f".agents/skills/{directory.name}/SKILL.md"] = path.read_bytes()
     return result
 
 
@@ -247,16 +312,19 @@ def _atomic_write(path: Path, content: bytes) -> None:
 
 def install_plan(root: Path, project: Path, *, with_memory: bool) -> CodexInstallPlan:
     project = _validate_project(project)
-    generated = _bundle_agents(root)
+    generated_agents = _bundle_agents(root)
+    generated_skills = _bundle_skills(root)
     codex_dir = project / ".codex"
     agents_dir = codex_dir / "agents"
     _check_directory(codex_dir, label=".codex")
     _check_directory(agents_dir, label=".codex/agents")
     manifest = _read_manifest(codex_dir)
-    managed = manifest["agents"] if manifest else {}
+    managed_agents = manifest["agents"] if manifest else {}
+    managed_skills = manifest["skills"] if manifest else {}
     plan = CodexInstallPlan(project)
     next_agents: dict[str, str] = {}
-    for relative, content in generated.items():
+    next_skills: dict[str, str] = {}
+    for relative, content in generated_agents.items():
         destination = _safe_child(codex_dir, relative)
         if destination.is_symlink() or destination.parent.is_symlink():
             plan.conflicts.append(f"{destination}: symlinked managed path")
@@ -267,11 +335,11 @@ def install_plan(root: Path, project: Path, *, with_memory: bool) -> CodexInstal
             plan.add("CREATE", destination, content)
         elif not destination.is_file():
             plan.conflicts.append(f"{destination}: not a regular file")
-        elif relative not in managed:
+        elif relative not in managed_agents:
             plan.conflicts.append(f"{destination}: user-owned agent would be overwritten")
         else:
             current = destination.read_bytes()
-            if digest(current) != managed[relative]:
+            if digest(current) != managed_agents[relative]:
                 plan.conflicts.append(f"{destination}: managed agent was modified; preserving it")
             elif current == content:
                 plan.add("SKIP", destination)
@@ -279,14 +347,50 @@ def install_plan(root: Path, project: Path, *, with_memory: bool) -> CodexInstal
                 plan.add("UPDATE", destination, content)
     # A renamed/removed generated agent can be removed only if it still matches
     # the installed hash recorded by the prior manifest.
-    for relative, installed_hash in managed.items():
-        if relative in generated:
+    for relative, installed_hash in managed_agents.items():
+        if relative in generated_agents:
             continue
         destination = _safe_child(codex_dir, relative)
         if destination.is_symlink() or not destination.exists() or not destination.is_file():
             plan.conflicts.append(f"{destination}: stale managed artifact is unsafe or missing")
         elif digest(destination.read_bytes()) != installed_hash:
             plan.conflicts.append(f"{destination}: stale managed artifact was modified")
+        else:
+            plan.add("DELETE", destination)
+
+    for relative, content in generated_skills.items():
+        destination = _safe_project_child(project, relative)
+        _check_project_ancestors(project, destination, label="managed skill parent")
+        skill_directory = destination.parent
+        if relative not in managed_skills and skill_directory.exists():
+            plan.conflicts.append(f"{skill_directory}: user-owned skill directory would be adopted")
+            continue
+        if destination.is_symlink() or destination.parent.is_symlink():
+            plan.conflicts.append(f"{destination}: symlinked managed path")
+            continue
+        expected = digest(content)
+        next_skills[relative] = expected
+        if not destination.exists():
+            plan.add("CREATE", destination, content)
+        elif not destination.is_file():
+            plan.conflicts.append(f"{destination}: not a regular file")
+        elif relative not in managed_skills:
+            plan.conflicts.append(f"{destination}: user-owned skill would be overwritten")
+        elif digest(destination.read_bytes()) != managed_skills[relative]:
+            plan.conflicts.append(f"{destination}: managed skill was modified; preserving it")
+        elif destination.read_bytes() == content:
+            plan.add("SKIP", destination)
+        else:
+            plan.add("UPDATE", destination, content)
+    for relative, installed_hash in managed_skills.items():
+        if relative in generated_skills:
+            continue
+        destination = _safe_project_child(project, relative)
+        _check_project_ancestors(project, destination, label="managed skill parent")
+        if destination.is_symlink() or not destination.exists() or not destination.is_file():
+            plan.conflicts.append(f"{destination}: stale managed skill is unsafe or missing")
+        elif digest(destination.read_bytes()) != installed_hash:
+            plan.conflicts.append(f"{destination}: stale managed skill was modified")
         else:
             plan.add("DELETE", destination)
 
@@ -308,7 +412,7 @@ def install_plan(root: Path, project: Path, *, with_memory: bool) -> CodexInstal
         except LifecycleError as exc:
             plan.conflicts.append(str(exc))
 
-    next_manifest = {"version": MANIFEST_VERSION, "agents": next_agents}
+    next_manifest = {"version": MANIFEST_VERSION, "agents": next_agents, "skills": next_skills}
     if next_memory:
         next_manifest["memory_mcp"] = next_memory
     manifest_path = codex_dir / MANIFEST
@@ -334,6 +438,15 @@ def uninstall_plan(project: Path) -> CodexInstallPlan:
             plan.conflicts.append(f"{destination}: managed agent is missing or unsafe")
         elif digest(destination.read_bytes()) != installed_hash:
             plan.conflicts.append(f"{destination}: managed agent was modified; preserving it")
+        else:
+            plan.add("DELETE", destination)
+    for relative, installed_hash in manifest["skills"].items():
+        destination = _safe_project_child(project, relative)
+        _check_project_ancestors(project, destination, label="managed skill parent")
+        if destination.is_symlink() or not destination.is_file():
+            plan.conflicts.append(f"{destination}: managed skill is missing or unsafe")
+        elif digest(destination.read_bytes()) != installed_hash:
+            plan.conflicts.append(f"{destination}: managed skill was modified; preserving it")
         else:
             plan.add("DELETE", destination)
     memory = manifest.get("memory_mcp")
@@ -392,12 +505,14 @@ def doctor(root: Path, project: Path, *, verbose: bool) -> int:
     elif manifest is not None:
         findings.append(("Managed manifest", "OK", ""))
         try:
-            expected = _bundle_agents(root) if status != "INVALID" else {}
+            expected_agents = _bundle_agents(root) if status != "INVALID" else {}
+            expected_skills = _bundle_skills(root) if status != "INVALID" else {}
         except LifecycleError:
             # The generated-state finding above already reports this. Continue
             # inspecting installed state instead of turning a drift report into
             # an exception from a read-only command.
-            expected = {}
+            expected_agents = {}
+            expected_skills = {}
         agents_ok = 0
         drift: list[str] = []
         for relative, installed_hash in manifest["agents"].items():
@@ -406,17 +521,42 @@ def doctor(root: Path, project: Path, *, verbose: bool) -> int:
                 drift.append(f"missing {relative}")
             elif digest(path.read_bytes()) != installed_hash:
                 drift.append(f"modified {relative}")
-            elif relative not in expected:
+            elif relative not in expected_agents:
                 drift.append(f"not generated {relative}")
-            elif path.read_bytes() != expected[relative]:
+            elif path.read_bytes() != expected_agents[relative]:
                 drift.append(f"outdated {relative}")
             else:
                 agents_ok += 1
-        for relative in expected:
+        for relative in expected_agents:
             if relative not in manifest["agents"]:
                 drift.append(f"unmanaged generated {relative}")
         findings.append(("Agents installed", f"OK ({agents_ok})" if not drift else "DRIFT", "; ".join(drift)))
         severity = max(severity, 1 if drift else 0)
+        skills_ok = 0
+        skill_drift: list[str] = []
+        for relative, installed_hash in manifest["skills"].items():
+            path = _safe_project_child(project, relative)
+            try:
+                _check_project_ancestors(project, path, label="managed skill parent")
+            except LifecycleError:
+                skill_drift.append(f"unsafe {relative}")
+                continue
+            if path.is_symlink() or not path.is_file():
+                skill_drift.append(f"missing {relative}")
+            elif digest(path.read_bytes()) != installed_hash:
+                skill_drift.append(f"modified {relative}")
+            elif relative not in expected_skills:
+                skill_drift.append(f"not generated {relative}")
+            elif path.read_bytes() != expected_skills[relative]:
+                skill_drift.append(f"outdated {relative}")
+            else:
+                skills_ok += 1
+        for relative in expected_skills:
+            if relative not in manifest["skills"]:
+                skill_drift.append(f"unmanaged generated {relative}")
+        findings.append(("Skills installed", f"OK ({skills_ok})" if not skill_drift else "DRIFT", "; ".join(skill_drift)))
+        findings.append(("Skill drift", "NONE" if not skill_drift else "DRIFT", "; ".join(skill_drift)))
+        severity = max(severity, 1 if skill_drift else 0)
         memory = manifest.get("memory_mcp")
         if memory and memory.get("managed"):
             try:

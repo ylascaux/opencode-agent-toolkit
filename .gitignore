@@ -6,6 +6,7 @@ node_modules/
 __pycache__/
 *.pyc
 .generated/
+.opencode/skills/
 architecture-inventory.json
 opencode.jsonc
 opencode.v2.jsonc

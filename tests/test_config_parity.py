@@ -123,6 +123,7 @@ class ConfigPolicyTests(unittest.TestCase):
         cls.fixture = tempfile.TemporaryDirectory()
         cls.fixture_root = Path(cls.fixture.name)
         shutil.copytree(AGENTS_DIR, cls.fixture_root / "agents")
+        shutil.copytree(ROOT / "skills", cls.fixture_root / "skills")
         fixture_scripts = cls.fixture_root / "scripts"
         fixture_scripts.mkdir()
         for filename in ["generate-config", "agent_config.py", "apply-reliability"]:

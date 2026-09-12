@@ -32,7 +32,7 @@ class RuntimeSyncTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
-        for directory in ("agents", "runtime"):
+        for directory in ("agents", "runtime", "skills"):
             shutil.copytree(ROOT / directory, self.root / directory, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         scripts = self.root / "scripts"
         scripts.mkdir()

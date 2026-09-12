@@ -25,6 +25,12 @@ export OAT_RUNTIME=container
 export OAT_SANDBOX_HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-/bin/bash}"
 
 python3 ./scripts/generate-config >/dev/null
+# The server runs from /opt/oat while attached sessions keep the user project as
+# their working directory. Register the generated toolkit skill source explicitly
+# so OpenCode can discover it regardless of the attached project cwd.
+export OPENCODE_CONFIG_CONTENT="$(
+  python3 -B ./scripts/opencode-skill-source /opt/oat/.opencode/skills
+)"
 if [[ -f ./scripts/apply-memory ]]; then
   python3 ./scripts/apply-memory >/dev/null
 elif [[ "${OAT_MEMORY_ENABLED:-0}" == "1" ]]; then

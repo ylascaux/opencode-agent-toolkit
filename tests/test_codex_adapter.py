@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from runtime.codex.adapter import CodexAdapter
 from runtime.common import normalization
-from runtime.common.normalization import children_by_parent, load_normalized_agents
+from runtime.common.normalization import children_by_parent, load_normalized_agents, load_normalized_skills
 from runtime.opencode.adapter import OpenCodeAdapter
 
 
@@ -17,6 +17,7 @@ class CodexAdapterTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.specs = load_normalized_agents()
+        cls.skills = load_normalized_skills()
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -34,9 +35,10 @@ class CodexAdapterTests(unittest.TestCase):
     def test_consumes_normalized_agents_without_reopening_canonical_files(self):
         self.assertFalse((self.root / "agents").exists())
         with patch.object(Path, "read_text", side_effect=AssertionError("must use normalized prompts")):
-            plan = self.adapter.plan(self.specs)
+            plan = self.adapter.plan(self.specs, self.skills)
         self.assertEqual(self.adapter.name, "codex")
         self.assertEqual(set(self.report(plan)["agents"]), set(self.specs))
+        self.assertEqual(self.report(plan)["skills"]["count"], len(self.skills))
         self.assertFalse(self.output.exists())
 
     def test_generation_and_agents_instructions_are_order_independent(self):
@@ -162,13 +164,18 @@ class CodexAdapterTests(unittest.TestCase):
         self.assertLess(len(plan.files[self.output / "AGENTS.md"]), 20000)
         self.assertFalse((self.root / "AGENTS.md").exists())
 
-    def test_generation_is_local_without_memory_mcp_or_invented_skills(self):
+    def test_generation_is_local_without_memory_mcp_and_stages_normalized_skills(self):
         with patch("socket.create_connection", side_effect=AssertionError("network forbidden")):
-            paths = self.adapter.generate(self.specs)
+            paths = self.adapter.generate(self.specs, self.skills)
         self.assertTrue(paths)
-        self.assertEqual(self.report(self.adapter.plan(self.specs))["skills"], [])
+        report = self.report(self.adapter.plan(self.specs, self.skills))["skills"]
+        self.assertTrue(report["portable"])
+        self.assertEqual(report["count"], len(self.skills))
         self.assertFalse((self.output / "memory-context.md").exists())
-        self.assertFalse((self.output / "skills").exists())
+        for name, skill in self.skills.items():
+            rendered = (self.output / "skills" / name / "SKILL.md").read_text()
+            self.assertIn(f"name: {name}", rendered)
+            self.assertIn(skill.prompt, rendered)
         for path in self.output.rglob("*.toml"):
             self.assertNotIn("mcp_servers", tomllib.loads(path.read_text()))
 

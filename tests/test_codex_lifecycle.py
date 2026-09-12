@@ -25,6 +25,9 @@ class CodexLifecycleTests(unittest.TestCase):
         self.project = Path(self.directory.name) / "project"
         (self.root / ".generated" / "codex" / "agents").mkdir(parents=True)
         (self.root / ".generated" / "codex" / "agents" / "builder.toml").write_text('name = "builder"\n')
+        skill = self.root / ".generated" / "codex" / "skills" / "test-review"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("---\nname: test-review\ndescription: Test review\n---\n\nbody\n")
         (self.root / "scripts").mkdir()
         (self.root / "scripts" / "memory-mcp").write_text("#!/bin/sh\n")
         self.project.mkdir()
@@ -43,9 +46,11 @@ class CodexLifecycleTests(unittest.TestCase):
         self.assertEqual((self.project / "AGENTS.md").read_text(), "project-owned instructions\n")
         manifest = json.loads((self.project / ".codex" / lifecycle.MANIFEST).read_text())
         self.assertEqual(set(manifest["agents"]), {"agents/builder.toml"})
+        self.assertEqual(set(manifest["skills"]), {".agents/skills/test-review/SKILL.md"})
+        self.assertTrue((self.project / ".agents" / "skills" / "test-review" / "SKILL.md").is_file())
         self.assertNotIn(str(self.project), json.dumps(manifest))
         again = lifecycle.install_plan(self.root, self.project, with_memory=False)
-        self.assertEqual([change.action for change in again.changes], ["SKIP", "SKIP"])
+        self.assertEqual([change.action for change in again.changes], ["SKIP", "SKIP", "SKIP"])
 
     def test_dry_plan_and_doctor_are_read_only(self):
         before = snapshot(self.project)
@@ -93,6 +98,81 @@ class CodexLifecycleTests(unittest.TestCase):
         with self.assertRaises(lifecycle.LifecycleError):
             plan.apply()
         self.assertEqual(installed.read_text(), "user edit\n")
+
+    def test_user_owned_or_modified_skill_is_never_overwritten(self):
+        target = self.project / ".agents" / "skills" / "test-review"
+        target.mkdir(parents=True)
+        skill = target / "SKILL.md"
+        skill.write_text("user-owned\n")
+        plan = lifecycle.install_plan(self.root, self.project, with_memory=False)
+        self.assertTrue(plan.conflicts)
+        self.assertEqual(skill.read_text(), "user-owned\n")
+
+        skill.unlink()
+        target.rmdir()
+        self.install()
+        generated = self.root / ".generated" / "codex" / "skills" / "test-review" / "SKILL.md"
+        generated.write_text("---\nname: test-review\ndescription: changed\n---\n\nbody\n")
+        installed = self.project / ".agents" / "skills" / "test-review" / "SKILL.md"
+        installed.write_text("manual edit\n")
+        plan = lifecycle.install_plan(self.root, self.project, with_memory=False)
+        self.assertTrue(plan.conflicts)
+        self.assertEqual(installed.read_text(), "manual edit\n")
+
+    def test_preexisting_skill_directory_without_skill_file_is_not_adopted(self):
+        target = self.project / ".agents" / "skills" / "test-review"
+        references = target / "references"
+        references.mkdir(parents=True)
+        marker = references / "user-owned.md"
+        marker.write_text("keep me\n")
+
+        plan = lifecycle.install_plan(self.root, self.project, with_memory=False)
+
+        self.assertTrue(plan.conflicts)
+        self.assertTrue(any("user-owned skill directory would be adopted" in conflict for conflict in plan.conflicts))
+        self.assertFalse((target / "SKILL.md").exists())
+        self.assertEqual(marker.read_text(), "keep me\n")
+        with self.assertRaises(lifecycle.LifecycleError):
+            plan.apply()
+        self.assertEqual(marker.read_text(), "keep me\n")
+
+    def test_unchanged_managed_skill_updates_to_new_generated_content(self):
+        self.install()
+        generated = self.root / ".generated" / "codex" / "skills" / "test-review" / "SKILL.md"
+        generated.write_text("---\nname: test-review\ndescription: changed\n---\n\nbody\n")
+        plan = lifecycle.install_plan(self.root, self.project, with_memory=False)
+        self.assertFalse(plan.conflicts, plan.conflicts)
+        self.assertIn("UPDATE", [change.action for change in plan.changes])
+        plan.apply()
+        installed = self.project / ".agents" / "skills" / "test-review" / "SKILL.md"
+        self.assertEqual(installed.read_text(), generated.read_text())
+
+    def test_skill_uninstall_and_manifest_v1_migration_are_safe(self):
+        self.install()
+        skill = self.project / ".agents" / "skills" / "test-review" / "SKILL.md"
+        removal = lifecycle.uninstall_plan(self.project)
+        self.assertFalse(removal.conflicts, removal.conflicts)
+        removal.apply()
+        self.assertFalse(skill.exists())
+
+        # Directory ownership is deliberately conservative: the manifest owns
+        # SKILL.md, not its containing directory. Remove the now-empty directory
+        # before simulating a fresh independent installation.
+        skill.parent.rmdir()
+        self.install()
+        manifest_path = self.project / ".codex" / lifecycle.MANIFEST
+        current = json.loads(manifest_path.read_text())
+        v1 = {"version": 1, "agents": current["agents"]}
+        manifest_path.write_text(json.dumps(v1))
+        (self.project / ".agents" / "skills" / "test-review" / "SKILL.md").unlink()
+        (self.root / ".generated" / "codex" / "skills" / "test-review" / "SKILL.md").unlink()
+        (self.root / ".generated" / "codex" / "skills" / "test-review").rmdir()
+        before = manifest_path.read_bytes()
+        dry = lifecycle.install_plan(self.root, self.project, with_memory=False)
+        self.assertEqual(manifest_path.read_bytes(), before)
+        self.assertFalse(dry.conflicts, dry.conflicts)
+        dry.apply()
+        self.assertEqual(json.loads(manifest_path.read_text())["version"], 2)
 
     def test_memory_registration_is_explicit_and_preserves_other_tables(self):
         codex = self.project / ".codex"
@@ -160,6 +240,15 @@ class CodexLifecycleTests(unittest.TestCase):
         self.install()
         before = snapshot(self.project)
         with patch.object(lifecycle, "_generated_state", return_value=("DRIFT", "Run: oc sync codex")), patch.object(lifecycle.shutil, "which", return_value="/node"):
+            self.assertEqual(lifecycle.doctor(self.root, self.project, verbose=True), 1)
+        self.assertEqual(snapshot(self.project), before)
+
+    def test_doctor_reports_skill_drift_without_repair(self):
+        self.install()
+        skill = self.project / ".agents" / "skills" / "test-review" / "SKILL.md"
+        skill.write_text("manual edit\n")
+        before = snapshot(self.project)
+        with patch.object(lifecycle, "_generated_state", return_value=("OK", "")), patch.object(lifecycle.shutil, "which", return_value="/node"):
             self.assertEqual(lifecycle.doctor(self.root, self.project, verbose=True), 1)
         self.assertEqual(snapshot(self.project), before)
 
