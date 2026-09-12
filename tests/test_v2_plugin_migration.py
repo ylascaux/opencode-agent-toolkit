@@ -3,17 +3,19 @@ import json
 import sys
 import tempfile
 import unittest
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "apply-reliability"
 
 sys.path.insert(0, str(ROOT / "scripts"))
-spec = importlib.util.spec_from_file_location("apply_reliability_for_test", SCRIPT)
-if spec is None or spec.loader is None:
+loader = SourceFileLoader("apply_reliability_for_test", str(SCRIPT))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+if spec is None:
     raise RuntimeError("Unable to load scripts/apply-reliability")
 MODULE = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(MODULE)
+loader.exec_module(MODULE)
 
 
 class V2PluginMigrationTests(unittest.TestCase):
