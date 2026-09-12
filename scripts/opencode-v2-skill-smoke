@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Probe the real OpenCode V2 skill HTTP surface for an isolated project."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+
+ROOT = Path(__file__).resolve().parents[1]
+TOOLKIT_SKILLS = ("terraform-review", "security-review", "test-review")
+USERNAME = "opencode"
+PASSWORD = "oat-acceptance-only"
+LOCATION = "/workspace"
+
+
+def fail(message: str) -> None:
+    print(f"OpenCode V2 skill smoke failed: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+
+
+def stage_real_skills(project: Path) -> None:
+    """Stage real skill files without relying on synthetic API responses."""
+    destination = project / ".agents" / "skills"
+    for name in TOOLKIT_SKILLS:
+        source = ROOT / "skills" / name
+        if not (source / "SKILL.md").is_file():
+            fail(f"missing canonical toolkit skill {source / 'SKILL.md'}")
+        shutil.copytree(source, destination / name)
+
+    skill = destination / "project-skill" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: project-skill\ndescription: Project acceptance skill\n---\n\nfixture\n")
+
+
+def main() -> int:
+    if not shutil.which("docker"):
+        fail("docker is unavailable")
+    image = os.environ.get("OAT_RUNTIME_IMAGE", "opencode-agent-toolkit:local")
+    with tempfile.TemporaryDirectory(prefix="oat-v2-skill-smoke-") as directory:
+        project = Path(directory) / "project"
+        project.mkdir(parents=True)
+        stage_real_skills(project)
+        (project / "README.md").write_text("# fixture\n")
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True, capture_output=True)
+
+        container_name = f"oat-v2-skill-smoke-{os.getpid()}"
+        shell = (
+            "cd /opt/oat && "
+            "python3 scripts/generate-config >/dev/null && "
+            "export OPENCODE_CONFIG=/opt/oat/opencode.v2.jsonc && "
+            "export OPENCODE_CONFIG_CONTENT=\"$(python3 -B scripts/opencode-skill-source /opt/oat/.opencode/skills)\" && "
+            "cd /workspace && exec opencode2 serve --hostname 127.0.0.1 --port 4096"
+        )
+        started = run(
+            [
+                "docker", "run", "-d", "--rm", "--name", container_name,
+                "--entrypoint", "bash",
+                "-v", f"{project}:/workspace", "-w", "/workspace",
+                "-e", "OPENCODE_DISABLE_MODELS_FETCH=1",
+                "-e", f"OPENCODE_SERVER_USERNAME={USERNAME}",
+                "-e", f"OPENCODE_SERVER_PASSWORD={PASSWORD}",
+                image, "-lc", shell,
+            ],
+            cwd=project,
+        )
+        if started.returncode != 0:
+            fail(f"could not start runtime image: {started.stderr}")
+        try:
+            payload = None
+            last_error = "server did not answer"
+            for _ in range(30):
+                probe = run(
+                    [
+                        "docker", "exec", container_name,
+                        "curl", "-fsS", "-u", f"{USERNAME}:{PASSWORD}",
+                        "-H", f"x-opencode-directory: {LOCATION}",
+                        "http://127.0.0.1:4096/api/skill",
+                    ],
+                    cwd=project,
+                )
+                if probe.returncode == 0:
+                    try:
+                        candidate = json.loads(probe.stdout)
+                        if isinstance(candidate, dict) and isinstance(candidate.get("data"), list):
+                            payload = candidate
+                            break
+                        last_error = f"unexpected response shape: {type(candidate).__name__}"
+                    except json.JSONDecodeError as exc:
+                        last_error = str(exc)
+                else:
+                    last_error = probe.stderr.strip() or probe.stdout.strip() or last_error
+                state = run(["docker", "inspect", "--format", "{{.State.Running}}", container_name], cwd=project)
+                if state.returncode != 0 or state.stdout.strip() != "true":
+                    break
+                time.sleep(1)
+            if payload is None:
+                logs = run(["docker", "logs", container_name], cwd=project)
+                fail(f"skill API unavailable ({last_error})\n{logs.stdout}\n{logs.stderr}")
+
+            resolved = payload.get("location", {})
+            resolved_directory = resolved.get("directory") if isinstance(resolved, dict) else None
+            if resolved_directory != LOCATION:
+                fail(f"skill API resolved unexpected location {resolved_directory!r}")
+
+            for item in payload["data"]:
+                if not isinstance(item, dict):
+                    fail("skill API returned a non-object entry")
+                name = item.get("name")
+                if name is not None and not isinstance(name, str):
+                    fail("skill API returned a non-string skill name")
+
+            print(f"PASS OpenCode V2 skill API at {LOCATION}: {len(payload['data'])} entries")
+            return 0
+        finally:
+            subprocess.run(["docker", "rm", "-f", container_name], cwd=project, text=True, capture_output=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
