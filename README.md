@@ -1,12 +1,32 @@
 # OpenCode Agent Toolkit
 
-Un toolkit multi-agents pour [OpenCode](https://opencode.ai/) : il génère une configuration V1/V2 à partir d'agents autonomes, applique des garde-fous de fiabilité et de permissions, puis fournit un lanceur et des diagnostics pour travailler sur un projet.
+Toolkit multi-agents **multi-runtime** pour OpenCode V1/V2 et Codex. Une même source canonique décrit les agents et les skills ; les adapters runtime génèrent ensuite les artefacts propres à OpenCode ou Codex sans dupliquer les prompts ni les politiques.
 
-Le plan de contrôle reste volontairement court : `meta-router -> lead -> specialist`. Les agents vivent dans `agents/<nom>/` et déclarent eux-mêmes leur rôle, leurs parents autorisés et leurs permissions.
+Le plan de contrôle reste volontairement court et auditable :
+
+```text
+meta-router -> lead/orchestrator -> specialist
+```
+
+Les garde-fous de permissions, de fiabilité, d'isolation Docker/DinD et de mémoire restent indépendants du runtime.
+
+## État du projet
+
+La première release multi-runtime est préparée comme **v0.1.0**. Le socle local couvre :
+
+- agents canoniques dans `agents/<name>/` ;
+- skills portables dans `skills/<name>/` ;
+- OpenCode V1/V2 ;
+- génération et lifecycle local Codex ;
+- mémoire Git privée optionnelle via MCP ;
+- sandbox et DinD isolés ;
+- acceptance runtime depuis un projet externe jetable.
+
+`VERSION` est la source de vérité pour les releases et `CHANGELOG.md` décrit les changements publiés.
 
 ## Démarrer en cinq minutes
 
-Prérequis : Git, Bash, Python 3, Node.js, OpenCode, et [`just`](https://github.com/casey/just). Sur macOS : `brew install just`.
+Prérequis : Git, Bash, Python 3, Node.js, Docker, OpenCode et [`just`](https://github.com/casey/just). Sur macOS : `brew install just`.
 
 ```bash
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
@@ -18,36 +38,87 @@ just models
 just doctor
 ```
 
-`just install` crée `.env` s'il est absent, prépare l'environnement Python, installe les dépendances locales du scanner/API, génère et valide les configurations OpenCode, puis lance les tests **Python**. Pour la validation complète (génération, tests Python et tests Node), exécutez `just check`.
+`just install` crée `.env` s'il est absent, prépare l'environnement local, génère les configurations OpenCode et exécute les tests Python. Pour la validation complète du dépôt :
 
-Après l'installation des lanceurs, l'usage quotidien se fait depuis le projet sur lequel vous travaillez :
+```bash
+just check
+```
+
+## OpenCode
+
+Après installation des lanceurs, travaillez depuis le dépôt cible :
 
 ```bash
 cd ~/Projects/mon-projet
 oc .
-# ou OpenCode V2
+```
+
+Pour OpenCode V2 :
+
+```bash
 oc2 .
 ```
 
-Les configurations générées sont `opencode.jsonc` (V1) et `opencode.v2.jsonc` (V2). Les recettes `just` restent l'interface de développement et de maintenance du dépôt toolkit.
+Les configurations générées du toolkit restent `opencode.jsonc` et `opencode.v2.jsonc`. Le launcher conserve le répertoire courant du projet et ajoute les skills toolkit sans masquer les skills locaux du projet.
 
-## Repères rapides
+## Codex local
+
+Le même graphe normalisé d'agents et de skills alimente Codex :
 
 ```bash
-just config                  # régénère les configurations localement
-just check                   # validation complète : config + Python + Node
-just agents                  # inspecte les agents et leur topologie
-just new-agent mon-agent --parent orchestrator
-just configure-litellm       # découverte LiteLLM, optionnelle
+cd /chemin/vers/opencode-agent-toolkit
+oc sync codex
+
+cd ~/Projects/mon-projet
+oc codex install
+oc codex doctor
 ```
 
-Les overrides par agent doivent aller dans `.env.local`, afin de ne pas être écrasés par `just profile`.
+Pour enregistrer également la mémoire MCP portable :
+
+```bash
+oc codex install --with-memory
+```
+
+Pour retirer uniquement les fichiers gérés par le toolkit :
+
+```bash
+oc codex uninstall
+```
+
+Le lifecycle Codex protège les fichiers utilisateur : un agent ou skill préexistant, ou un fichier géré modifié manuellement, provoque un conflit au lieu d'être écrasé ou supprimé silencieusement.
+
+## Agents et skills portables
+
+Source canonique :
+
+```text
+agents/<name>/
+  agent.json
+  prompt.md
+  permissions.json
+
+skills/<name>/
+  skill.json
+  SKILL.md
+```
+
+Synchronisation runtime :
+
+```bash
+oc sync opencode
+oc sync codex
+oc sync all
+
+oc sync codex --dry-run
+oc sync codex --check
+```
+
+`sync` génère des artefacts jetables et déterministes. Il ne publie aucune ressource distante et ne change pas implicitement l'agent racine.
 
 ## Mémoire Git privée optionnelle
 
-La mémoire est fournie par le plugin autonome `ylascaux/opencode-memory-plugin`. Le toolkit l'installe/configure mais ne contient plus son moteur.
-
-Les commandes mémoire quotidiennes sont accessibles depuis **n'importe quel projet** via le lanceur global `oc` :
+La mémoire est fournie par le plugin autonome `ylascaux/opencode-memory-plugin`. Le toolkit le configure/consomme mais ne duplique pas son moteur.
 
 ```bash
 cd ~/Projects/mon-projet
@@ -55,94 +126,86 @@ oc memory enable git@github.com:USER/opencode-memory.git
 oc memory status
 oc memory capture-on
 oc memory candidates
-oc memory show orchestrator
 ```
 
-`oc memory ...` conserve le répertoire courant afin que le plugin détecte le bon scope projet. Le package autonome fournit également un CLI global `oc-memory`; `opencode-memory` reste un alias de compatibilité.
+Pour Codex, le MCP portable expose uniquement les opérations non destructives/portables : status, search, render, propose et candidates. Les opérations `accept`, `promote` et `push` restent explicitement humaines.
 
-Les recettes `just memory-*` restent disponibles comme raccourcis de maintenance, mais elles ne sont plus l'interface principale. Le clone mémoire n'est pas monté dans la sandbox : seul le contexte rendu est injecté dans les prompts générés. Voir [la documentation mémoire](docs/fr/MEMORY.md).
+Le clone mémoire privé n'est pas monté directement dans la sandbox ou exposé à Codex.
 
-## Toutes les recettes `just`
+Voir [la documentation mémoire](docs/fr/MEMORY.md).
 
-Sans argument, `just` exécute `default`, qui affiche cette liste (`just --list`). Les paramètres entre guillemets indiquent leur valeur par défaut ; `*args` transmet des arguments supplémentaires.
+## Isolation et sécurité
 
-### Installation, profils et diagnostics
+Le runtime Docker est le chemin principal. Le toolkit conserve les invariants suivants :
 
-| Recette | Syntaxe | Description |
-| --- | --- | --- |
-| `default` | `just` | Affiche les recettes disponibles. |
-| `install` | `just install` | Initialisation locale, génération des configs et tests Python. |
-| `refresh` | `just refresh` | Relance l'initialisation en mode actualisation. |
-| `profile` | `just profile [name="copilot"]` | Applique un profil de modèles. Les overrides persistants restent dans `.env.local`. |
-| `profiles` | `just profiles` | Liste les profils de modèles disponibles. |
-| `models` | `just models` | Affiche la résolution effective des modèles. |
-| `doctor` | `just doctor` | Diagnostique les prérequis et la configuration locale. |
-| `configure-litellm` | `just configure-litellm [args…]` | Découvre des modèles LiteLLM et crée des mappings explicites ; optionnel, jamais appelé par `config`. |
+- pas de montage du `docker.sock` hôte dans le runtime normal ;
+- DinD dédié pour les serveurs persistants ;
+- rootless DinD pour les tâches managées ;
+- frontières de permissions par agent ;
+- pas de secrets dans les artefacts générés ;
+- aucune promotion/push automatique de mémoire ;
+- installation/uninstall Codex basée sur un manifest d'ownership et des hashes.
 
-### Agents et configuration
+Diagnostics utiles :
 
-| Recette | Syntaxe | Description |
-| --- | --- | --- |
-| `agents` | `just agents` | Liste les agents découverts dans `agents/<nom>/`. |
-| `new-agent` | `just new-agent <name> [args…]` | Crée le squelette d'un agent autonome. |
-| `config` | `just config` | Génère les configs V1/V2, applique la politique de fiabilité et vérifie leur JSON. Aucun appel fournisseur ni prompt interactif. |
-| `preflight` | `just preflight` | Vérifications déterministes avant un lancement OpenCode ; requiert `.env`. |
-| `reliability` | `just reliability` | Affiche la politique de fiabilité effective, overrides compris. |
-| `check` | `just check` | Validation complète : `config`, tests Python et tests Node de runtime. |
-| `test` | `just test` | Exécute la suite de tests Python. |
-| `runtime-test` | `just runtime-test` | Exécute les tests Node du comportement runtime. |
+```bash
+just doctor
+just sandbox-doctor
+oc codex doctor
+```
 
-### Lancer OpenCode et outils de projet
+## Acceptance runtime
 
-| Recette | Syntaxe | Description |
-| --- | --- | --- |
-| `run` | `just run [args…]` | Lance OpenCode depuis le dépôt toolkit ; pour l'usage quotidien, préférez le lanceur global `oc`. |
-| `v1` | `just v1 [args…]` | Lance OpenCode V1 explicitement depuis le dépôt toolkit. |
-| `v2` | `just v2 [args…]` | Lance OpenCode V2 explicitement depuis le dépôt toolkit. |
-| `serve` | `just serve [args…]` | Démarre un serveur OpenCode headless avec la version active. |
-| `serve-v2` | `just serve-v2 [args…]` | Démarre explicitement un serveur OpenCode 2 headless. |
-| `scan` | `just scan [args…]` | Analyse des projets et écrit `architecture-inventory.json`. |
-| `api` | `just api` | Lance l'API d'inventaire. |
+L'acceptance intégrée utilise une copie temporaire du toolkit et un dépôt Git externe synthétique. Elle n'utilise pas le HOME/XDG réel, `.env.local`, les credentials provider ou un vault mémoire privé.
 
-### Lanceurs utilisateur
+```bash
+OAT_ACCEPTANCE_SKIP_MEMORY=1 python3 -B scripts/runtime-acceptance
+```
 
-| Recette | Syntaxe | Description |
-| --- | --- | --- |
-| `install-user` | `just install-user [command="oc"]` | Installe un lanceur réversible dans `~/.local/bin`. |
-| `uninstall-user` | `just uninstall-user [command="oc"]` | Retire ce lanceur s'il pointe vers ce toolkit. |
-| `user-status` | `just user-status [command="oc"]` | Indique si le lanceur utilisateur pointe vers ce toolkit. |
-| `install-oc2` | `just install-oc2` | Installe le lanceur V2 dédié `oc2`. |
-| `uninstall-oc2` | `just uninstall-oc2` | Retire le lanceur dédié `oc2`. |
-| `oc2-status` | `just oc2-status` | Indique si `oc2` est installé. |
+La CI exécute aussi un smoke Docker contre un vrai serveur OpenCode V2 authentifié. L'intégration du plugin mémoire privé utilise le vrai repo piné lorsqu'un token inter-repo dédié est configuré ; sinon le skip est explicite et aucun faux serveur MCP n'est substitué.
 
-### Mémoire long terme — raccourcis de maintenance
+Voir [Runtime acceptance](docs/en/RUNTIME_ACCEPTANCE.md).
 
-Pour l'usage quotidien, préférez `oc memory ...` depuis le projet courant. Ces recettes restent utiles lorsque vous travaillez directement dans le dépôt toolkit.
+## Repères développeur
 
-| Recette | Syntaxe | Description |
-| --- | --- | --- |
-| `memory-on` | `just memory-on [repo=""]` | Active la mémoire Git et peut enregistrer l'URL du dépôt privé dans `.env.local`. |
-| `memory-off` | `just memory-off` | Désactive la mémoire et supprime le contexte rendu. |
-| `memory-status` | `just memory-status` | Affiche la configuration effective et le projet mémoire détecté. |
-| `memory-sync` | `just memory-sync` | Force le clone/pull du dépôt mémoire et reconstruit le contexte. |
-| `memory-show` | `just memory-show [agent="orchestrator"]` | Affiche le contexte commun et les casquettes injectés pour un agent. |
+```bash
+just config                  # régénère les configurations OpenCode
+just check                   # génération + tests Python + tests runtime Node
+just agents                  # inspecte les agents et leur topologie
+just new-agent mon-agent --parent orchestrator
+just reliability             # politique de fiabilité effective
+just configure-litellm       # découverte LiteLLM optionnelle
+```
 
-### Sandbox et maintenance
+Les overrides persistants par agent doivent aller dans `.env.local` afin de ne pas être écrasés par `just profile`.
 
-| Recette | Syntaxe | Description |
-| --- | --- | --- |
-| `sandbox-build` | `just sandbox-build` | Construit l'image Nix durcie avec Docker ou Podman. |
-| `sandbox-on` | `just sandbox-on` | Construit l'image puis active l'exécution shell sandboxée dans `.env.local`. |
-| `sandbox-off` | `just sandbox-off` | Désactive la sandbox sans supprimer son image. |
-| `sandbox-doctor` | `just sandbox-doctor` | Vérifie la politique sandbox, le filtrage cloud et le runtime/image local. |
-| `sandbox-clean` | `just sandbox-clean` | Supprime les conteneurs sandbox orphelins, sans supprimer l'image. |
-| `clean` | `just clean` | Supprime `.venv`, `.generated` et `architecture-inventory.json`. |
+## Release
 
-## Documentation détaillée
+Valider les métadonnées uniquement :
 
-- [Documentation française](docs/fr/README.md) : installation, agents, permissions, modèles, fiabilité, sandbox et usage.
-- [Index de la documentation anglaise](docs/en/README.md).
-- [Architecture système](docs/fr/SYSTEM_ARCHITECTURE.md), [configuration des agents](docs/fr/CONFIGURATION_AGENTS.md) et [mémoire Git](docs/fr/MEMORY.md).
-- [Gates de qualité de contribution](workflows/quality-gates.md).
+```bash
+python3 -B scripts/release-check --metadata-only --tag "v$(cat VERSION)"
+```
+
+Valider l'ensemble des gates locales de release :
+
+```bash
+python3 -B scripts/release-check
+```
+
+La release doit être mergée sur `main` **avant** de créer le tag annoté correspondant. Voir [le processus de release](docs/fr/RELEASE.md) et le [changelog](CHANGELOG.md).
+
+## Documentation
+
+- [Documentation française](docs/fr/README.md)
+- [Documentation anglaise](docs/en/README.md)
+- [Architecture multi-runtime](docs/fr/MULTI_RUNTIME.md)
+- [Adapter Codex](docs/fr/CODEX_ADAPTER.md)
+- [Workflow cross-runtime](docs/fr/CROSS_RUNTIME_WORKFLOW.md)
+- [Architecture système](docs/fr/SYSTEM_ARCHITECTURE.md)
+- [Permissions](docs/fr/PERMISSIONS.md)
+- [Fiabilité](docs/fr/RELIABILITY.md)
+- [Sandbox](docs/fr/SANDBOX.md)
+- [Processus de release](docs/fr/RELEASE.md)
 
 Les contrats machine lisibles sont dans [`contracts/`](contracts/), notamment `agent-handoff.schema.json` et `routing-decision.schema.json`.

@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Validate release metadata and, by default, the full local release gates."""
+
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
+
+
+def fail(message: str) -> None:
+    print(f"release-check: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def version() -> str:
+    path = ROOT / "VERSION"
+    if not path.is_file():
+        fail("VERSION is missing")
+    value = path.read_text(encoding="utf-8").strip()
+    if not SEMVER.fullmatch(value):
+        fail(f"VERSION is not valid semver: {value!r}")
+    return value
+
+
+def metadata_check(expected_tag: str | None) -> str:
+    value = version()
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    if f"## [{value}]" not in changelog:
+        fail(f"CHANGELOG.md has no release section for {value}")
+    expected = f"v{value}"
+    if expected_tag is not None and expected_tag != expected:
+        fail(f"tag {expected_tag!r} does not match VERSION ({expected})")
+    print(f"release metadata: OK ({expected})")
+    return value
+
+
+def run(command: list[str], *, env: dict[str, str] | None = None) -> None:
+    print("+", " ".join(command))
+    subprocess.run(command, cwd=ROOT, env=env, check=True)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--metadata-only", action="store_true")
+    parser.add_argument("--tag", help="verify an explicit release tag, e.g. v0.1.0")
+    args = parser.parse_args()
+
+    metadata_check(args.tag)
+    if args.metadata_only:
+        return 0
+
+    run(["just", "check"])
+    env = os.environ.copy()
+    env["OAT_ACCEPTANCE_SKIP_MEMORY"] = "1"
+    run([sys.executable, "-B", "scripts/runtime-acceptance"], env=env)
+    print("release gates: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
