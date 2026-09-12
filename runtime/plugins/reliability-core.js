@@ -168,3 +168,22 @@ export const delegationTaskKey = ({ parentID, args }) => {
   const scope = description || prompt.slice(0, 240) || "unnamed"
   return `${parentID ?? "unknown"}:${type}:${scope}`
 }
+
+const DELEGATION_TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "ABORTED", "IDLE", "ERROR"])
+
+const delegatedChildStatus = (child) => {
+  const value = child?.status
+  if (!value) return "RUNNING"
+  if (typeof value === "string") return value.toUpperCase()
+  return String(value.type ?? value.status ?? value.state ?? "RUNNING").toUpperCase()
+}
+
+export const hasActiveDelegatedChildren = (children) => {
+  if (!Array.isArray(children)) return undefined
+  return children.some((child) => !DELEGATION_TERMINAL_STATUSES.has(delegatedChildStatus(child)))
+}
+
+export const isDelegationAlreadyRunningError = (value) =>
+  /reliability guard: equivalent delegated task is already running/i.test(
+    String(value?.message ?? value ?? ""),
+  )
