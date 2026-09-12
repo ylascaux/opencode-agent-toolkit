@@ -15,6 +15,13 @@ while [[ -L "$SOURCE" ]]; do
 done
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 
+# Local synchronization must remain usable without provider setup or a runtime,
+# and dry-run/check must not create Python cache files on a fresh checkout.
+if [[ "${1:-}" == "sync" ]]; then
+  shift
+  exec python3 -B "$ROOT/scripts/sync-runtime" "$@"
+fi
+
 if [[ ! -f "$ROOT/.env" ]]; then
   echo "Missing $ROOT/.env. Run: just install" >&2
   exit 1

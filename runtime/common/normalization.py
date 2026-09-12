@@ -28,6 +28,7 @@ RESERVED_AGENT_KEYS = {
     "steps",
     "parents",
     "opencode",
+    "codex",
 }
 
 
@@ -47,6 +48,7 @@ class NormalizedAgent:
     prompt: str
     permissions: dict[str, Any]
     extensions: dict[str, dict[str, Any]]
+    default_prompt: str = ""
 
     @property
     def opencode(self) -> dict[str, Any]:
@@ -142,6 +144,8 @@ def _validate_agent(name: str, directory: Path, config: dict) -> None:
     opencode = config.get("opencode")
     if not isinstance(opencode, dict):
         raise SystemExit(f"{name}: opencode must be an object")
+    if "codex" in config and not isinstance(config["codex"], dict):
+        raise SystemExit(f"{name}: codex must be an object")
     prompt_path = directory / "prompt.md"
     if not prompt_path.exists():
         raise SystemExit(f"Missing agent prompt: {prompt_path.relative_to(ROOT)}")
@@ -212,6 +216,7 @@ def _validate_graph(specs: dict[str, NormalizedAgent]) -> None:
 def load_normalized_agents() -> dict[str, NormalizedAgent]:
     """Load the canonical agent catalog without rendering a runtime artifact."""
     defaults = load_json(DEFAULTS_DIR / "agent.json")
+    default_prompt = (DEFAULTS_DIR / "prompt.md").read_text().strip()
     default_permissions = load_json(DEFAULTS_DIR / "permissions.json")
     validate_permission_tree(default_permissions, path="agents/_defaults/permissions.json")
 
@@ -248,7 +253,11 @@ def load_normalized_agents() -> dict[str, NormalizedAgent]:
             parents=tuple(config["parents"]),
             prompt=(directory / "prompt.md").read_text().strip(),
             permissions=permissions,
-            extensions={"opencode": copy.deepcopy(config["opencode"])},
+            extensions={
+                namespace: copy.deepcopy(config[namespace])
+                for namespace in ("opencode", "codex") if namespace in config
+            },
+            default_prompt=default_prompt,
         )
 
     _validate_graph(specs)

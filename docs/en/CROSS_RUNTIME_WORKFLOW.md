@@ -6,6 +6,8 @@ The toolkit should let work move between OpenCode, Codex, and a GitHub-connected
 
 The repository owns engineering policy. The memory plugin owns durable contextual memory. Each runtime is only an execution surface.
 
+Local OpenCode and Codex adapters plus `oc sync` are implemented. Codex currently has no toolkit memory integration, MCP surface, or remote Agents/Skills publication; the shared-memory diagram below is a target architecture.
+
 ```text
                            Git repository
                    canonical code + agent policy
@@ -109,6 +111,10 @@ Prefer a GitHub-connected assistant when:
 Do not assume this surface has the same local shell/runtime access as Codex or OpenCode.
 
 ## Standard task handoff
+
+For local Codex, prepare the staged bundle with `oc sync codex --dry-run`, generate with `oc sync codex`, and verify with `oc sync codex --check`. Use the [opt-in installation workflow](CODEX_ADAPTER.md#opt-in-use-in-a-project); staging does not change root instructions or the session's default agent. Export local Codex model/reasoning settings before syncing. Neither dry-run nor check writes files.
+
+`oc sync all` renders both adapters deterministically. `oc sync opencode` is raw generation only; retain `just config` or the existing launch workflow for OpenCode's memory/reliability postprocessing. Do not interpret a raw adapter drift check as verification of postprocessed OpenCode configuration.
 
 Every meaningful task should be recoverable from Git rather than depending on chat history.
 
@@ -219,6 +225,8 @@ Do not copy a Codex-specific model slug into `agents/<name>/agent.json` simply b
 
 ## Memory workflow across runtimes
 
+The following describes behavior where an integration exists and the future Codex memory milestone. Local Codex sync does not render context, access a private vault, or propose candidates.
+
 ### Reading memory
 
 Every runtime should receive the same bounded, project-scoped rendered context from `opencode-memory-plugin` where integration exists.
@@ -276,12 +284,14 @@ The multi-runtime migration is intentionally decomposable so different runtimes 
 - existing OpenCode compiler consumes normalization;
 - prove no functional regression.
 
-### PR 4 — local Codex adapter
+### PR 4 — local Codex adapter (implemented)
 
 - generated Codex instructions;
 - local model/reasoning mapping;
 - `oc sync codex`;
 - dry-run/check/idempotence tests.
+
+Native agent TOML and instruction files are staged in `.generated/codex/`; opt-in installation remains manual. Fine-grained permission and graph allowlist intent is documented rather than claimed as full OpenCode enforcement parity.
 
 ### PR 5 — portable memory surface
 
