@@ -34,6 +34,25 @@ Toolkit -> runtime artifacts
 
 Runtime-specific files must never become an independent editable source of truth.
 
+## Implemented now
+
+One normalized graph from `runtime/common/normalization.py` feeds the common `RuntimeAdapter` boundary and the `OpenCodeAdapter` / local `CodexAdapter`. Shared artifact planning supports deterministic writes, dry-run, and drift checks. OpenCode keeps its existing generated paths and golden output; Codex stages a separate bundle under `.generated/codex/`.
+
+```bash
+oc sync codex
+oc sync codex --dry-run
+oc sync codex --check
+oc sync codex --verbose
+oc sync opencode
+oc sync all
+```
+
+Sync is local and does not launch a model, load `.env` / `.env.local`, or contact providers. Use exported `CODEX_MODEL_*` / `CODEX_REASONING_*` settings for Codex. `opencode` sync is the raw `scripts/generate-config` stage: `just config` and the existing launch workflow still apply memory/reliability configuration, including V2 plugin-directory handling. A raw OpenCode check after those postprocessors can report drift; it compares raw adapter output, not effective postprocessed configuration.
+
+Codex's generated native agent TOML requires manual opt-in installation; the root `AGENTS.md` is untouched, and `runtime.json` is toolkit metadata, not native configuration. See [Codex local use and limitations](CODEX_ADAPTER.md#implemented-local-workflow).
+
+Memory/MCP integration for Codex, remote Agents/Skills publication, and bidirectional sync are **not implemented**. No portable canonical skill files are currently tracked, so local skill packaging is deferred and reported as zero mapped skills. Memory diagrams and expanded capabilities below describe the longer-term target, not current Codex behavior.
+
 ## Existing sources of truth
 
 The current repository already contains the right primitives for this design:
@@ -213,7 +232,7 @@ This is an internal contract, not necessarily a new user-facing YAML format.
 
 ## Synchronization CLI
 
-Target UX:
+Implemented UX:
 
 ```bash
 oc sync opencode
@@ -229,6 +248,8 @@ oc sync codex --check
 oc sync codex --verbose
 ```
 
+`--verbose` includes resolved model policy and capability limitations; dry-run includes these details automatically.
+
 Semantics:
 
 - `--dry-run`: render and diff without writing;
@@ -236,7 +257,7 @@ Semantics:
 - default: update generated runtime artifacts idempotently;
 - two identical runs must produce byte-identical output.
 
-Example dry-run summary:
+Illustrative future dry-run summary (not the current skills/memory capability claim):
 
 ```text
 Codex synchronization
@@ -269,6 +290,8 @@ agent-local override
 
 Secrets and personal model preferences must remain outside committed generated files.
 
+For implemented Codex mapping, exported per-agent overrides win over optional Codex extension values, then exported tier settings, then local runtime defaults (or the canonical tier for reasoning). Exact variable names and supported extension keys are documented in [Codex model tiers](CODEX_ADAPTER.md#model-tiers).
+
 ## Compatibility strategy
 
 Migration must be incremental:
@@ -296,7 +319,7 @@ At minimum, multi-runtime support must test:
 - check mode detects stale artifacts;
 - idempotent generation;
 - stable ordering;
-- memory integration rendering;
+- memory integration rendering when that future Codex milestone is implemented;
 - invalid runtime configuration fails before launching a model;
 - generated files cannot silently become source inputs.
 
@@ -315,7 +338,7 @@ Initial multi-runtime support does not require:
 
 ## Definition of done
 
-Multi-runtime architecture is considered established when:
+The full multi-runtime roadmap is considered established when (items 5 and broader skill support remain future work):
 
 1. existing OpenCode workflows still pass unchanged;
 2. a single normalized agent graph feeds both OpenCode and Codex adapters;

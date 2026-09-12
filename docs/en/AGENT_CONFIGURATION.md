@@ -19,12 +19,14 @@ agents/
 
 The editable source of truth is the agent directory itself. There is no central editable manifest, permission catalog, or model-tier catalog.
 
-- `agent.json`: catalog description, OpenCode mode, model environment variable, quality tier, optional LiteLLM profile hint, step budget, parents, and optional OpenCode-specific settings.
+- `agent.json`: catalog description, mode, model environment variable, quality tier, optional LiteLLM profile hint, step budget, parents, and optional namespaced runtime settings (`opencode` / `codex`).
 - `prompt.md`: behavior specific to this agent.
 - `permissions.json`: only permission overrides specific to this agent.
 - `agents/_defaults/*`: common values inherited by every agent.
 
 `just config` discovers all agent directories, validates the graph, merges defaults, and writes generated runtime artifacts under `.generated/` plus `opencode.jsonc` / `opencode.v2.jsonc`.
+
+`oc sync codex` consumes the same normalized definitions and stages local Codex instructions, native custom-agent TOML, and toolkit metadata in `.generated/codex/`. `oc sync opencode` performs raw OpenCode generation; `oc sync all` performs both. Memory/reliability postprocessing remains part of `just config` / the OpenCode launcher, not the adapters. Sync does not install Codex agents or overwrite root `AGENTS.md`.
 
 ## Example
 
@@ -45,7 +47,7 @@ The editable source of truth is the agent directory itself. There is no central 
 
 ## Prompt composition
 
-The final runtime prompt is composed from:
+The final OpenCode runtime prompt is composed from:
 
 1. `# Role` generated from `agent.json.description`
 2. `agents/<name>/prompt.md`
@@ -53,6 +55,8 @@ The final runtime prompt is composed from:
 4. deterministic reliability supervision appended to agents that can delegate children
 
 Generated prompts live under `.generated/prompts/` and must not be edited directly.
+
+Codex composes the same normalized role/prompt with common policy, graph-derived delegation, and an explicit permission/portability summary in `.generated/codex/agents/`. Its compact generated `AGENTS.md` does not dump every prompt or volatile memory. See [Codex instructions and local use](CODEX_ADAPTER.md#implemented-local-workflow).
 
 ## Permissions
 
@@ -70,6 +74,8 @@ The default policy is intentionally usable:
 
 Delegation (`task` / `subagent`) is not configurable through `permissions.json`; it is derived from the `parents` graph so topology and permissions cannot drift apart.
 
+Codex retains these effects as instructions and maps explicit `edit: allow` to a `workspace-write` sandbox default; `ask` / `deny` use `read-only`. Leaf TOML disables delegation, but graph-specific child allowlists and step budgets remain instruction-only. Coarse sandbox settings are not exact OpenCode permission parity and can be superseded by live parent permission settings.
+
 ## Models
 
 `tier` is one of `low`, `medium`, or `high` and maps to `MODEL_LOW`, `MODEL_MEDIUM`, or `MODEL_HIGH`.
@@ -83,6 +89,12 @@ Delegation (`task` / `subagent`) is not configurable through `permissions.json`;
 ```bash
 just configure-litellm
 ```
+
+### Codex model overrides
+
+Codex uses separate exported settings: `CODEX_MODEL_LOW`, `CODEX_MODEL_MEDIUM`, `CODEX_MODEL_HIGH`, and per-agent settings such as `CODEX_MODEL_CLOUDFLARE`. Precedence is per-agent environment → optional `codex.model` → tier environment → inherit the local Codex model. Reasoning follows `CODEX_REASONING_<AGENT>` → optional `codex.reasoning` → `CODEX_REASONING_<TIER>` → canonical tier; values are `low`, `medium`, `high`, or `xhigh`.
+
+The optional `codex` object accepts only `model` and `reasoning`; its absence is valid. Prefer exported local mappings to per-agent concrete model IDs. These extensions do not leak into OpenCode, and `opencode` settings do not leak into Codex. Sync does not source `.env` / `.env.local`; export settings explicitly. It validates configuration locally without checking remote model availability.
 
 ## Add an agent
 

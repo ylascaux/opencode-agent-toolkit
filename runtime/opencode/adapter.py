@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Mapping
 
 from runtime.common.normalization import DEFAULTS_DIR, NormalizedAgent, children_by_parent
+from runtime.common.adapter import ArtifactPlan
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATED_DIR = ROOT / ".generated"
@@ -168,12 +169,10 @@ class OpenCodeAdapter:
         parts.append(self.render_capabilities(spec.name, specs))
         return "\n\n".join(parts).rstrip() + "\n"
 
-    def write_generated_sources(self, specs: Mapping[str, NormalizedAgent]) -> None:
-        self.generated_prompts_dir.mkdir(parents=True, exist_ok=True)
-        for old in self.generated_prompts_dir.glob("*.md"):
-            old.unlink()
+    def source_plan(self, specs: Mapping[str, NormalizedAgent]) -> ArtifactPlan:
+        files = {}
         for name, spec in specs.items():
-            (self.generated_prompts_dir / f"{name}.md").write_text(self.render_prompt(spec, specs))
+            files[self.generated_prompts_dir / f"{name}.md"] = self.render_prompt(spec, specs).encode()
 
         children = children_by_parent(dict(specs))
         manifest = {}
@@ -189,8 +188,12 @@ class OpenCodeAdapter:
                 "children": children[name],
                 "source": f"agents/{name}",
             }
-        self.generated_dir.mkdir(exist_ok=True)
-        (self.generated_dir / "agents.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        files[self.generated_dir / "agents.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
+        stale = tuple(path for path in self.generated_prompts_dir.glob("*.md") if path not in files)
+        return ArtifactPlan(self.root, files, stale)
+
+    def write_generated_sources(self, specs: Mapping[str, NormalizedAgent]) -> None:
+        self.source_plan(specs).write()
 
     def agent_entry(
         self, name: str, specs: Mapping[str, NormalizedAgent], *, v2: bool
@@ -243,15 +246,20 @@ class OpenCodeAdapter:
             "plugin": ["./runtime/plugins/sandbox-v1.js"],
         }
 
-    def generate(self, specs: Mapping[str, NormalizedAgent]) -> tuple[Path, ...]:
-        self.write_generated_sources(specs)
+    def plan(self, specs: Mapping[str, NormalizedAgent]) -> ArtifactPlan:
+        source_plan = self.source_plan(specs)
+        files = dict(source_plan.files)
         outputs = (
             (self.root / "opencode.jsonc", self.build(specs, v2=False)),
             (self.root / "opencode.v2.jsonc", self.build(specs, v2=True)),
         )
         for path, data in outputs:
-            path.write_text(json.dumps(data, indent=2) + "\n")
-        return tuple(path for path, _ in outputs)
+            files[path] = (json.dumps(data, indent=2) + "\n").encode()
+        return ArtifactPlan(self.root, files, source_plan.stale)
+
+    def generate(self, specs: Mapping[str, NormalizedAgent]) -> tuple[Path, ...]:
+        self.plan(specs).write()
+        return (self.root / "opencode.jsonc", self.root / "opencode.v2.jsonc")
 
 
 def write_generated_sources(specs: Mapping[str, NormalizedAgent]) -> None:

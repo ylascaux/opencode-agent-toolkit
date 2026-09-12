@@ -2,11 +2,56 @@
 
 ## Purpose
 
-The Codex adapter compiles the toolkit's canonical agent definitions into artifacts and optional remote resources that Codex can consume.
+The local Codex adapter compiles the toolkit's canonical agent definitions into a staged, disposable instruction/configuration bundle. Remote resources remain a future direction, not a dependency or side effect of local synchronization.
 
 It must reuse the same normalized agent graph as OpenCode. It must not introduce a parallel Codex-only agent catalog.
 
-## Confirmed OpenAI capabilities
+## Implemented local workflow
+
+```bash
+oc sync codex --dry-run
+oc sync codex
+oc sync codex --check
+oc sync codex --verbose
+```
+
+`CodexAdapter` consumes the same `NormalizedAgent` graph as `OpenCodeAdapter`; it does not parse a second agent catalog. The common artifact plan drives generation, dry-run, and drift detection. Dry-run reports intended changes without filesystem writes. Check exits non-zero for drift and never repairs it. Repeated synchronization with identical sources and exported configuration is deterministic.
+
+The generated bundle is contained in the toolkit checkout:
+
+```text
+.generated/codex/
+  AGENTS.md                 # compact operating instructions
+  agents/
+    <agent-name>.md        # composed instructions and policy intent
+    <agent-name>.toml      # native local custom-agent configuration
+  runtime.json              # toolkit report, NOT native Codex configuration
+```
+
+Markdown and TOML include generated-file notices; JSON carries generated metadata without invalid comments. No root `AGENTS.md`, personal Codex configuration, memory context, MCP server, or remote resource is created. Keep edits in canonical sources, not this bundle.
+
+### Opt-in use in a project
+
+Synchronization stages files; it does **not** install or launch Codex or change the current session's default agent. After inspecting the bundle:
+
+1. Copy or link the selected generated TOML files into the target project's `.codex/agents/`. Check each destination first; do not overwrite existing personal/project agents. Select the graph's required lead and child roles together. Each TOML embeds its complete instructions; the adjacent Markdown is a readable representation, not a required relative file dependency. If using Markdown instead of an installed native role, explicitly read the assigned file from the toolkit checkout, not a same-named path in the target project.
+2. Start a new Codex session in the target project and explicitly ask it to read the generated `AGENTS.md` using its absolute toolkit path. Preserve the project's own root instructions.
+3. Ask for the desired toolkit role explicitly. Installing `meta-router.toml` does not automatically make it the root/default agent.
+4. Inspect the selected permission mode before delegating and verify the intended roles and model settings in your local client.
+
+Codex discovers project custom agents under `.codex/agents/`; the generated TOML uses `name`, `description`, `developer_instructions`, and supported model/sandbox settings. Live parent permission overrides can supersede a custom agent's sandbox default. See the [official local subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents). The staged `.generated/codex/AGENTS.md` is not on a typical project's root-to-working-directory discovery path, hence the explicit read above; see [instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+For rollback, remove only the project links/copies you deliberately installed. Staged outputs are disposable and can be regenerated; synchronization does not manage those opt-in installations or unrelated project files. A copied agent must be refreshed manually after regeneration; a link follows the staged source. Sync removes obsolete staged `agents/*.md` and `agents/*.toml` only when their first line bears the toolkit's generated notice. Unmarked user additions are preserved; symlinked output paths are rejected rather than followed.
+
+### Local portability limits
+
+- The graph-derived child allowlist and step budget are instructions, not a native per-role allowlist or deterministic watchdog. Leaves disable delegation with `[agents] enabled = false` in their native TOML.
+- Canonical `allow` / `ask` / `deny` rules are retained as policy instructions. Only canonical `edit: allow` receives a `workspace-write` sandbox default; both `ask` and `deny` conservatively receive `read-only`. Coarse sandbox defaults do not reproduce OpenCode shell-pattern approvals, sensitive-path rules, or tool permissions exactly. Parent runtime overrides still matter; do not treat the generated policy report as an enforcement engine.
+- There is no Codex implementation of OpenCode's reliability plugins, queue, stall detection, retry guards, cost limits, or memory integration.
+- No canonical local `SKILL.md` sources are currently tracked. The report therefore lists zero mapped skills; agent prompts and OpenCode plugins are not repackaged as fictional Codex skills. Skill-source mapping is deferred until portable canonical skill sources exist.
+- Model availability is not checked remotely. Choose model/reasoning combinations supported by your local Codex setup; generation itself makes no model or OpenAI API calls.
+
+## Future remote building blocks
 
 As of September 2026, OpenAI documents the following building blocks relevant to this adapter:
 
@@ -24,24 +69,20 @@ References:
 
 The implementation must prefer documented APIs. Do not infer undocumented Codex CLI configuration formats from examples or old versions.
 
-## First implementation target
+## Future bundle extensions
 
-The first useful Codex adapter should be **local and reversible**.
+The implemented bundle above is local and reversible. Future additions may include portable skills or explicitly rendered memory context; they are not generated today.
 
-Recommended generated outputs:
+Possible future additions:
 
 ```text
 .generated/codex/
-  AGENTS.md
-  agents/
-    <agent-name>.md
   skills/
     <skill-name>/...
-  runtime.json
   memory-context.md        # only when explicitly rendered; never committed with private data
 ```
 
-If Codex expects a repository-root `AGENTS.md`, `oc sync codex` may generate or update a managed section in a root/runtime-specific target, but the canonical content must come from toolkit sources.
+Root instruction management is not implemented; local synchronization leaves existing root instructions untouched.
 
 Remote OpenAI Agent/Skill publication is a later optional mode and must not occur as a side effect of ordinary local generation.
 
@@ -65,8 +106,7 @@ Codex output:
 - quality tier;
 - reasoning tier;
 - permission summary;
-- memory policy;
-- reliability intent.
+- reliability intent and explicit portability limits (no memory integration yet).
 
 ### Model tiers
 
@@ -90,6 +130,10 @@ Optional per-agent override:
 CODEX_MODEL_ORCHESTRATOR=<model>
 ```
 
+Sync reads **exported environment variables only**, before the OpenCode launcher sources `.env` / `.env.local` or checks Docker/providers. It does not load those files automatically. For example, prefix a sync command with `CODEX_MODEL_LOW=<local-model-id>` or export your chosen tier variables in your shell.
+
+Model precedence is `CODEX_MODEL_<AGENT>` → optional `codex.model` → `CODEX_MODEL_<TIER>` → omit the native model setting and inherit Codex's local model. The agent suffix comes from canonical `model_env` with `MODEL_` removed. Codex mappings do not change existing OpenCode `MODEL_*` profiles.
+
 Do not commit a model slug as the permanent meaning of `low`, `medium`, or `high`.
 
 ### Reasoning tiers
@@ -102,7 +146,9 @@ Portable policy:
 low | medium | high | xhigh
 ```
 
-An adapter may clamp unsupported values and must report that clamp in verbose/dry-run output.
+Local reasoning mapping defaults to the canonical tier. Model-specific support is the user's configuration responsibility; the adapter does not silently clamp a setting based on a guessed model capability.
+
+Reasoning precedence is `CODEX_REASONING_<AGENT>` → optional `codex.reasoning` → `CODEX_REASONING_<TIER>` → canonical tier. Supported configuration values are `low`, `medium`, `high`, and `xhigh`; invalid values fail before writing. The optional `codex` extension accepts only `model` and `reasoning`, and can be omitted entirely. Other keys are rejected, not forwarded to native configuration.
 
 Example:
 
@@ -181,7 +227,7 @@ Avoid embedding:
 - transient model names when a tier can express the requirement;
 - generated data that another file already owns.
 
-## Skills
+## Skills — future source mapping
 
 A skill should be portable when it represents reusable domain/workflow knowledge rather than OpenCode plugin behavior.
 
@@ -206,9 +252,9 @@ Publishing must be explicit because it mutates remote state.
 
 Local generation remains the default.
 
-## Memory integration
+## Memory integration — future milestone
 
-The adapter must integrate with `opencode-memory-plugin`; it must not reimplement extraction or storage.
+A future adapter integration must use `opencode-memory-plugin`; it must not reimplement extraction or storage. No read/proposal/MCP path below is available in this milestone.
 
 ### Read path
 
@@ -255,7 +301,7 @@ memory_candidates
 
 Mutation-heavy actions such as promote/push should remain human-oriented CLI actions unless a later permission design explicitly authorizes them.
 
-## Remote Agent API integration
+## Remote Agent API integration — future milestone
 
 The OpenAI Agent API can become an optional deployment backend for toolkit agent definitions.
 
@@ -291,7 +337,7 @@ Do not make remote API resources mandatory for using Codex locally.
 
 ## Runtime capability report
 
-`oc sync codex --verbose` should explain portability gaps.
+`oc sync codex --verbose` reports each agent's resolved tier/model/reasoning policy and capability limitations; dry-run includes the same details. Ordinary sync and check print a concise permission/delegation warning. `runtime.json` records the full toolkit report. The expanded report below remains a future example: it must not be read as a claim that skills or memory integration are available today.
 
 Example:
 
@@ -346,7 +392,7 @@ Recommended order:
 9. add optional MCP exposure;
 10. add optional remote Agent/Skill publication.
 
-Do not implement steps 8-10 before local generation is stable and tested.
+Steps 1-6 are implemented. Steps 7-10 remain future milestones.
 
 ## Acceptance criteria
 
