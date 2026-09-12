@@ -31,12 +31,14 @@ jobs:
           python-version: "3.12"
       - name: Build current runtime image
         run: docker build -t opencode-agent-toolkit:acceptance -f runtime/Dockerfile .
-      - name: Real OpenCode + full runtime acceptance
+      - name: Core acceptance against isolated project
         env:
           OAT_ACCEPTANCE_SKIP_MEMORY: "1"
-          OAT_ACCEPTANCE_DOCKER: "1"
-          OAT_RUNTIME_IMAGE: opencode-agent-toolkit:acceptance
         run: python3 -B scripts/runtime-acceptance
+      - name: Real OpenCode V2 skill API smoke
+        env:
+          OAT_RUNTIME_IMAGE: opencode-agent-toolkit:acceptance
+        run: python3 -B scripts/opencode-v2-skill-smoke
 
   private-memory:
     runs-on: ubuntu-latest
