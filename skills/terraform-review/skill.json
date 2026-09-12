@@ -1,0 +1,5 @@
+{
+  "name": "terraform-review",
+  "description": "Review Terraform or OpenTofu changes for safety, correctness, and rollback readiness.",
+  "tags": ["iac", "review", "terraform"]
+}

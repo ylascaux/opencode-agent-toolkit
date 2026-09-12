@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from runtime.common.normalization import load_normalized_agents  # noqa: E402
+from runtime.common.normalization import load_normalized_agents, load_normalized_skills  # noqa: E402
 from runtime.codex.adapter import CodexAdapter  # noqa: E402
 from runtime.opencode.adapter import OpenCodeAdapter  # noqa: E402
 
@@ -30,11 +30,12 @@ def main() -> int:
     names = ("opencode", "codex") if args.runtime == "all" else (args.runtime,)
     try:
         specs = load_normalized_agents()
+        skills = load_normalized_skills()
         # Render and validate every selected runtime before making any changes.
-        plans = {name: adapters[name].plan(specs) for name in names}
+        plans = {name: adapters[name].plan(specs, skills) for name in names}
         changes = {name: plan.changes() for name, plan in plans.items()}
         for name, plan in plans.items():
-            print(f"{name} synchronization: {len(specs)} agents")
+            print(f"{name} synchronization: {len(specs)} agents, {len(skills)} skills")
             for path, status in changes[name].items():
                 print(f"  {status} {path.relative_to(ROOT)}")
             if args.verbose or args.dry_run:

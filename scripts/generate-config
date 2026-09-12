@@ -8,16 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from runtime.common.normalization import load_normalized_agents  # noqa: E402
+from runtime.common.normalization import load_normalized_agents, load_normalized_skills  # noqa: E402
 from runtime.opencode.adapter import OpenCodeAdapter  # noqa: E402
 
 
 def main() -> None:
     specs = load_normalized_agents()
-    outputs = OpenCodeAdapter().generate(specs)
+    skills = load_normalized_skills()
+    outputs = OpenCodeAdapter().generate(specs, skills)
     for path in outputs:
         print(f"generated {path.name}: {len(specs)} agents")
-    print("agent source: agents/<name>/{agent.json,prompt.md,permissions.json}")
+    print("agent source: agents/<name>/{agent.json,prompt.md,permissions.json}; skill source: skills/<name>/{skill.json,SKILL.md}")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Mapping, Protocol
 
-from runtime.common.normalization import NormalizedAgent
+from runtime.common.normalization import NormalizedAgent, NormalizedSkill
 
 
 @dataclass(frozen=True)
@@ -74,8 +74,12 @@ class RuntimeAdapter(Protocol):
 
     name: str
 
-    def plan(self, agents: Mapping[str, NormalizedAgent]) -> ArtifactPlan:
+    def plan(
+        self, agents: Mapping[str, NormalizedAgent], skills: Mapping[str, NormalizedSkill] | None = None
+    ) -> ArtifactPlan:
         """Render expected artifacts without filesystem mutation."""
 
-    def generate(self, agents: Mapping[str, NormalizedAgent]) -> tuple[Path, ...]:
+    def generate(
+        self, agents: Mapping[str, NormalizedAgent], skills: Mapping[str, NormalizedSkill] | None = None
+    ) -> tuple[Path, ...]:
         """Write deterministic runtime artifacts and return their top-level paths."""

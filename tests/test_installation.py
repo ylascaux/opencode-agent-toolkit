@@ -122,6 +122,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             ]:
                 shutil.copy2(ROOT / "scripts" / name, scripts / name)
             shutil.copytree(ROOT / "agents", toolkit / "agents")
+            shutil.copytree(ROOT / "skills", toolkit / "skills")
             shutil.copytree(ROOT / "runtime", toolkit / "runtime")
             shutil.copy2(ROOT / "reliability.json", toolkit / "reliability.json")
             (toolkit / ".env").write_text(

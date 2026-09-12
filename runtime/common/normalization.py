@@ -12,12 +12,14 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = ROOT / "agents"
 DEFAULTS_DIR = AGENTS_DIR / "_defaults"
+SKILLS_DIR = ROOT / "skills"
 
 VALID_MODES = {"primary", "all", "subagent"}
 VALID_TIERS = {"low", "medium", "high"}
 VALID_MODEL_PROFILES = {"fast", "general", "coding", "reasoning", "deep", "review", "security"}
 VALID_PERMISSION_EFFECTS = {"allow", "ask", "deny"}
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 RESERVED_AGENT_KEYS = {
     "description",
@@ -54,6 +56,17 @@ class NormalizedAgent:
     def opencode(self) -> dict[str, Any]:
         """Compatibility accessor for the existing OpenCode renderer."""
         return self.extensions["opencode"]
+
+
+@dataclass(frozen=True)
+class NormalizedSkill:
+    """Runtime-neutral reusable instruction set before adapter rendering."""
+
+    name: str
+    path: Path
+    description: str
+    prompt: str
+    tags: tuple[str, ...]
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -261,6 +274,84 @@ def load_normalized_agents() -> dict[str, NormalizedAgent]:
         )
 
     _validate_graph(specs)
+    return specs
+
+
+def _skill_error(directory: Path, message: str) -> SystemExit:
+    try:
+        location = directory.relative_to(ROOT)
+    except ValueError:
+        location = directory
+    return SystemExit(f"{location}: {message}")
+
+
+def is_valid_skill_name(value: object) -> bool:
+    return isinstance(value, str) and len(value) <= 64 and bool(SKILL_NAME_RE.fullmatch(value))
+
+
+def load_normalized_skills() -> dict[str, NormalizedSkill]:
+    """Load one safe, deterministic portable skill catalog from ``skills/``."""
+    if SKILLS_DIR.is_symlink() or not SKILLS_DIR.is_dir():
+        raise SystemExit("Missing or unsafe skills directory: skills/")
+
+    specs: dict[str, NormalizedSkill] = {}
+    metadata_owners: dict[str, Path] = {}
+    for directory in sorted(SKILLS_DIR.iterdir(), key=lambda path: path.name):
+        if directory.is_symlink():
+            raise _skill_error(directory, "refusing symlinked canonical skill directory")
+        if not directory.is_dir():
+            raise _skill_error(directory, "expected a skill directory")
+        if not is_valid_skill_name(directory.name):
+            raise _skill_error(directory, "invalid skill directory name")
+        metadata_path = directory / "skill.json"
+        prompt_path = directory / "SKILL.md"
+        if metadata_path.is_symlink() or prompt_path.is_symlink():
+            raise _skill_error(directory, "refusing symlinked canonical skill file")
+        if not metadata_path.is_file() or not prompt_path.is_file():
+            raise _skill_error(directory, "requires regular skill.json and SKILL.md files")
+        try:
+            metadata = json.loads(metadata_path.read_text())
+        except json.JSONDecodeError as exc:
+            raise _skill_error(directory, f"invalid JSON in skill.json: {exc}") from exc
+        if not isinstance(metadata, dict):
+            raise _skill_error(directory, "skill.json must contain an object")
+        unknown = set(metadata) - {"name", "description", "tags"}
+        if unknown:
+            raise _skill_error(directory, f"unknown skill.json key(s): {', '.join(sorted(unknown))}")
+        name = metadata.get("name")
+        description = metadata.get("description")
+        tags = metadata.get("tags", [])
+        if not is_valid_skill_name(name):
+            raise _skill_error(directory, "name must be a portable skill name")
+        if name in metadata_owners:
+            raise _skill_error(directory, f"duplicate skill name: {name}")
+        metadata_owners[name] = directory
+        if name != directory.name:
+            raise _skill_error(directory, "name must match its directory")
+        if (
+            not isinstance(description, str)
+            or not description.strip()
+            or len(description.strip()) > 1024
+            or any(ord(char) < 32 for char in description)
+        ):
+            raise _skill_error(directory, "description must be a non-empty string up to 1024 characters")
+        if not isinstance(tags, list) or not all(isinstance(tag, str) and tag.strip() for tag in tags):
+            raise _skill_error(directory, "tags must be an array of non-empty strings")
+        normalized_tags = tuple(sorted({tag.strip() for tag in tags}))
+        if len(normalized_tags) != len(tags):
+            raise _skill_error(directory, "tags must not contain duplicates")
+        prompt = prompt_path.read_text().strip()
+        if not prompt:
+            raise _skill_error(directory, "SKILL.md must not be empty")
+        specs[name] = NormalizedSkill(
+            name=name,
+            path=directory,
+            description=description.strip(),
+            prompt=prompt,
+            tags=normalized_tags,
+        )
+    if not specs:
+        raise SystemExit("No skills found under skills/<name>/")
     return specs
 
 

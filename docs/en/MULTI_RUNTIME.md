@@ -51,7 +51,9 @@ Sync is local and does not launch a model, load `.env` / `.env.local`, or contac
 
 Codex's generated native agent TOML uses the local opt-in lifecycle: `oc codex install` consumes `.generated/codex/agents/*.toml` into a target project's `.codex/agents/`, records toolkit-owned files in a project-local manifest, and never touches root `AGENTS.md` or personal Codex configuration. `oc codex doctor` is read-only and detects generated/install drift; `oc codex uninstall` removes only unchanged owned artifacts. Memory MCP registration remains explicit (`oc codex install --with-memory`). `runtime.json` remains toolkit metadata, not native configuration. See [Codex local use and limitations](CODEX_ADAPTER.md#implemented-local-workflow).
 
-PR5 adds portable memory through the external `opencode-memory-plugin` local MCP service. Codex registration is manual; sync reports support without checking availability or rendering private memory. OpenCode keeps its native V1/V2 plugin and human memory CLI. Remote Agents/Skills publication and bidirectional sync remain **not implemented**. No portable canonical skill files are currently tracked, so local skill packaging is deferred and reported as zero mapped skills. See [local MCP setup](CODEX_ADAPTER.md#memory-integration--pr5).
+Portable skills now use one canonical source per skill: `skills/<name>/skill.json` contains the small portable metadata contract and `skills/<name>/SKILL.md` contains the instruction body. Common normalization reads and validates these files once. OpenCode receives documented project-local `.opencode/skills/<name>/SKILL.md` artifacts; Codex stages `.generated/codex/skills/` and installs them into the documented project-local `.agents/skills/` location. Neither adapter reopens canonical skill files.
+
+PR5 adds portable memory through the external `opencode-memory-plugin` local MCP service. Codex registration is manual; sync reports support without checking availability or rendering private memory. OpenCode keeps its native V1/V2 plugin and human memory CLI. Remote Agents/Skills publication and bidirectional sync remain **not implemented**. See [local MCP setup](CODEX_ADAPTER.md#memory-integration--pr5).
 
 ## Existing sources of truth
 
@@ -61,12 +63,19 @@ The current repository already contains the right primitives for this design:
 - `agents/<name>/prompt.md`: agent behavior;
 - `agents/<name>/permissions.json`: agent permission overrides;
 - `agents/_defaults/`: inherited defaults;
+- `skills/<name>/skill.json` and `skills/<name>/SKILL.md`: reusable, runtime-neutral specialist context;
 - quality tiers (`low`, `medium`, `high`) instead of hard-coded provider models;
 - deterministic generation and validation;
 - a shallow parent/child graph;
 - external memory through `opencode-memory-plugin`.
 
 The multi-runtime work should **extract and formalize these primitives**, not replace them with another manifest.
+
+## Portable skills
+
+Skill names use `^[a-z0-9]+(-[a-z0-9]+)*$`. `skill.json` has only `name`, `description`, and optional `tags`; it never duplicates the Markdown body. Normalization rejects malformed JSON, invalid or duplicate names, symlinked skill directories/files, empty bodies, and unsafe metadata. Ordering and normalized tags are deterministic.
+
+Skills are supplemental rather than agents: they do not select models, define delegation, or extend permissions. The active hierarchy remains runtime/system policy, repository instructions, agent role, selected skill, and user task. Generated output is disposable; only the canonical `skills/` tree is edited.
 
 ## Design principles
 

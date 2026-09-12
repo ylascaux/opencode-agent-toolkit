@@ -1,0 +1,5 @@
+{
+  "name": "security-review",
+  "description": "Review a scoped change for security regressions and actionable mitigations.",
+  "tags": ["review", "security"]
+}
