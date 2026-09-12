@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+
+def invalid_entries(config_path: Path) -> list[str]:
+    config_path = config_path.resolve()
+    config = json.loads(config_path.read_text())
+    invalid: list[str] = []
+    for entry in config.get("plugins", []):
+        path = Path(entry)
+        if not path.is_absolute():
+            path = config_path.parent / path
+        if not path.is_dir() or not any((path / name).is_file() for name in ("index.ts", "index.js")):
+            invalid.append(str(entry))
+    return invalid
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print("usage: validate-v2-plugin-entries CONFIG", file=sys.stderr)
+        return 2
+    invalid = invalid_entries(Path(sys.argv[1]))
+    if invalid:
+        print("Invalid OpenCode V2 plugin entries: " + ", ".join(invalid), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -38,6 +38,17 @@ Override for one command with `just v1` or `just v2`.
 
 The generator translates the same logical policy to both formats.
 
+## V2 plugin entrypoints
+
+The observed OpenCode V2 beta-19425 build rejected file paths in the generated
+`plugins` list and required directories instead. Because the `beta` package tag
+is floating, the toolkit uses directory wrappers as a compatibility workaround;
+each configured directory exposes an `index.ts` or `index.js` entrypoint. The
+memory bridge generates its wrapper locally and re-exports the external plugin
+adapter without changing the plugin checkout.
+
+V1 keeps its existing direct file entrypoints.
+
 ## Native V2 context compaction
 
 OpenCode V2 provides built-in context compaction, so the toolkit does not install or depend on third-party DCP/context-compression plugins.
