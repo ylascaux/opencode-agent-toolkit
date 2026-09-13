@@ -67,7 +67,7 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
 
   build_args=()
   [[ $refresh -eq 1 ]] && build_args+=(--refresh)
-  bash "$ROOT/scripts/docker-build" "${build_args[@]}"
+  bash ./scripts/docker-build "${build_args[@]}"
 
   echo
   echo "Installing launchers..."
