@@ -12,7 +12,7 @@ Les garde-fous de permissions, de fiabilité, d'isolation Docker/DinD et de mém
 
 ## État du projet
 
-La première release multi-runtime est préparée comme **v0.1.0**. Le socle local couvre :
+Le socle multi-runtime couvre :
 
 - agents canoniques dans `agents/<name>/` ;
 - skills portables dans `skills/<name>/` ;
@@ -26,19 +26,25 @@ La première release multi-runtime est préparée comme **v0.1.0**. Le socle loc
 
 ## Démarrer en cinq minutes
 
-Prérequis : Git, Bash, Python 3, Node.js, Docker, OpenCode et [`just`](https://github.com/casey/just). Sur macOS : `brew install just`.
+Prérequis : Git, Bash, Python 3, Docker et [`just`](https://github.com/casey/just). Sur macOS : `brew install just`.
 
 ```bash
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
 just install
-just install-user
-just install-oc2
 just models
 just doctor
 ```
 
-`just install` crée `.env` s'il est absent, prépare l'environnement local, génère les configurations OpenCode et exécute les tests Python. Pour la validation complète du dépôt :
+`just install` est le chemin d'installation complet et idempotent. Il crée/migre `.env`, construit l'image Docker runtime, installe les lanceurs `oc` et `oc2` dans `~/.local/bin`, puis recrée/redémarre le serveur OpenCode V2 avec l'image fraîchement construite. Il n'est plus nécessaire d'enchaîner `just install-user`, `just install-oc2` et `oc2 server restart` après une mise à jour.
+
+Pour forcer également un rebuild sans cache/pull des images :
+
+```bash
+just refresh
+```
+
+Pour la validation complète du dépôt :
 
 ```bash
 just check
@@ -46,7 +52,7 @@ just check
 
 ## OpenCode
 
-Après installation des lanceurs, travaillez depuis le dépôt cible :
+Après installation, travaillez depuis le dépôt cible :
 
 ```bash
 cd ~/Projects/mon-projet
@@ -178,34 +184,3 @@ just configure-litellm       # découverte LiteLLM optionnelle
 ```
 
 Les overrides persistants par agent doivent aller dans `.env.local` afin de ne pas être écrasés par `just profile`.
-
-## Release
-
-Valider les métadonnées uniquement :
-
-```bash
-python3 -B scripts/release-check --metadata-only --tag "v$(cat VERSION)"
-```
-
-Valider l'ensemble des gates locales de release :
-
-```bash
-python3 -B scripts/release-check
-```
-
-La release doit être mergée sur `main` **avant** de créer le tag annoté correspondant. Voir [le processus de release](docs/fr/RELEASE.md) et le [changelog](CHANGELOG.md).
-
-## Documentation
-
-- [Documentation française](docs/fr/README.md)
-- [Documentation anglaise](docs/en/README.md)
-- [Architecture multi-runtime](docs/fr/MULTI_RUNTIME.md)
-- [Adapter Codex](docs/fr/CODEX_ADAPTER.md)
-- [Workflow cross-runtime](docs/fr/CROSS_RUNTIME_WORKFLOW.md)
-- [Architecture système](docs/fr/SYSTEM_ARCHITECTURE.md)
-- [Permissions](docs/fr/PERMISSIONS.md)
-- [Fiabilité](docs/fr/RELIABILITY.md)
-- [Sandbox](docs/fr/SANDBOX.md)
-- [Processus de release](docs/fr/RELEASE.md)
-
-Les contrats machine lisibles sont dans [`contracts/`](contracts/), notamment `agent-handoff.schema.json` et `routing-decision.schema.json`.
