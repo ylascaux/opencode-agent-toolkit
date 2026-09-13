@@ -75,6 +75,15 @@ esac
 python3 -B "$ROOT/scripts/configure-local" >/dev/null
 resolved_models="$(python3 -B "$ROOT/scripts/resolve-models")"
 eval "$resolved_models"
+
+# Native memory is optional and fail-open. Startup never syncs or updates the
+# plugin/vault; explicit `oc memory sync` owns remote refresh. Strict failures
+# are disabled only for the OpenCode child runtime, not for explicit memory CLI.
+export OAT_MEMORY_AUTO_SYNC=0 OPENCODE_MEMORY_AUTO_SYNC=0
+export OAT_MEMORY_STRICT=0 OPENCODE_MEMORY_STRICT=0
+python3 -B "$ROOT/scripts/native_memory.py" --major "$major" || \
+  printf '%s\n' 'OpenCode memory integration failed; continuing without memory.' >&2
+
 export OPENCODE_CONFIG="$config"
 inline_config="$(python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills")"
 export OPENCODE_CONFIG_CONTENT="$inline_config"
