@@ -28,6 +28,7 @@ const hookArgs = (holder: any) => {
   if (holder.value && typeof holder.value === "object") return holder.value
   return holder
 }
+const unwrap = (value: any) => value?.data ?? value
 
 const effectiveMode = () =>
   String(process.env.PLAN_APPROVAL_MODE || POLICY.plan_approval?.default_mode || "changes")
@@ -36,8 +37,8 @@ const blockedMessage = (decision: any) => [
   `Plan approval gate blocked this change (mode=${decision.mode}).`,
   "Stop execution and present a concise implementation plan before retrying any mutating tool.",
   "The plan must include goal/scope, affected files or components, ordered steps, validation/tests, rollback, and delegated agents/gates when relevant.",
-  "End the response with the literal marker PLAN_APPROVAL_REQUIRED and wait for an explicit user approval such as: go, approve, oui, or valide.",
-  "If the approved scope must materially change later, stop and end the revised plan with PLAN_REAPPROVAL_REQUIRED before further mutation.",
+  "End the response with the literal marker PLAN_APPROVAL_REQUIRED and wait for one explicit user approval such as: go, approve, oui, or valide.",
+  "Once approved, that approval covers the current root request and its delegated child sessions until completion or a new root-user instruction.",
 ].join(" ")
 
 export default Plugin.define({
@@ -94,12 +95,39 @@ export default Plugin.define({
       }
     })
 
+    const resolveParentID = async (event: any, sessionID: string) => {
+      const direct =
+        event?.parentID ??
+        event?.parentId ??
+        event?.context?.parentID ??
+        event?.context?.parentId ??
+        event?.session?.parentID ??
+        event?.session?.parentId
+      if (direct) return String(direct)
+
+      const api: any = (ctx as any).session
+      if (!api || typeof api.get !== "function") return undefined
+      let result: any
+      try {
+        result = await api.get({ sessionID })
+      } catch {
+        try {
+          result = await api.get({ path: { id: sessionID } })
+        } catch {
+          return undefined
+        }
+      }
+      const info = unwrap(result) ?? {}
+      return info?.parentID ?? info?.parentId ?? info?.parent?.id
+    }
+
     const registration = await ctx.tool.hook("execute.before", async (event: any) => {
       const sessionID = String(event?.sessionID ?? event?.sessionId ?? event?.context?.sessionID ?? "")
       if (!sessionID) return
+      const parentID = await resolveParentID(event, sessionID)
       const tool = String(event?.tool ?? event?.name ?? "")
       const args = hookArgs(event?.args ?? event?.input)
-      const decision = gate.beforeTool(sessionID, tool, args)
+      const decision = gate.beforeTool(sessionID, tool, args, parentID)
       if (!decision.allowed) throw new Error(blockedMessage(decision))
     })
 
