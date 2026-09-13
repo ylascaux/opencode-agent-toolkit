@@ -1,7 +1,7 @@
 {
   "default_profile": "normal",
   "plan_approval": {
-    "default_mode": "changes"
+    "default_mode": "off"
   },
   "profiles": {
     "cheap": {

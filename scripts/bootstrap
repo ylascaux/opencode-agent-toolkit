@@ -41,12 +41,28 @@ else
       echo "Added missing MODEL_PROFILE to existing .env"
     fi
   fi
+
+  # `changes` used to be the toolkit default. It depends on parent/child session
+  # telemetry that OpenCode V2 does not always expose before a mutating child tool
+  # executes, which creates false approval blocks. Migrate that old default to the
+  # new non-blocking default. An explicit .env.local override is still respected.
+  if grep -qx 'PLAN_APPROVAL_MODE=changes' .env; then
+    tmp_env="$(mktemp "${TMPDIR:-/tmp}/oat-env.XXXXXX")"
+    awk '{ if ($0 == "PLAN_APPROVAL_MODE=changes") print "PLAN_APPROVAL_MODE=off"; else print $0 }' .env > "$tmp_env"
+    cat "$tmp_env" > .env
+    rm -f "$tmp_env"
+    echo "Migrated PLAN_APPROVAL_MODE from changes to off"
+  fi
 fi
 
 set -a
 source .env
 [[ -f .env.local ]] && source .env.local
 set +a
+
+if [[ "${PLAN_APPROVAL_MODE:-off}" != "off" ]]; then
+  echo "Note: PLAN_APPROVAL_MODE=${PLAN_APPROVAL_MODE} is explicitly enabled; runtime plan gating may block mutations." >&2
+fi
 
 install_launchers() {
   bash "$ROOT/scripts/user-link" install oc
