@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$ROOT"
+
+bootstrap_args=()
+case "${1:-}" in
+  "") ;;
+  --refresh) bootstrap_args+=(--refresh) ;;
+  *)
+    echo "Usage: $0 [--refresh]" >&2
+    exit 2
+    ;;
+esac
+
+# Bootstrap owns environment creation and runtime-image construction.
+bash "$ROOT/scripts/bootstrap" "${bootstrap_args[@]}"
+
+# Install both stable command entrypoints idempotently. Calling the scripts
+# directly avoids depending on ~/.local/bin already being present in PATH.
+bash "$ROOT/scripts/user-link" install oc
+bash "$ROOT/scripts/user-link" install oc2
+
+set -a
+source "$ROOT/.env"
+[[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
+set +a
+
+if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
+  echo
+  echo "Restarting the OpenCode V2 server with the freshly built runtime image..."
+  OPENCODE_MAJOR=2 bash "$ROOT/scripts/docker-runtime" server restart
+  echo "OpenCode V2 server restarted."
+else
+  echo
+  echo "OAT_RUNTIME=${OAT_RUNTIME:-host}; skipping Docker server restart."
+fi
+
+echo
+echo "Installation complete."
+echo "  oc   -> OpenCode V1/default launcher"
+echo "  oc2  -> OpenCode V2 launcher"
+echo "Run either command from the project you want OpenCode to work on."
