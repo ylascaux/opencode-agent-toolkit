@@ -175,13 +175,8 @@ export function isReadOnlyShellCommand(command) {
   const value = sandbox.matched ? String(sandbox.command ?? "").trim() : raw
   if (!value) return true
 
-  // Redirections, command substitution and multi-command control operators can
-  // hide writes even when the visible prefix looks read-only. The sandbox
-  // wrapper itself is trusted and removed before applying this classification.
   if (/[<>`\n]/.test(value) || /\$\(/.test(value) || /(?:&&|\|\||;)/.test(value)) return false
 
-  // Read-only pipelines are allowed only when every stage is independently
-  // classified as read-only.
   return value.split("|").every((part) => isReadOnlySimpleCommand(part))
 }
 
@@ -212,25 +207,12 @@ export function toolRequiresPlanApproval(tool, args = {}, mode = "changes") {
   }
 
   if (normalizedMode === "always") {
-    // Discovery/research tools remain available so a plan can be created.
     return ![
       "read", "glob", "grep", "webfetch", "websearch", "question", "todo", "todoread", "todowrite",
     ].includes(name)
   }
 
   return false
-}
-
-const STATUS_PRIORITY = {
-  idle: 0,
-  planning: 1,
-  approved: 2,
-  rejected: 3,
-  waiting: 4,
-}
-
-function mergeStatus(a, b) {
-  return STATUS_PRIORITY[b] > STATUS_PRIORITY[a] ? b : a
 }
 
 export function createPlanApprovalGate({ mode = "changes", onStateChange } = {}) {
@@ -271,19 +253,24 @@ export function createPlanApprovalGate({ mode = "changes", onStateChange } = {})
     const oldRoot = rootOf(sessionID)
     parents.set(sessionID, parentID)
     const newRoot = rootOf(sessionID)
-    if (oldRoot !== newRoot && states.has(oldRoot)) {
-      const childState = states.get(oldRoot)
-      const rootState = states.get(newRoot) ?? { status: "planning", reason: "new-session" }
-      const status = mergeStatus(rootState.status, childState.status)
-      states.set(newRoot, status === childState.status ? childState : rootState)
-      states.delete(oldRoot)
+    if (oldRoot === newRoot || !states.has(oldRoot)) return
+
+    const childState = states.get(oldRoot)
+    const rootState = states.get(newRoot)
+    // Before approval, a child may be the component that actually presented
+    // the plan, so its WAITING state must reach the visible root. Once the root
+    // is APPROVED or REJECTED, however, only a new root-user turn may change
+    // that decision; late child state can never revoke it.
+    if (!rootState) states.set(newRoot, childState)
+    else if (!["approved", "rejected"].includes(rootState.status)) {
+      if (rootState.status === "planning" && childState.status === "waiting") states.set(newRoot, childState)
     }
+    states.delete(oldRoot)
   }
 
   const onUserMessage = (sessionID, text, messageID = "") => {
     if (!sessionID || effectiveMode === "off") return
     const root = rootOf(sessionID)
-    // Subagent prompts are implementation details, not new user turns.
     if (root !== sessionID) return
 
     const normalized = String(text ?? "").trim()
@@ -301,8 +288,6 @@ export function createPlanApprovalGate({ mode = "changes", onStateChange } = {})
       return
     }
 
-    // Any other root user turn creates or changes scope. Previous approval is
-    // intentionally one-shot for that request and must not leak into the next.
     setState(root, "planning", current.status === "waiting" ? "plan-change-requested" : "new-user-turn")
   }
 
@@ -313,15 +298,17 @@ export function createPlanApprovalGate({ mode = "changes", onStateChange } = {})
     if (processedAssistant.get(dedupKey) === value) return
     processedAssistant.set(dedupKey, value)
 
-    if (containsPlanReapprovalMarker(value)) {
-      setState(sessionID, "waiting", "scope-deviation")
-      return
+    const [, current] = stateFor(sessionID)
+    if (current.status === "approved") return
+
+    if (containsPlanApprovalMarker(value) || containsPlanReapprovalMarker(value)) {
+      setState(sessionID, "waiting", "plan-presented")
     }
-    if (containsPlanApprovalMarker(value)) setState(sessionID, "waiting", "plan-presented")
   }
 
-  const beforeTool = (sessionID, tool, args = {}) => {
+  const beforeTool = (sessionID, tool, args = {}, parentID = undefined) => {
     if (!sessionID || effectiveMode === "off") return { allowed: true, mode: effectiveMode }
+    if (parentID) rememberParent(sessionID, parentID)
     if (!toolRequiresPlanApproval(tool, args, effectiveMode)) return { allowed: true, mode: effectiveMode }
 
     const [root, state] = stateFor(sessionID)
