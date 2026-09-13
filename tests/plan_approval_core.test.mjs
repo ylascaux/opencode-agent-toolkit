@@ -101,6 +101,34 @@ test("approved plan propagates to children and resets on the next root user turn
   assert.equal(gate.beforeTool("child", "write", {}).allowed, false)
 })
 
+test("late child registration cannot revoke an already approved root", () => {
+  const gate = createPlanApprovalGate({ mode: "changes" })
+  gate.onUserMessage("root", "refresh the UI", "u1")
+  gate.onAssistantText("root", `Plan\n${PLAN_REQUIRED_MARKER}`, "a1")
+  gate.onUserMessage("root", "go", "u2")
+  assert.equal(gate.state("root").status, "approved")
+
+  // Reproduce the race where a child tries to mutate before its parent event
+  // has been observed. The child briefly creates its own waiting state.
+  assert.equal(gate.beforeTool("child", "write", {}).allowed, false)
+  assert.equal(gate.state("child").status, "waiting")
+
+  gate.rememberParent("child", "root")
+  assert.equal(gate.state("root").status, "approved")
+  assert.equal(gate.beforeTool("child", "write", {}).allowed, true)
+})
+
+test("tool hook parent hint inherits root approval before child state is created", () => {
+  const gate = createPlanApprovalGate({ mode: "changes" })
+  gate.onUserMessage("root", "refresh the UI", "u1")
+  gate.onAssistantText("root", `Plan\n${PLAN_REQUIRED_MARKER}`, "a1")
+  gate.onUserMessage("root", "go", "u2")
+
+  const decision = gate.beforeTool("child", "write", {}, "root")
+  assert.equal(decision.allowed, true)
+  assert.equal(decision.rootSessionID, "root")
+})
+
 test("runtime block creates a waiting gate and rejection cannot be bypassed", () => {
   const gate = createPlanApprovalGate({ mode: "changes" })
   gate.onUserMessage("root", "change it", "u1")
@@ -113,17 +141,14 @@ test("runtime block creates a waiting gate and rejection cannot be bypassed", ()
   assert.equal(gate.beforeTool("root", "edit", {}).allowed, false)
 })
 
-test("scope deviation revokes an existing approval until reapproved", () => {
+test("approved scope is not revoked by legacy reapproval markers", () => {
   const gate = createPlanApprovalGate({ mode: "changes" })
   gate.onUserMessage("root", "change it", "u1")
-  gate.onAssistantText("root", `New dependency found\n${PLAN_REQUIRED_MARKER}`, "a1")
+  gate.onAssistantText("root", `Plan\n${PLAN_REQUIRED_MARKER}`, "a1")
   gate.onUserMessage("root", "approve", "u2")
   assert.equal(gate.beforeTool("root", "write", {}).allowed, true)
 
-  gate.onAssistantText("root", `New dependency found\n${PLAN_REAPPROVAL_MARKER}`, "a2")
-  assert.equal(gate.state("root").status, "waiting")
-  assert.equal(gate.beforeTool("root", "write", {}).allowed, false)
-
-  gate.onUserMessage("root", "oui", "u3")
+  gate.onAssistantText("root", `Legacy marker\n${PLAN_REAPPROVAL_MARKER}`, "a2")
+  assert.equal(gate.state("root").status, "approved")
   assert.equal(gate.beforeTool("root", "write", {}).allowed, true)
 })
