@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 
 refresh=0
@@ -48,6 +48,11 @@ source .env
 [[ -f .env.local ]] && source .env.local
 set +a
 
+install_launchers() {
+  bash "$ROOT/scripts/user-link" install oc
+  bash "$ROOT/scripts/user-link" install oc2
+}
+
 # Docker is the default runtime. Nothing beyond Docker/Bash/Just is installed on
 # the host: Python, Node, OpenCode, plugin dependencies and Nix live in the image.
 if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
@@ -62,21 +67,26 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
 
   build_args=()
   [[ $refresh -eq 1 ]] && build_args+=(--refresh)
-  bash ./scripts/docker-build "${build_args[@]}"
+  bash "$ROOT/scripts/docker-build" "${build_args[@]}"
+
+  echo
+  echo "Installing launchers..."
+  install_launchers
+
+  echo
+  echo "Restarting the OpenCode V2 server with the freshly built runtime image..."
+  OAT_WORKSPACE_ROOT="$ROOT" OPENCODE_MAJOR=2 bash "$ROOT/scripts/docker-runtime" server restart
 
   echo
   echo "Setup complete (Docker runtime)."
-  echo "Host installs are limited to Docker and the optional Just wrapper."
-  echo "Recommended next steps:"
-  echo "  just install-user   # ~/.local/bin/oc"
-  echo "  just install-oc2    # ~/.local/bin/oc2"
-  echo "  just serve-v2       # optional; launch/show the V2 server now"
-  echo "  oc2                 # auto-start server and attach TUI"
-  echo "  oc2 run '...'       # run through the persistent V2 server"
-  echo "  oc2 server status   # show server status and URL"
+  echo "  image : ${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
+  echo "  oc    : installed"
+  echo "  oc2   : installed"
+  echo "  server: OC2 restarted"
   echo
-  echo "Security note: the runtime receives the host Docker socket by design."
-  echo "Treat Docker access as host-equivalent privilege."
+  echo "Run 'oc' or 'oc2' from the project you want OpenCode to work on."
+  echo "Use 'oc2 server status' to inspect the persistent V2 server."
+  echo "Docker access uses the toolkit's dedicated DinD service; the host docker.sock is not mounted in OC/OC2."
 
   if ! command -v just >/dev/null 2>&1; then
     echo "Note: 'just' is recommended for the friendly command interface."
@@ -123,6 +133,7 @@ python3 -m json.tool opencode.jsonc >/dev/null
 python3 -m json.tool opencode.v2.jsonc >/dev/null
 python3 -m unittest discover -s tests -v
 python3 ./scripts/resolve-models --show >/dev/null
+install_launchers
 
 major="${OPENCODE_MAJOR:-1}"
 case "$major" in
@@ -136,12 +147,12 @@ esac
 
 printf '\nSetup complete (legacy host runtime).\n'
 echo "Reliability policy was applied to generated OpenCode configs."
+echo "Launchers installed: oc, oc2"
 echo "Recommended next steps:"
 echo "  just reliability"
 echo "  just models"
 echo "  just doctor"
-echo "  just install-user"
-echo "  just run"
+echo "  oc"
 
 if ! command -v "$expected" >/dev/null 2>&1; then
   echo "Warning: selected OpenCode binary is not installed/found: $expected" >&2
