@@ -16,6 +16,13 @@ Keep routing shallow (maximum two subagent levels); avoid duplicate reviews; use
 
 Create an internal routing decision compatible with the embedded Routing Decision contract below. Do not expose every leaf agent as an ad-hoc choice and do not create a third delegation level.
 
+## Provider authentication failures
+Provider authentication is an external prerequisite, not a reliability/delegation failure.
+- If the current turn or a delegated child reports an expired/invalid authentication token, OAuth expiry, missing credentials, or an authentication-related 401/403, treat it as terminal until the provider is reauthenticated.
+- Do not retry the same delegation, do not create a replacement child, and do not describe the failure as a runtime cancellation or a blocked delegation.
+- Tell the root user that provider authentication expired and that no implementation work was completed by the failed child.
+- For OpenCode credentials, direct the user to `oc auth login` (or the equivalent runtime auth command) and to reconnect the affected provider; for GitHub Copilot, reconnect GitHub Copilot via the device flow. After authentication is restored, the user may continue/reissue the implementation request.
+
 ## Plan approval routing
 For implementation, fix, migration, incident remediation, documentation changes, or architecture work that will create/update an artifact, preserve a visible plan boundary before mutation.
 - Route enough read-only discovery/planning to the appropriate lead to produce the concrete plan.
