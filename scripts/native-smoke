@@ -22,6 +22,32 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def install_memory_fixture(toolkit: Path, home: Path) -> None:
+    plugin = home / ".local/share/opencode-agent-toolkit/plugins/opencode-memory-plugin"
+    dist = plugin / "dist"
+    dist.mkdir(parents=True)
+    (plugin / "package.json").write_text('{"type":"module"}\n')
+    (dist / "v2.js").write_text(
+        'export default { id: "opencode.memory.smoke", async setup() {} }\n'
+    )
+    (dist / "v1.js").write_text(
+        'export default async function memorySmoke() { return {} }\n'
+    )
+    (dist / "cli.js").write_text(
+        '#!/usr/bin/env node\n'
+        'if (process.argv[2] === "render") process.exit(0)\n'
+        'process.exit(0)\n'
+    )
+    vault = home / ".local/share/opencode-agent-toolkit/memory"
+    vault.mkdir(parents=True)
+    (toolkit / ".env.local").write_text(
+        "OAT_MEMORY_ENABLED=1\n"
+        "OAT_MEMORY_CAPTURE_ENABLED=1\n"
+        f"OAT_MEMORY_PLUGIN_DIR={plugin}\n"
+        f"OAT_MEMORY_DIR={vault}\n"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("major", choices=("1", "2"))
@@ -52,10 +78,29 @@ def main() -> int:
         skill.parent.mkdir(parents=True)
         skill.write_text("---\nname: project-skill\ndescription: Local project smoke skill\n---\n\nFixture.\n")
         subprocess.run(["git", "init", "-q"], cwd=project, env=env, check=True)
+        launcher = home / ".local/bin" / ("oc2" if args.major == "2" else "oc")
+
+        if args.major == "2":
+            install_memory_fixture(toolkit, home)
+            plugins = subprocess.run(
+                [str(launcher), "plugin", "list"],
+                cwd=project,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=60,
+                check=False,
+            )
+            assert plugins.returncode == 0, plugins.stdout
+            assert "opencode.memory.smoke" in plugins.stdout, plugins.stdout
+            wrapper = toolkit / ".generated/plugins/opencode-memory-plugin-v2"
+            assert (wrapper / "index.js").is_file(), wrapper
+            print("V2 plugin list contains opencode.memory.smoke")
+
         with socket.socket() as port_probe:
             port_probe.bind(("127.0.0.1", 0))
             port = port_probe.getsockname()[1]
-        launcher = home / ".local/bin" / ("oc2" if args.major == "2" else "oc")
         with (work / "server.log").open("w+") as log:
             server = subprocess.Popen([str(launcher), "serve", "--hostname", "127.0.0.1", "--port", str(port)],
                                       cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
