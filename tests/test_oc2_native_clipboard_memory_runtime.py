@@ -4,7 +4,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class Oc2NativeClipboardMemoryRuntimeTests(unittest.TestCase):
+class NativeClipboardMemoryRuntimeTests(unittest.TestCase):
+    def test_docker_runtime_prefers_matching_native_v1_client(self):
+        runtime = (ROOT / "scripts" / "docker-runtime").read_text()
+        env = (ROOT / ".env.example").read_text()
+
+        self.assertIn('v1_client_mode="${OAT_OC_CLIENT_MODE:-auto}"', runtime)
+        self.assertIn('native_v1_bin="${OAT_OC_NATIVE_BIN:-opencode}"', runtime)
+        self.assertIn('command -v "$native_v1_bin"', runtime)
+        self.assertIn('host_version="$($native_v1_bin --version', runtime)
+        self.assertIn('server_version="$("${compose[@]}" exec -T "$service" opencode --version', runtime)
+        self.assertIn('exec "$native_v1_bin" attach "http://127.0.0.1:$host_port" --dir "$cwd"', runtime)
+        self.assertIn('exec "$native_v1_bin" run --attach "http://127.0.0.1:$host_port" --dir "$cwd" "$@"', runtime)
+        self.assertIn("OAT_OC_CLIENT_MODE=auto", env)
+        self.assertIn("# OAT_OC_NATIVE_BIN=opencode", env)
+
+    def test_v1_non_tui_commands_remain_in_persistent_container(self):
+        runtime = (ROOT / "scripts" / "docker-runtime").read_text()
+        v1 = runtime.split('if [[ "$major" == "1" ]]; then', 1)[1].split(
+            "# Authentication is local credential state", 1
+        )[0]
+
+        self.assertIn('exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" opencode "$@"', v1)
+        self.assertIn("falling back to container TUI", v1)
+
     def test_docker_runtime_prefers_matching_native_v2_client(self):
         runtime = (ROOT / "scripts" / "docker-runtime").read_text()
         env = (ROOT / ".env.example").read_text()
