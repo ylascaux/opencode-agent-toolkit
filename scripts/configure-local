@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Render native V1/V2 configuration without installing or contacting anything."""
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from native_config import render_files, write_files
+from runtime.common.adapter import ArtifactPlan
+from runtime.common.normalization import load_normalized_agents, load_normalized_skills
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="check for drift without writing")
+    args = parser.parse_args()
+    files = render_files(ROOT, load_normalized_agents(), load_normalized_skills())
+    # Retain ownership/path validation, without runtime approval/cost machinery.
+    plan = ArtifactPlan(ROOT, files)
+    plan.validate()
+    if args.check:
+        changes = plan.changes()
+        for path, status in changes.items():
+            print(f"{status} {path.relative_to(ROOT)}")
+        return int(bool(changes))
+    write_files(files)
+    (ROOT / ".opencode" / "skills").mkdir(parents=True, exist_ok=True)
+    print("Native OpenCode V1/V2 configs generated (no runtime plugins).")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

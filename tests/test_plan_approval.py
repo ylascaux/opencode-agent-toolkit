@@ -9,6 +9,8 @@ GENERATED_PROMPTS = ROOT / ".generated" / "prompts"
 
 
 class PlanApprovalTests(unittest.TestCase):
+    """Legacy adapter contracts plus separation from the native launcher."""
+
     @classmethod
     def setUpClass(cls):
         env = os.environ.copy()
@@ -61,11 +63,10 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertIn("AFFECTED FILES / COMPONENTS", planner)
         self.assertIn("ROLLBACK", planner)
 
-    def test_environment_documents_gate_as_opt_in(self):
+    def test_native_environment_does_not_advertise_a_runtime_gate(self):
         text = (ROOT / ".env.example").read_text()
-        self.assertIn("PLAN_APPROVAL_MODE=off", text)
-        self.assertIn("changes = opt-in", text)
-        self.assertIn("always  = opt-in", text)
+        self.assertNotIn("PLAN_APPROVAL_MODE=", text)
+        self.assertIn("OAT_RUNTIME=host", text)
 
     def test_runtime_gate_remains_available_when_explicitly_enabled(self):
         core = (ROOT / "runtime" / "plugins" / "plan-approval-core.js").read_text()
@@ -75,11 +76,13 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertIn('ctx.tool.hook("execute.before"', v2)
         self.assertIn("throw new Error(blockedMessage(decision))", v2)
 
-    def test_bootstrap_migrates_the_old_changes_default_to_off(self):
+    def test_native_launcher_disables_old_gate_without_rewriting_user_profiles(self):
         bootstrap = (ROOT / "scripts" / "bootstrap").read_text()
-        self.assertIn("PLAN_APPROVAL_MODE=changes", bootstrap)
-        self.assertIn("PLAN_APPROVAL_MODE=off", bootstrap)
-        self.assertIn("Migrated PLAN_APPROVAL_MODE from changes to off", bootstrap)
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+        self.assertIn("PLAN_APPROVAL_MODE=off", launcher)
+        self.assertNotIn("scripts/apply-reliability", launcher)
+        self.assertNotIn("PLAN_APPROVAL_MODE=changes", bootstrap)
+        self.assertIn('if [[ ! -f "$ROOT/.env" ]]', bootstrap)
 
 
 if __name__ == "__main__":

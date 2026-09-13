@@ -22,7 +22,6 @@ class WatchdogActivityTests(unittest.TestCase):
 
     def test_v2_kill_approval_plugin_is_temporarily_disabled(self):
         apply_reliability = (ROOT / "scripts" / "apply-reliability").read_text()
-
         self.assertIn('approval_plugin = "./plugins/reliability-approval"', apply_reliability)
         self.assertIn(
             "plugins[:] = [plugin for plugin in plugins if plugin != approval_plugin]",
@@ -35,7 +34,6 @@ class WatchdogActivityTests(unittest.TestCase):
 
     def test_preflight_requires_v2_kill_approval_to_stay_disabled(self):
         preflight = (ROOT / "scripts" / "preflight").read_text()
-
         self.assertIn(
             'raise SystemExit(0 if "./plugins/reliability-approval" not in config.get("plugins", []) else 1)',
             preflight,
@@ -54,7 +52,6 @@ class WatchdogActivityTests(unittest.TestCase):
         server = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
         tui = (ROOT / "plugins" / "reliability-approval" / "tui.ts").read_text()
         rpc = (ROOT / "plugins" / "reliability-approval" / "rpc.ts").read_text()
-
         self.assertIn('events.emit("suspected"', server)
         self.assertIn('if (!pending.has(sessionID)) return { status: "stale" }', server)
         self.assertIn('ctx.session.interrupt({ sessionID, continue: false })', server)
@@ -65,7 +62,6 @@ class WatchdogActivityTests(unittest.TestCase):
 
     def test_v2_approval_watchdog_never_targets_lead_sessions(self):
         server = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
-
         self.assertIn("const LEAD_AGENTS = new Set(", server)
         self.assertIn("POLICY.lead_parallel_env", server)
         self.assertIn("const hasKnownChildren =", server)
@@ -74,11 +70,13 @@ class WatchdogActivityTests(unittest.TestCase):
         self.assertIn('return { status: "protected-lead" }', server)
         self.assertIn("pending.delete(String(parentID))", server)
 
-    def test_heartbeat_control_is_exposed_without_cost_kill_controls(self):
+    def test_native_environment_has_no_heartbeat_or_cost_kill_controls(self):
         env = (ROOT / ".env.example").read_text()
-        self.assertIn("SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS=", env)
+        self.assertNotIn("SUBAGENT_HEARTBEAT_TIMEOUT_SECONDS=", env)
         self.assertNotIn("MAX_CHILD_COST=", env)
         self.assertNotIn("MAX_RUN_COST=", env)
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+        self.assertNotIn("scripts/apply-reliability", launcher)
 
 
 if __name__ == "__main__":
