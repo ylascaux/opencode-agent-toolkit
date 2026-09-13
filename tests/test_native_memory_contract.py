@@ -24,7 +24,7 @@ class NativeMemoryContractTests(unittest.TestCase):
         self.assertIn('not entry.is_file() or not vault.is_dir()', loader)
         self.assertIn('"v2.js" if args.major == "2" else "v1.js"', loader)
         self.assertIn('prepare_v2_wrapper', loader)
-        self.assertIn('export { default } from', loader)
+        self.assertIn('f"export {{ default }} from', loader)
         self.assertIn('"exports": "./index.js"', loader)
         self.assertIn('"render", "--agent"', loader)
         for forbidden in ('git clone', 'git pull', 'ensure_plugin(', 'npm install', 'pip install'):
