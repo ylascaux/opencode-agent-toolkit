@@ -88,17 +88,40 @@ oc codex uninstall
 Pour la configuration OpenCode utilisée au quotidien, utilisez `just config` ;
 les lanceurs natifs la régénèrent également avant de démarrer.
 
-## Mémoire : explicite, sans dépendance au démarrage
+## Mémoire : optionnelle et fail-open
 
-`oc memory ...` et le MCP portable de Codex sont conservés. Le plugin externe
-reste installé et configuré séparément ; le lancement MCP n'installe rien.
+`oc memory ...` et le MCP portable de Codex restent séparés du runtime principal.
+L'installation de base (`just install`) ne clone, ne construit et ne synchronise
+toujours aucun plugin.
 
-Le chemin natif ne charge **pas** automatiquement les anciens plugins de mémoire
-ou de capture. `OAT_MEMORY_ENABLED=1` ne les réactive donc pas dans `oc`/`oc2`.
-Il ne faut pas attendre de nouveaux candidats automatiques à la fin d'une session
-native : utilisez la CLI mémoire ou le MCP Codex. Le vault existant n'est ni effacé,
-ni déplacé, ni publié. Cette limite est explicite pour ne plus faire dépendre le
-lancement d'OpenCode du bon fonctionnement d'un plugin facultatif.
+Pour activer la mémoire OpenCode une fois le dépôt mémoire connu :
+
+```bash
+oc memory enable git@github.com:USER/opencode-memory.git
+oc memory capture-on
+```
+
+`oc memory enable` prépare explicitement le plugin et le vault local. Ensuite,
+`oc` et `oc2` chargent automatiquement ce plugin **uniquement s'il est déjà
+disponible localement**. V1 utilise son hook d'injection natif ; V2 charge le
+plugin de capture et injecte le contexte rendu dans les prompts des agents.
+
+Le démarrage natif reste fail-open : si le plugin, le vault ou le rendu mémoire
+est indisponible, OpenCode démarre sans mémoire. Le lancement ne fait aucun
+clone/pull/build et force l'auto-sync et le mode strict à off pour le processus
+OpenCode. Pour rafraîchir volontairement plugin/vault, utilisez :
+
+```bash
+oc memory sync
+```
+
+Les candidats restent locaux jusqu'aux commandes humaines d'acceptation et de
+promotion. Désactiver la capture ou toute la mémoire reste explicite :
+
+```bash
+oc memory capture-off
+oc memory disable
+```
 
 ## Migration depuis Docker
 
