@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: "22.18.0"
       # Only contributor tests of retained historical plugins need this SDK.
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm install --ignore-scripts --no-audit --no-fund --no-package-lock
       - run: python3 -m compileall -q scripts runtime tests
       - name: Native shell syntax
         run: |
@@ -48,6 +48,8 @@ jobs:
           export HOME="$(mktemp -d)"
           export XDG_DATA_HOME="$HOME/data" XDG_STATE_HOME="$HOME/state"
           export XDG_CONFIG_HOME="$HOME/config" XDG_CACHE_HOME="$HOME/cache"
+          export OPENCODE_SERVER_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$OPENCODE_SERVER_PASSWORD"
           bash scripts/bootstrap
           toolkit="$PWD"
           project="$(mktemp -d)"
@@ -57,7 +59,7 @@ jobs:
           trap 'kill "$pid" 2>/dev/null || true; cat "$HOME/server.log"' EXIT
           ready=0
           for _ in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:4096/api/health; then ready=1; break; fi
+            if curl -fsS -u "opencode:$OPENCODE_SERVER_PASSWORD" http://127.0.0.1:4096/api/health; then ready=1; break; fi
             kill -0 "$pid"
             sleep 1
           done
