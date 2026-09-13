@@ -167,19 +167,41 @@ def cmd_reject(args: argparse.Namespace) -> int:
 
 
 def cmd_accept(args: argparse.Namespace) -> int:
-    values = ["accept", args.id]
+    values = ["accept"]
+    if args.all:
+        if args.id:
+            raise SystemExit("accept takes either ID or --all, not both")
+        values.append("--all")
+    elif args.id:
+        values.append(args.id)
+    else:
+        raise SystemExit("accept requires ID or --all")
     if args.push:
         values.append("--push")
     return _run_plugin(*values)
 
 
 def cmd_promote(args: argparse.Namespace) -> int:
-    values = ["promote", args.id]
+    values = ["promote"]
+    if args.all:
+        if args.id:
+            raise SystemExit("promote takes either ID or --all, not both")
+        if args.target:
+            raise SystemExit("promote --all uses each candidate suggested target; --target is not supported")
+        values.append("--all")
+    elif args.id:
+        values.append(args.id)
+    else:
+        raise SystemExit("promote requires ID or --all")
     if args.target:
         values.extend(["--target", args.target])
     if args.push:
         values.append("--push")
     return _run_plugin(*values)
+
+
+def cmd_approve_all(_args: argparse.Namespace) -> int:
+    return _run_plugin("approve-all")
 
 
 def cmd_push(_args: argparse.Namespace) -> int:
@@ -240,16 +262,21 @@ def parser() -> argparse.ArgumentParser:
     reject.add_argument("id")
     reject.set_defaults(func=cmd_reject)
 
-    accept = sub.add_parser("accept", help="accept a pending candidate into the inactive Git inbox")
-    accept.add_argument("id")
+    accept = sub.add_parser("accept", help="accept one pending candidate or all pending candidates")
+    accept.add_argument("id", nargs="?")
+    accept.add_argument("--all", action="store_true")
     accept.add_argument("--push", action="store_true")
     accept.set_defaults(func=cmd_accept)
 
-    promote = sub.add_parser("promote", help="promote an accepted candidate into active durable memory")
-    promote.add_argument("id")
+    promote = sub.add_parser("promote", help="promote one accepted candidate or all accepted candidates")
+    promote.add_argument("id", nargs="?")
+    promote.add_argument("--all", action="store_true")
     promote.add_argument("--target", default="")
     promote.add_argument("--push", action="store_true")
     promote.set_defaults(func=cmd_promote)
+
+    approve_all = sub.add_parser("approve-all", help="accept all, promote all, then push once")
+    approve_all.set_defaults(func=cmd_approve_all)
 
     push = sub.add_parser("push", help="push local memory-vault commits")
     push.set_defaults(func=cmd_push)
