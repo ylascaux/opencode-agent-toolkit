@@ -24,3 +24,4 @@ Recommended reading order:
 20. [RESEARCH_WORKER.md](./RESEARCH_WORKER.md) — authenticated HTTPS pull worker for external research queues
 21. [OPENCODE_COMPATIBILITY.md](./OPENCODE_COMPATIBILITY.md) — V1/V2 compatibility
 22. [RUNTIME_HARDENING.md](./RUNTIME_HARDENING.md) — runtime hardening details
+23. [CONTRIBUTING.md](./CONTRIBUTING.md) — contribution and pull-request policy

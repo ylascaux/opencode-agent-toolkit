@@ -4,20 +4,19 @@
 
 ## Installation rapide macOS
 
-Prérequis : `just`, Node.js et npm. Node.js 22.18.0 est recommandé pour correspondre à la CI ; `just install` n’installe ni Node.js ni npm.
+Prérequis : Bash, Python 3.11+, `just` et le runtime natif à utiliser : `opencode` pour V1 ou `opencode2` pour V2. Installe le runtime avec sa procédure officielle ; le toolkit ne l’installe pas et ne migre pas l’authentification.
 
 ```bash
 brew install just
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
 just install
-just models
 just doctor
 ```
 
-`just install` crée `.env` seulement s’il n’existe pas, crée `.venv`, installe les dépendances du scanner/API, génère les deux configurations OpenCode, les valide, lance les tests Python et vérifie la résolution des tiers de modèles. `just check` inclut les tests Node du runtime, mais n’effectue pas de vérification native de chargement des modules TypeScript. La CI épingle Node.js 22.18.0 et charge nativement les modules de plugin TypeScript pris en charge.
+`just install` crée `.env` seulement s’il n’existe pas, génère les deux configurations OpenCode natives et installe les lanceurs `oc` et `oc2` dans `~/.local/bin`. Ajoute toi-même ce répertoire à `PATH` si nécessaire.
 
-Il n’installe **aucun paquet global**, n’utilise pas `sudo`, ne modifie pas les fichiers de démarrage du shell et ne touche pas à `~/.config`.
+Il n’installe **aucun paquet**, n’utilise pas `sudo`, ne modifie pas les fichiers de démarrage du shell, ne touche pas à `~/.config`, ne contacte pas de provider et ne démarre pas de serveur en arrière-plan.
 
 ## Profil de modèles par défaut
 
@@ -44,13 +43,11 @@ just profile copilot
 ## Changer de provider / profil perso
 
 ```bash
-just profiles
 just profile copilot
 just profile codex
-just models
 ```
 
-Le changement de profil ne modifie que `MODEL_PROFILE`, `MODEL_LOW`, `MODEL_MEDIUM` et `MODEL_HIGH` dans `.env`.
+Le changement de profil met à jour `MODEL_PROFILE`, `MODEL_LOW`, `MODEL_MEDIUM` et `MODEL_HIGH` dans `.env`. Il retire aussi les mappings `MODEL_*` historiques par agent de `.env` et les sauvegarde dans `.env.model-overrides.backup`.
 
 Les overrides persistants par agent doivent être placés dans `.env.local`, qui n’est jamais modifié par un changement de profil :
 
@@ -59,16 +56,13 @@ MODEL_BUILDER=openai/gpt-5.3-codex
 MODEL_REVIEWER=github-copilot/gpt-5.6-sol
 ```
 
-## Commande utilisateur optionnelle : lancer depuis n’importe où
+## Lancer depuis n’importe où
 
-```bash
-just install-user
-```
-
-Cela crée uniquement :
+`just install` installe les liens gérés par le toolkit :
 
 ```text
 ~/.local/bin/oc -> <toolkit>/scripts/opencode-agents
+~/.local/bin/oc2 -> <toolkit>/scripts/opencode-agents
 ```
 
 Le launcher conserve le répertoire courant :
@@ -80,30 +74,17 @@ oc
 
 OpenCode utilise `~/Projects/my-api` comme workspace tout en chargeant la configuration et les modèles depuis le toolkit.
 
-Vérifier/supprimer le lien proprement :
+Supprimer proprement les liens gérés par le toolkit :
 
 ```bash
-just user-status
-just uninstall-user
+just uninstall
 ```
 
-L’installateur n’écrase jamais un fichier ou symlink appartenant à autre chose et ne modifie jamais ton shell. Si `oc` existe déjà :
-
-```bash
-just install-user opencode-agents
-```
+L’installateur n’écrase jamais un fichier ou symlink appartenant à autre chose et ne modifie jamais ton shell. `just uninstall` ne retire que les liens `oc` et `oc2` appartenant à ce toolkit.
 
 ## Choix du runtime
 
-`OPENCODE_MAJOR` accepte `1`, `2` ou `auto`. `just v1` et `just v2` permettent un override ponctuel.
-
-## Découverte LiteLLM optionnelle
-
-LiteLLM n’est pas requis pour l’usage normal. La découverte via gateway reste disponible pour plus tard avec :
-
-```bash
-just configure-litellm
-```
+Utilise `oc` pour OpenCode V1 et `oc2` pour OpenCode V2. Les deux conservent le répertoire courant comme workspace. Définis `OPENCODE_BIN` pour utiliser un chemin explicite vers le binaire du runtime.
 
 
 ## Recettes quotidiennes
@@ -111,17 +92,8 @@ just configure-litellm
 ```bash
 just install
 just profile copilot
-just profiles
-just models
-just install-user
-just user-status
-just uninstall-user
+just config
 just doctor
-just run
-just check
 just test
-just scan
-just api
-just refresh
-just clean
+just uninstall
 ```

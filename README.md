@@ -55,6 +55,12 @@ just uninstall               # retirer seulement les liens gérés
 quand on se trouve dans le toolkit. Depuis un autre dépôt, utilisez directement
 `oc`/`oc2` pour conserver le bon contexte de projet.
 
+## Contribuer
+
+Toute modification du toolkit passe par une PR ; les checks et tests obligatoires
+pertinents doivent être verts avant le merge. Voir le [guide de contribution](docs/fr/CONTRIBUTING.md)
+([English](docs/en/CONTRIBUTING.md)).
+
 Les configurations sont autonomes : prompts intégrés, remplacements atomiques,
 pas de chemin `/opt/oat`, pas de wrapper shell sandbox, pas de plugins de contrôle
 ni de limite de pas ajoutée par le toolkit. Le meta-router et la délégation courte
