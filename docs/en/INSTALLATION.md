@@ -4,20 +4,19 @@
 
 ## macOS quick start
 
-Prerequisites: `just`, Node.js and npm. Node.js 22.18.0 is recommended to match CI; `just install` does not install Node.js or npm.
+Prerequisites: Bash, Python 3.11+, `just`, and the native runtime you plan to use: `opencode` for V1 or `opencode2` for V2. Install the runtime with its official procedure; the toolkit does not install it or migrate authentication.
 
 ```bash
 brew install just
 git clone https://github.com/ylascaux/opencode-agent-toolkit.git
 cd opencode-agent-toolkit
 just install
-just models
 just doctor
 ```
 
-`just install` creates `.env` only when absent, creates `.venv`, installs scanner/API dependencies, generates both OpenCode configs, validates them, runs the Python tests and validates model-tier resolution. `just check` includes the Node runtime tests, but does not perform native TypeScript module-load checks. CI pins Node.js 22.18.0 and natively loads the supported TypeScript plugin modules.
+`just install` creates `.env` only when absent, generates both native OpenCode configurations, and installs the `oc` and `oc2` launchers in `~/.local/bin`. Add that directory to `PATH` yourself if needed.
 
-It does **not** install global packages, use `sudo`, edit shell startup files or modify `~/.config`.
+It does **not** install packages, use `sudo`, edit shell startup files, modify `~/.config`, contact a provider, or start a background server.
 
 ## Default model profile
 
@@ -44,13 +43,11 @@ just profile copilot
 ## Switch providers / personal profile
 
 ```bash
-just profiles
 just profile copilot
 just profile codex
-just models
 ```
 
-Profile switching changes only `MODEL_PROFILE`, `MODEL_LOW`, `MODEL_MEDIUM` and `MODEL_HIGH` in `.env`.
+Profile switching updates `MODEL_PROFILE`, `MODEL_LOW`, `MODEL_MEDIUM` and `MODEL_HIGH` in `.env`. It also removes legacy per-agent `MODEL_*` mappings from `.env` and saves them in `.env.model-overrides.backup`.
 
 Persistent per-agent overrides belong in `.env.local`, which profile switching never modifies:
 
@@ -59,16 +56,13 @@ MODEL_BUILDER=openai/gpt-5.3-codex
 MODEL_REVIEWER=github-copilot/gpt-5.6-sol
 ```
 
-## Optional user command: run from anywhere
+## Run from anywhere
 
-```bash
-just install-user
-```
-
-This creates only:
+`just install` installs these toolkit-owned links:
 
 ```text
 ~/.local/bin/oc -> <toolkit>/scripts/opencode-agents
+~/.local/bin/oc2 -> <toolkit>/scripts/opencode-agents
 ```
 
 The launcher preserves the current directory:
@@ -80,30 +74,17 @@ oc
 
 OpenCode uses `~/Projects/my-api` as the workspace while loading the toolkit configuration and model mappings from the toolkit repository.
 
-Check/remove the link safely:
+Remove the toolkit-owned links safely:
 
 ```bash
-just user-status
-just uninstall-user
+just uninstall
 ```
 
-The installer never overwrites unrelated files or symlinks and never edits your shell. If `oc` is already used, choose another name:
-
-```bash
-just install-user opencode-agents
-```
+The installer never overwrites unrelated files or symlinks and never edits your shell. `just uninstall` removes only the `oc` and `oc2` links owned by this toolkit.
 
 ## Runtime selection
 
-`.env` supports `OPENCODE_MAJOR=1`, `2`, or `auto`. One-off selection is available through `just v1` and `just v2`.
-
-## Optional LiteLLM discovery
-
-LiteLLM is not required for normal usage. Future gateway-based discovery remains available through:
-
-```bash
-just configure-litellm
-```
+Use `oc` for OpenCode V1 and `oc2` for OpenCode V2. Both preserve the current directory as the workspace. Set `OPENCODE_BIN` to use an explicit runtime binary path.
 
 
 ## Daily recipes
@@ -111,17 +92,8 @@ just configure-litellm
 ```bash
 just install
 just profile copilot
-just profiles
-just models
-just install-user
-just user-status
-just uninstall-user
+just config
 just doctor
-just run
-just check
 just test
-just scan
-just api
-just refresh
-just clean
+just uninstall
 ```

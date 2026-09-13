@@ -26,6 +26,7 @@ Le toolkit est un système d’ingénierie multi-agents avec un plan de contrôl
 20. [Worker de recherche externe](RESEARCH_WORKER.md)
 21. [Compatibilité OpenCode](OPENCODE_COMPATIBILITY.md)
 22. [Durcissement runtime](RUNTIME_HARDENING.md)
+23. [Contribuer](CONTRIBUTING.md) — politique de contribution et de pull request
 
 `SYSTEM_ARCHITECTURE.md` décrit le toolkit lui-même : boot `oc`, génération des configs, control plane, délégation, modèles, watchdog, queue de sous-agents, failure modes et points d’extension. `MULTI_RUNTIME.md` décrit la source de vérité portable utilisée par OpenCode et Codex. `CODEX_ADAPTER.md` fixe le contrat de l'adapter Codex sans dupliquer les agents. `CROSS_RUNTIME_WORKFLOW.md` définit comment reprendre une tâche depuis Git/PR plutôt que depuis l'historique d'un chat. `CONFIGURATION_AGENTS.md` décrit la source de vérité éditable de chaque agent. `ARCHITECTURE.md` décrit le workflow utilisé pour concevoir et reviewer l’architecture d’un projet cible. `RESEARCH_PIPELINE.md` décrit les agents de recherche génériques, les enveloppes de jobs/résultats et la frontière avec un orchestrateur externe. `RESEARCH_WORKER.md` décrit le worker pull HTTPS authentifié qui exécute ces jobs via OpenCode sans exposer de service entrant sur la machine worker. `SANDBOX.md` décrit l’isolation des commandes de développement et le flux manuel pour AWS/Kubernetes. `RELEASE.md` décrit comment préparer puis taguer une version depuis le commit mergé sur `main`.
 
