@@ -161,29 +161,20 @@ export const delegationFailureClass = (value) => {
   return "unknown"
 }
 
+let delegationSequence = 0
+
 export const delegationTaskKey = ({ parentID, args }) => {
+  const explicitTaskID = String(args?.task_id ?? "").trim()
+  if (explicitTaskID) return `${parentID ?? "unknown"}:task:${explicitTaskID}`
+
   const type = String(args?.subagent_type ?? args?.agent ?? args?.type ?? "subagent").trim().toLowerCase()
   const description = String(args?.description ?? "").trim().toLowerCase()
   const prompt = String(args?.prompt ?? "").trim().toLowerCase().replace(/\s+/g, " ")
-  const scope = description || prompt.slice(0, 240) || "unnamed"
-  return `${parentID ?? "unknown"}:${type}:${scope}`
+  const scope = description || prompt.slice(0, 120) || "unnamed"
+
+  // Human-readable descriptions/prompts are not task identities. Two fresh
+  // delegations may legitimately have identical wording, especially after an
+  // approval or when re-running an implementation. Give every fresh call its
+  // own identity and reserve task_id for explicit continuation semantics.
+  return `${parentID ?? "unknown"}:${type}:${scope}:call-${++delegationSequence}`
 }
-
-const DELEGATION_TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "ABORTED", "IDLE", "ERROR"])
-
-const delegatedChildStatus = (child) => {
-  const value = child?.status
-  if (!value) return "RUNNING"
-  if (typeof value === "string") return value.toUpperCase()
-  return String(value.type ?? value.status ?? value.state ?? "RUNNING").toUpperCase()
-}
-
-export const hasActiveDelegatedChildren = (children) => {
-  if (!Array.isArray(children)) return undefined
-  return children.some((child) => !DELEGATION_TERMINAL_STATUSES.has(delegatedChildStatus(child)))
-}
-
-export const isDelegationAlreadyRunningError = (value) =>
-  /reliability guard: equivalent delegated task is already running/i.test(
-    String(value?.message ?? value ?? ""),
-  )
