@@ -1,26 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HOST_BIN="${OAT_OC_HOST_BIN:-opencode}"
-
-[[ "$HOST_BIN" != "$0" ]] || {
-  echo "OAT_OC_HOST_BIN must point to the real host OpenCode binary, not this wrapper" >&2
-  exit 2
-}
 
 if ! command -v "$HOST_BIN" >/dev/null 2>&1; then
   echo "Native OpenCode V1 client not found: $HOST_BIN" >&2
   exit 127
 fi
 
-# Server transport credentials are toolkit-local. Load them here so attach/run
-# cannot be shadowed by a project .env and pass them explicitly to the CLI.
-set -a
-[[ -f "$ROOT/.env" ]] && source "$ROOT/.env"
-[[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
-set +a
-
+# docker-runtime already loads the toolkit .env/.env.local and exports the
+# transport credentials. Pass them explicitly because native V1 attach/run may
+# otherwise ignore the inherited defaults while the server still requires Basic Auth.
 auth_args=()
 if [[ -n "${OPENCODE_SERVER_PASSWORD:-}" ]]; then
   auth_args+=(--username "${OPENCODE_SERVER_USERNAME:-opencode}")
