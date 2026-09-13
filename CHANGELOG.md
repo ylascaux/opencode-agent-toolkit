@@ -4,6 +4,18 @@ All notable toolkit changes are documented here.
 
 The project uses semantic versioning for tagged releases. `VERSION` is the release source of truth; Git tags use the corresponding `v<version>` form.
 
+## [0.1.2] - 2026-09-13
+
+Patch release removing semantic delegated-task deduplication.
+
+### Changed
+
+- Fresh delegated tasks are no longer considered identical because they reuse the same description or prompt.
+- Each fresh delegation gets its own invocation identity; only an explicit `task_id` means “continue this existing delegated task”.
+- `MAX_PARALLEL_SUBAGENTS` and queue timeout remain the concurrency controls, so identical tasks can run concurrently when slots are available without creating phantom `task already running` locks.
+- Explicit `task_id` continuations still retain per-task retry accounting and resume semantics.
+- The temporary stale-lock recovery wrappers and their child-status heuristics were removed because semantic duplicate locking is no longer part of the active runtime behavior.
+
 ## [0.1.1] - 2026-09-13
 
 Patch release for stale delegated-task recovery.
