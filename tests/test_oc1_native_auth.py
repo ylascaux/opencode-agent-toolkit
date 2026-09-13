@@ -27,6 +27,16 @@ class Oc1NativeAuthTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_v1_server_is_loopback_only_and_does_not_inherit_oc2_password(self):
+        compose = (ROOT / "compose.yaml").read_text()
+        v1 = compose.split("\n  oc-server:\n", 1)[1].split("\n  oc2-server:\n", 1)[0]
+        v2 = compose.split("\n  oc2-server:\n", 1)[1]
+
+        self.assertIn('127.0.0.1:${OAT_OC_PORT:-4095}:4096', v1)
+        self.assertIn('OPENCODE_SERVER_PASSWORD: ""', v1)
+        self.assertNotIn('OPENCODE_SERVER_PASSWORD: ""', v2)
+        self.assertIn('127.0.0.1:${OAT_OC2_PORT:-4096}:4096', v2)
+
 
 if __name__ == "__main__":
     unittest.main()
