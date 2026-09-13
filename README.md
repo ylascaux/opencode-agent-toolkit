@@ -51,7 +51,9 @@ génération des agents, des modèles ou du plugin mémoire. V2 utilise une sess
 locale `--standalone` par défaut, sans serveur persistant géré par le toolkit.
 Un serveur explicite reste possible avec `oc2 serve --hostname 127.0.0.1 --port 4096`
 ou `oc2 --server http://127.0.0.1:4096`. Ne l'exposez pas publiquement sans
-l'authentification native OpenCode.
+l'authentification native OpenCode. Pour un serveur explicite, utilisez la même
+variable `OPENCODE_SERVER_PASSWORD` côté serveur et client ; V2 génère un mot de
+passe si cette variable n'est pas fournie.
 
 ## Une surface `just` courte
 
@@ -69,7 +71,8 @@ just check
 Les opérations avancées historiques restent accessibles explicitement dans
 `scripts/`, mais ne font plus partie du démarrage normal. Le scanner/API et leurs
 dépendances sont optionnels. `test` / `check` sont réservés aux contributeurs :
-les tests historiques de plugins demandent Node et `npm ci` dans ce dépôt.
+les tests historiques de plugins demandent Node et `npm install --ignore-scripts`
+dans ce dépôt (aucun lockfile npm n’est actuellement versionné).
 
 ## Agents sans supervision intrusive
 

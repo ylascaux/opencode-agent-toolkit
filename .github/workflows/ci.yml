@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22.18.0"
+          node-version: "22"
       # Only contributor tests of retained historical plugins need this SDK.
       - run: npm install --ignore-scripts --no-audit --no-fund --no-package-lock
       - run: python3 -m compileall -q scripts runtime tests
@@ -40,9 +40,9 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22.18.0"
+          node-version: "22"
       - run: npm install --global @opencode/cli@0.0.0-beta-19507
-      - name: Real native V2 server without Docker or provider credentials
+      - name: Real native V2 server and skill discovery without Docker
         run: |
           set -euo pipefail
           export HOME="$(mktemp -d)"
@@ -53,7 +53,10 @@ jobs:
           bash scripts/bootstrap
           toolkit="$PWD"
           project="$(mktemp -d)"
+          mkdir -p "$project/.agents/skills/project-skill"
+          printf '%s\n' '---' 'name: project-skill' 'description: Native runtime acceptance fixture' '---' 'Fixture skill.' > "$project/.agents/skills/project-skill/SKILL.md"
           cd "$project"
+          git init -q
           OPENCODE_MAJOR=2 bash "$toolkit/scripts/opencode-agents" serve --hostname 127.0.0.1 --port 4096 > "$HOME/server.log" 2>&1 &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true; cat "$HOME/server.log"' EXIT
@@ -64,3 +67,5 @@ jobs:
             sleep 1
           done
           test "$ready" = 1
+          curl -fsS -u "opencode:$OPENCODE_SERVER_PASSWORD" -H "x-opencode-directory: $project" http://127.0.0.1:4096/api/skill > "$HOME/skills.json"
+          python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert isinstance(p.get("data"),list), p; names={s["name"] for s in p["data"]}; expected={"project-skill","terraform-review","test-review"}; assert expected <= names, (expected-names, names); print("PASS native skill discovery:", len(names))' "$HOME/skills.json"

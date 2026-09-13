@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class SandboxConfigTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Historical renderer remains testable explicitly, never launched by oc/oc2.
         subprocess.run(
             ["python3", str(ROOT / "scripts" / "generate-config")],
             check=True,
@@ -35,16 +36,18 @@ class SandboxConfigTests(unittest.TestCase):
         self.assertIn('exec bash "$ROOT/scripts/sandbox-run"', text)
         self.assertIn("refusing unsupported shell invocation while sandboxed", text)
 
-    def test_v2_sandbox_uses_private_server(self):
+    def test_native_v2_uses_standalone_without_a_sandbox_server(self):
         launcher = (ROOT / "scripts" / "opencode-agents").read_text()
-        self.assertIn('launch_args=(--standalone "$@")', launcher)
-        self.assertIn("OpenCode V2 sandbox refuses --server", launcher)
-        self.assertIn("OpenCode V2 sandbox server: standalone", launcher)
+        self.assertIn('set -- --standalone "$@"', launcher)
+        self.assertIn('--server|--server=*|--standalone)', launcher)
+        self.assertNotIn('scripts/sandbox-start', launcher)
+        self.assertNotIn('OpenCode V2 sandbox refuses --server', launcher)
 
     def test_sandbox_container_runtime_identity_is_not_reused_as_startup_input(self):
         launcher = (ROOT / "scripts" / "opencode-agents").read_text()
         starter = (ROOT / "scripts" / "sandbox-start").read_text()
-        self.assertIn("unset OAT_SANDBOX_CONTAINER", launcher)
+        self.assertNotIn('scripts/sandbox-start', launcher)
+        self.assertIn('OAT_SANDBOX_ENABLED=0', launcher)
         self.assertNotIn('container="${OAT_SANDBOX_CONTAINER:-}"', starter)
         self.assertIn('container="${OAT_SANDBOX_CONTAINER_NAME:-}"', starter)
 

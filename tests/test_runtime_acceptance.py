@@ -1,7 +1,6 @@
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -28,7 +27,7 @@ class RuntimeAcceptanceSurfaceTests(unittest.TestCase):
         self.assertIn('"security-review" / "references" / "user.txt"', text)
         self.assertIn("partial writes", text)
 
-    def test_docker_acceptance_uses_real_v2_skill_http_api(self):
+    def test_legacy_docker_acceptance_uses_real_v2_skill_http_api(self):
         text = (ROOT / "scripts" / "opencode-v2-skill-smoke").read_text()
         self.assertIn("/api/skill", text)
         self.assertIn("opencode2 serve", text)
@@ -36,15 +35,21 @@ class RuntimeAcceptanceSurfaceTests(unittest.TestCase):
         self.assertIn("terraform-review", text)
         self.assertNotIn("ctx.skill.list()", text)
 
-    def test_acceptance_workflow_keeps_core_jobs_mandatory_and_private_mcp_conditional(self):
+    def test_acceptance_workflow_keeps_native_core_mandatory_and_private_mcp_conditional(self):
         workflow = (ROOT / ".github" / "workflows" / "acceptance.yml").read_text()
+        native = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         self.assertIn('OAT_ACCEPTANCE_SKIP_MEMORY: "1"', workflow)
         self.assertIn("OAT_MEMORY_PLUGIN_TOKEN", workflow)
         self.assertIn("ylascaux/opencode-memory-plugin", workflow)
         self.assertIn("b573f3ba0b253abeb26bbb01eaee0c5a8b5ab518", workflow)
         self.assertIn("MEMORY_TOKEN != ''", workflow)
-        self.assertIn("scripts/opencode-v2-skill-smoke", workflow)
-        self.assertIn("opencode-agent-toolkit:acceptance", workflow)
+        self.assertIn("native-v2:", native)
+        self.assertIn("@opencode/cli@0.0.0-beta-19507", native)
+        self.assertIn("/api/health", native)
+        self.assertIn("/api/skill", native)
+        self.assertIn("x-opencode-directory", native)
+        self.assertNotIn("docker run", workflow + native)
+        self.assertNotIn("continue-on-error", workflow + native)
 
 
 if __name__ == "__main__":

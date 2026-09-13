@@ -6,13 +6,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Oc1NativeAuthTests(unittest.TestCase):
-    def test_bootstrap_installs_managed_native_v1_auth_client(self):
+    def test_bootstrap_links_native_cli_without_installing_a_docker_auth_wrapper(self):
         bootstrap = (ROOT / "scripts" / "bootstrap").read_text()
-        self.assertIn('install -m 0755 "$ROOT/scripts/opencode-v1-native-client" "$wrapper"', bootstrap)
-        self.assertIn('OAT_OC_NATIVE_BIN=%s', bootstrap)
-        self.assertIn('Keeping explicit OAT_OC_NATIVE_BIN override', bootstrap)
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+        self.assertIn('bash "$ROOT/scripts/user-link" install oc', bootstrap)
+        self.assertNotIn('opencode-v1-native-client', bootstrap)
+        self.assertNotIn('OAT_OC_NATIVE_BIN=', bootstrap)
+        self.assertIn('1) bin="${OPENCODE_BIN:-opencode}"', launcher)
+        self.assertIn('auth|--help|-h|--version|-v|version|upgrade) exec "$bin" "$@"', launcher)
 
     def test_native_v1_wrapper_forwards_basic_auth_explicitly(self):
+        # Retained legacy wrapper remains valid for explicit historical consumers.
         wrapper = (ROOT / "scripts" / "opencode-v1-native-client").read_text()
         self.assertIn('auth_args+=(--username "${OPENCODE_SERVER_USERNAME:-opencode}")', wrapper)
         self.assertIn('auth_args+=(--password "$OPENCODE_SERVER_PASSWORD")', wrapper)
@@ -31,7 +35,6 @@ class Oc1NativeAuthTests(unittest.TestCase):
         compose = (ROOT / "compose.yaml").read_text()
         v1 = compose.split("\n  oc-server:\n", 1)[1].split("\n  oc2-server:\n", 1)[0]
         v2 = compose.split("\n  oc2-server:\n", 1)[1]
-
         self.assertIn('127.0.0.1:${OAT_OC_PORT:-4095}:4096', v1)
         self.assertIn('OPENCODE_SERVER_PASSWORD: ""', v1)
         self.assertNotIn('OPENCODE_SERVER_PASSWORD: ""', v2)

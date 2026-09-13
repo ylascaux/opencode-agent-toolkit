@@ -173,11 +173,12 @@ class ReliabilityPolicyTests(unittest.TestCase):
         text = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
         self.assertIn("approval", text.lower())
 
-    def test_env_exposes_reliability_controls_without_cost_kill_budgets(self):
+    def test_native_env_keeps_parallelism_without_retry_or_cost_kill_controls(self):
         env = (ROOT / ".env.example").read_text()
         self.assertIn("MAX_PARALLEL_SUBAGENTS", env)
-        self.assertIn("MAX_SUBAGENT_RETRIES", env)
+        self.assertNotIn("MAX_SUBAGENT_RETRIES=", env)
         self.assertNotIn("MAX_RUN_COST=", env)
+        self.assertNotIn("scripts/apply-reliability", (ROOT / "scripts/opencode-agents").read_text())
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+"""Historical plan adapter coverage and separation from the native launcher."""
 import json
 import os
 import subprocess
@@ -61,11 +62,12 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertIn("AFFECTED FILES / COMPONENTS", planner)
         self.assertIn("ROLLBACK", planner)
 
-    def test_environment_documents_gate_as_opt_in(self):
+    def test_native_environment_has_no_plan_gate_toggle(self):
         text = (ROOT / ".env.example").read_text()
-        self.assertIn("PLAN_APPROVAL_MODE=off", text)
-        self.assertIn("changes = opt-in", text)
-        self.assertIn("always  = opt-in", text)
+        self.assertNotIn("PLAN_APPROVAL_MODE=", text)
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+        self.assertIn("PLAN_APPROVAL_MODE=off", launcher)
+        self.assertNotIn("scripts/apply-reliability", launcher)
 
     def test_runtime_gate_remains_available_when_explicitly_enabled(self):
         core = (ROOT / "runtime" / "plugins" / "plan-approval-core.js").read_text()
@@ -75,11 +77,13 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertIn('ctx.tool.hook("execute.before"', v2)
         self.assertIn("throw new Error(blockedMessage(decision))", v2)
 
-    def test_bootstrap_migrates_the_old_changes_default_to_off(self):
+    def test_bootstrap_preserves_env_and_routes_through_native_policy(self):
         bootstrap = (ROOT / "scripts" / "bootstrap").read_text()
-        self.assertIn("PLAN_APPROVAL_MODE=changes", bootstrap)
-        self.assertIn("PLAN_APPROVAL_MODE=off", bootstrap)
-        self.assertIn("Migrated PLAN_APPROVAL_MODE from changes to off", bootstrap)
+        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
+        self.assertNotIn("PLAN_APPROVAL_MODE=changes", bootstrap)
+        self.assertIn('bash "$ROOT/scripts/opencode-agents" config', bootstrap)
+        self.assertIn("PLAN_APPROVAL_MODE=off", launcher)
+        self.assertIn('scripts/generate-config" --native', launcher)
 
 
 if __name__ == "__main__":
