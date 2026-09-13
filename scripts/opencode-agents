@@ -81,8 +81,16 @@ eval "$resolved_models"
 # are disabled only for the OpenCode child runtime, not for explicit memory CLI.
 export OAT_MEMORY_AUTO_SYNC=0 OPENCODE_MEMORY_AUTO_SYNC=0
 export OAT_MEMORY_STRICT=0 OPENCODE_MEMORY_STRICT=0
-python3 -B "$ROOT/scripts/native_memory.py" --major "$major" || \
+memory_plugin=""
+if ! memory_plugin="$(python3 -B "$ROOT/scripts/native_memory.py" --major "$major")"; then
   printf '%s\n' 'OpenCode memory integration failed; continuing without memory.' >&2
+  memory_plugin=""
+fi
+if [[ -n "$memory_plugin" ]]; then
+  export OAT_NATIVE_MEMORY_PLUGIN="$memory_plugin"
+else
+  unset OAT_NATIVE_MEMORY_PLUGIN || true
+fi
 
 export OPENCODE_CONFIG="$config"
 inline_config="$(python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills")"
