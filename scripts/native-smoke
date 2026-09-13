@@ -60,28 +60,43 @@ def main() -> int:
             server = subprocess.Popen([str(launcher), "serve", "--hostname", "127.0.0.1", "--port", str(port)],
                                       cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
             try:
-                route = "/api/skill" if args.major == "2" else "/config"
-                request = urllib.request.Request(f"http://127.0.0.1:{port}{route}", headers={
-                    "Authorization": "Basic " + base64.b64encode(b"opencode:native-smoke-only").decode(),
-                    "x-opencode-directory": str(project),
-                })
+                def fetch(route):
+                    request = urllib.request.Request(f"http://127.0.0.1:{port}{route}", headers={
+                        "Authorization": "Basic " + base64.b64encode(b"opencode:native-smoke-only").decode(),
+                        "x-opencode-directory": str(project),
+                    })
+                    with urllib.request.urlopen(request, timeout=3) as response:
+                        return json.load(response)
+
+                expected = {"test-review", "security-review", "terraform-review", "project-skill"}
                 payload = None
+                agent_payload = None
+                ids = set()
                 deadline = time.monotonic() + 90
+                # HTTP readiness precedes asynchronous resource discovery in V2.
+                # Wait for the actual catalogue, not merely the first HTTP 200.
                 while time.monotonic() < deadline and server.poll() is None:
                     try:
-                        with urllib.request.urlopen(request, timeout=3) as response:
-                            payload = json.load(response)
-                        break
+                        payload = fetch("/api/skill" if args.major == "2" else "/config")
+                        if args.major == "1":
+                            break
+                        assert isinstance(payload, dict) and isinstance(payload.get("data"), list), payload
+                        ids = {item["id"] for item in payload["data"]}
+                        agent_payload = fetch("/api/agent")
+                        agent_ids = {item["id"] for item in agent_payload.get("data", [])}
+                        if expected <= ids and {"meta-router", "orchestrator", "builder"} <= agent_ids:
+                            break
                     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-                        time.sleep(0.5)
+                        pass
+                    time.sleep(0.5)
                 if payload is None:
                     raise RuntimeError("Native server did not load the generated configuration")
                 if args.major == "2":
-                    assert isinstance(payload, dict) and isinstance(payload.get("data"), list), payload
-                    names = {item.get("name") for item in payload["data"]}
-                    expected = {"test-review", "security-review", "terraform-review", "project-skill"}
-                    assert expected <= names, f"Missing skills: {sorted(expected - names)}"
+                    assert expected <= ids, f"Missing skills: {sorted(expected - ids)}; response={payload!r}"
                     assert payload.get("location", {}).get("directory") == str(project), payload
+                    agent_ids = {item["id"] for item in agent_payload.get("data", [])}
+                    assert {"meta-router", "orchestrator", "builder"} <= agent_ids, agent_payload
+                    print(f"V2 discovered skills: {sorted(ids)}; agents: {len(agent_ids)}")
                 else:
                     assert payload["default_agent"] == "meta-router", payload
                     assert "orchestrator" in payload["agent"] and "builder" in payload["agent"]
