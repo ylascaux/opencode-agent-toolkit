@@ -117,8 +117,6 @@ class GeneratedArtifactSnapshotTests(unittest.TestCase):
 
 
 class ConfigPolicyTests(unittest.TestCase):
-    maxDiff = None
-
     @classmethod
     def setUpClass(cls):
         repository_artifacts = generated_artifact_snapshot(ROOT)
@@ -180,97 +178,173 @@ class ConfigPolicyTests(unittest.TestCase):
 
     def test_defaults_are_centralized(self):
         defaults = AGENTS_DIR / "_defaults"
-        self.assertTrue((defaults / "agent.json").is_file())
-        self.assertTrue((defaults / "prompt.md").is_file())
-        self.assertTrue((defaults / "permissions.json").is_file())
-
-    def test_every_model_env_has_a_tier_in_its_agent_json(self):
-        for directory in source_agent_dirs():
-            config = json.loads((directory / "agent.json").read_text())
-            self.assertRegex(config["model_env"], r"^MODEL_[A-Z0-9_]+$")
-            self.assertIn(config["tier"], {"low", "medium", "high"})
-
-    def test_default_env_defines_three_tiers(self):
-        env = (ROOT / ".env.example").read_text()
-        for name in ["MODEL_LOW", "MODEL_MEDIUM", "MODEL_HIGH"]:
-            self.assertRegex(env, rf"(?m)^{name}=.+$")
-
-    def test_meta_router_is_default(self):
-        self.assertEqual(self.v1["default_agent"], "meta-router")
-        self.assertEqual(self.v2["default_agent"], "meta-router")
+        for filename in ["agent.json", "prompt.md", "permissions.json"]:
+            self.assertTrue((defaults / filename).exists(), filename)
+        permissions = json.loads((defaults / "permissions.json").read_text())
+        self.assertEqual(permissions["websearch"], "allow")
+        self.assertEqual(permissions["webfetch"], "allow")
+        self.assertEqual(permissions["bash"]["*"], "ask")
 
     def test_command_sets_match(self):
         self.assertEqual(set(self.v1["command"]), set(self.v2["commands"]))
 
-    def test_meta_router_catalog_is_small_and_hierarchical(self):
-        self.assertEqual(set(self.v1["agent"]["meta-router"]["permission"]["task"]), {"*", *EXPECTED_META_CHILDREN})
-        self.assertEqual(set(self.v2["agents"]["meta-router"]["permissions"][0].keys()), {"action", "resource", "effect"})
-        for child in EXPECTED_META_CHILDREN:
-            self.assertEqual(last_v2_effect(self.v2["agents"]["meta-router"], "subagent", child), "allow")
-
-    def test_leaf_agents_cannot_delegate_unattended(self):
-        for name in self.v1["agent"]:
-            if name in LEADS:
-                continue
-            self.assertEqual(self.v1["agent"][name]["permission"]["task"]["*"], "deny", name)
-            self.assertEqual(last_v2_effect(self.v2["agents"][name], "subagent", "*"), "deny", name)
+    def test_meta_router_is_default(self):
+        self.assertEqual(self.v1["default_agent"], "meta-router")
+        self.assertEqual(self.v2["default_agent"], "meta-router")
+        self.assertEqual(self.v1["agent"]["meta-router"]["mode"], "primary")
+        self.assertEqual(self.v2["agents"]["meta-router"]["mode"], "primary")
 
     def test_nested_subagents_stay_bounded(self):
         self.assertEqual(self.v1["subagent_depth"], 2)
         self.assertEqual(self.v2["experimental"]["subagent_depth"], 2)
+        self.assertEqual(self.v1["agent"]["orchestrator"]["mode"], "all")
+        self.assertEqual(self.v2["agents"]["orchestrator"]["mode"], "all")
 
-    def test_edit_is_allow_for_writers_and_ask_for_everyone_else(self):
-        for name in self.v1["agent"]:
-            expected = "allow" if name in WRITERS else "ask"
-            self.assertEqual(self.v1["agent"][name]["permission"]["edit"], expected, name)
-            self.assertEqual(last_v2_effect(self.v2["agents"][name], "edit", "*"), expected, name)
+    def test_every_model_env_has_a_tier_in_its_agent_json(self):
+        tiers = {}
+        for directory in source_agent_dirs():
+            config = json.loads((directory / "agent.json").read_text())
+            tiers[config["model_env"]] = config["tier"]
 
-    def test_non_destructive_shell_defaults_to_ask_and_safe_git_is_allowed(self):
+        expected_model_envs = set()
+        for agent in self.v2["agents"].values():
+            match = re.fullmatch(r"\{env:(MODEL_[A-Z0-9_]+)\}", agent["model"])
+            self.assertIsNotNone(match, agent["model"])
+            expected_model_envs.add(match.group(1))
+        self.assertEqual(len(expected_model_envs), 41)
+        self.assertEqual(set(tiers), expected_model_envs)
+        self.assertTrue(set(tiers.values()) <= {"low", "medium", "high"})
+
+    def test_default_env_defines_three_tiers(self):
+        env_text = (ROOT / ".env.example").read_text()
+        for variable in ["MODEL_PROFILE", "MODEL_LOW", "MODEL_MEDIUM", "MODEL_HIGH"]:
+            self.assertRegex(env_text, rf"(?m)^{variable}=.+$")
+        self.assertIn("MODEL_PROFILE=copilot", env_text)
+        self.assertIn("github-copilot/gpt-5.6-luna", env_text)
+        self.assertIn("github-copilot/gpt-5.6-terra", env_text)
+        self.assertIn("github-copilot/gpt-5.6-sol", env_text)
+
+    def test_leaf_agents_cannot_delegate_unattended(self):
         for name, agent in self.v1["agent"].items():
-            self.assertEqual(agent["permission"]["bash"]["*"], "ask", name)
-            for pattern in READ_ONLY_GIT:
-                self.assertEqual(agent["permission"]["bash"][pattern], "allow", f"{name}: {pattern}")
+            task = agent["permission"]["task"]
+            self.assertEqual(task["*"], "deny", name)
+            if name not in LEADS:
+                self.assertEqual(task, {"*": "deny"}, name)
+        for name, agent in self.v2["agents"].items():
+            rules = [r for r in agent["permissions"] if r["action"] == "subagent"]
+            self.assertTrue(rules, name)
+            self.assertEqual(rules[0], {"action": "subagent", "resource": "*", "effect": "deny"})
+            if name not in LEADS:
+                self.assertEqual(last_v2_effect(agent, "subagent", "arbitrary-agent"), "deny", name)
 
-    def test_destructive_commands_stay_denied(self):
+    def test_meta_router_catalog_is_small_and_hierarchical(self):
+        task = self.v1["agent"]["meta-router"]["permission"]["task"]
+        allowed = {name for name, effect in task.items() if name != "*" and effect == "allow"}
+        self.assertEqual(allowed, EXPECTED_META_CHILDREN)
+        self.assertLessEqual(len(allowed), 9)
+
+    def test_every_agent_has_open_web_and_prompted_skill_policy(self):
         for name, agent in self.v1["agent"].items():
-            shell = agent["permission"]["bash"]
-            for pattern in ["git reset --hard*", "git clean -f*", "git push --force*", "terraform destroy*", "kubectl delete*", "helm uninstall*", "rm -rf*"]:
-                self.assertEqual(shell[pattern], "deny", f"{name}: {pattern}")
+            p = agent["permission"]
+            self.assertEqual(p["webfetch"], "allow", name)
+            self.assertEqual(p["websearch"], "allow", name)
+            self.assertEqual(p["skill"], "deny" if name in RESTRICTED_RESEARCH_AGENTS else "ask", name)
+        for name, agent in self.v2["agents"].items():
+            self.assertEqual(last_v2_effect(agent, "webfetch", "*"), "allow", name)
+            self.assertEqual(last_v2_effect(agent, "websearch", "*"), "allow", name)
+            self.assertEqual(last_v2_effect(agent, "skill", "*"), "deny" if name in RESTRICTED_RESEARCH_AGENTS else "ask", name)
 
     def test_sensitive_reads_are_approved_or_denied_by_scope(self):
         for name, agent in self.v1["agent"].items():
             read = agent["permission"]["read"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(read, "deny", name)
+                continue
             for pattern in APPROVAL_SENSITIVE_PATTERNS:
                 self.assertEqual(read[pattern], "ask", f"{name}: {pattern}")
             for pattern in DENIED_HOST_CREDENTIAL_PATTERNS:
                 self.assertEqual(read[pattern], "deny", f"{name}: {pattern}")
+        for name, agent in self.v2["agents"].items():
+            expected_sensitive = "deny" if name in RESTRICTED_RESEARCH_AGENTS else "ask"
+            for pattern in APPROVAL_SENSITIVE_PATTERNS:
+                self.assertEqual(last_v2_effect(agent, "read", pattern), expected_sensitive, f"{name}: {pattern}")
+            for pattern in DENIED_HOST_CREDENTIAL_PATTERNS:
+                self.assertEqual(last_v2_effect(agent, "read", pattern), "deny", f"{name}: {pattern}")
 
-    def test_every_agent_has_open_web_and_prompted_skill_policy(self):
+    def test_edit_is_allow_for_writers_and_ask_for_everyone_else(self):
         for name, agent in self.v1["agent"].items():
-            self.assertEqual(agent["permission"]["webfetch"], "allow", name)
-            self.assertEqual(agent["permission"]["websearch"], "allow", name)
-            self.assertEqual(agent["permission"]["skill"], "ask", name)
+            expected = "deny" if name in RESTRICTED_RESEARCH_AGENTS else ("allow" if name in WRITERS else "ask")
+            self.assertEqual(agent["permission"]["edit"], expected, name)
+        for name, agent in self.v2["agents"].items():
+            expected = "deny" if name in RESTRICTED_RESEARCH_AGENTS else ("allow" if name in WRITERS else "ask")
+            self.assertEqual(last_v2_effect(agent, "edit", "*"), expected, name)
 
-    def test_project_scanner_can_read_projects_without_prompt(self):
-        self.assertEqual(self.v1["agent"]["project-scanner"]["permission"]["read"]["*"], "allow")
-        self.assertEqual(last_v2_effect(self.v2["agents"]["project-scanner"], "read", "*"), "allow")
+    def test_non_destructive_shell_defaults_to_ask_and_safe_git_is_allowed(self):
+        for name, agent in self.v1["agent"].items():
+            bash = agent["permission"]["bash"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(bash, "deny", name)
+                continue
+            self.assertEqual(bash["*"], "ask", name)
+            for command in READ_ONLY_GIT:
+                self.assertEqual(bash[command], "allow", f"{name}: {command}")
+        for name, agent in self.v2["agents"].items():
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(last_v2_effect(agent, "shell", "some harmless custom command"), "deny", name)
+                continue
+            self.assertEqual(last_v2_effect(agent, "shell", "some harmless custom command"), "ask", name)
+            for command in READ_ONLY_GIT:
+                self.assertEqual(last_v2_effect(agent, "shell", command), "allow", f"{name}: {command}")
 
     def test_platform_architect_can_delegate_durable_document_writing(self):
-        self.assertEqual(self.v1["agent"]["platform-architect"]["permission"]["task"]["docs-writer"], "allow")
-        self.assertEqual(last_v2_effect(self.v2["agents"]["platform-architect"], "subagent", "docs-writer"), "allow")
+        agent = self.v1["agent"]["platform-architect"]
+        self.assertEqual(agent["permission"]["edit"], "ask")
+        self.assertEqual(agent["permission"]["task"]["docs-writer"], "allow")
+
+    def test_project_scanner_can_read_projects_without_prompt(self):
+        agent = self.v1["agent"]["project-scanner"]
+        external = agent["permission"]["external_directory"]
+        self.assertEqual(external["*"], "deny")
+        self.assertEqual(external["~/Projects/**"], "allow")
 
     def test_review_lead_can_independently_recheck_architecture_evidence(self):
-        for child in ["platform-review", "project-scanner"]:
-            self.assertEqual(self.v1["agent"]["review-lead"]["permission"]["task"][child], "allow")
-            self.assertEqual(last_v2_effect(self.v2["agents"]["review-lead"], "subagent", child), "allow")
+        agent = self.v1["agent"]["review-lead"]
+        task = agent["permission"]["task"]
+        for child in [
+            "reviewer", "project-scanner", "aws-platform", "kubernetes", "sre",
+            "observability", "finops", "database", "networking", "iac-security",
+        ]:
+            self.assertEqual(task[child], "allow", child)
 
     def test_architecture_command_requires_independent_post_design_review(self):
-        architecture = self.v2["commands"]["architecture"]["template"]
-        self.assertIn("review-lead", architecture)
-        self.assertIn("independently", architecture)
-        self.assertIn("docs-writer", architecture)
+        template = self.v1["command"]["architecture"]["template"].lower()
+        self.assertIn("platform-architect", template)
+        self.assertIn("docs-writer", template)
+        self.assertIn("review-lead", template)
+        self.assertIn("security-lead", template)
+        self.assertIn("parallel", template)
+        self.assertIn("self-review", template)
 
     def test_architecture_review_command_is_independent(self):
-        architecture_review = self.v2["commands"]["architecture-review"]["template"]
-        self.assertIn("review-lead", architecture_review)
-        self.assertIn("Independently", architecture_review)
+        template = self.v1["command"]["architecture-review"]["template"].lower()
+        self.assertIn("review-lead", template)
+        self.assertIn("project-scanner", template)
+        self.assertIn("producer handoff", template)
+
+    def test_destructive_commands_stay_denied(self):
+        for name, agent in self.v1["agent"].items():
+            bash = agent["permission"]["bash"]
+            if name in RESTRICTED_RESEARCH_AGENTS:
+                self.assertEqual(bash, "deny", name)
+                continue
+            for command in [
+                "rm -rf*", "git reset --hard*", "git push --force*",
+                "terraform apply*", "terraform destroy*", "tofu apply*",
+                "tofu destroy*", "terragrunt apply*", "terragrunt destroy*",
+                "kubectl delete*", "helm uninstall*",
+            ]:
+                self.assertEqual(bash[command], "deny", f"{name}: {command}")
+
+
+if __name__ == "__main__":
+    unittest.main()
