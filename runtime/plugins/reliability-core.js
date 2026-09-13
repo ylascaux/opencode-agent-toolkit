@@ -145,7 +145,7 @@ export const providerRetryDecision = ({ status, attempt, maxRetries }) => {
 export const delegationFailureClass = (value) => {
   const text = String(value ?? "").toLowerCase()
   if (
-    /\b(400|401|403|404)\b|unauth|forbidden|invalid[ -]?request|model.+not found|credential|permission denied|not permitted|unknown agent|depth limit/.test(
+    /\b(400|401|403|404)\b|unauth|forbidden|invalid[ -]?request|model.+not found|credential|permission denied|not permitted|unknown agent|depth limit|(?:authentication|authorization|oauth)[^\n]{0,80}(?:expired|invalid)|(?:access |auth )?token[^\n]{0,80}expired|expired[^\n]{0,40}(?:access |auth )?token/.test(
       text,
     )
   ) {
