@@ -14,14 +14,14 @@ class OneCommandInstallTests(unittest.TestCase):
 
     def test_bootstrap_builds_installs_both_launchers_then_restarts_oc2(self):
         text = (ROOT / "scripts" / "bootstrap").read_text()
-        build = text.index('bash "$ROOT/scripts/docker-build"')
-        install_oc = text.index('bash "$ROOT/scripts/user-link" install oc')
-        install_oc2 = text.index('bash "$ROOT/scripts/user-link" install oc2')
+        build = text.index("bash ./scripts/docker-build")
+        install_launchers = text.index("  install_launchers", build)
         restart = text.index('OAT_WORKSPACE_ROOT="$ROOT" OPENCODE_MAJOR=2 bash "$ROOT/scripts/docker-runtime" server restart')
 
-        self.assertLess(build, install_oc)
-        self.assertLess(install_oc, install_oc2)
-        self.assertLess(install_oc2, restart)
+        self.assertIn('bash "$ROOT/scripts/user-link" install oc', text)
+        self.assertIn('bash "$ROOT/scripts/user-link" install oc2', text)
+        self.assertLess(build, install_launchers)
+        self.assertLess(install_launchers, restart)
 
     def test_bootstrap_remains_valid_bash(self):
         result = subprocess.run(
