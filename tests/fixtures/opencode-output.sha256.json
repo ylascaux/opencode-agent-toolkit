@@ -1,7 +1,7 @@
 {
   ".generated/agents.json": "f3fd52577c64775d591a40edb065c777aafd1a7953a0eb50302ec0588a0085b1",
-  ".generated/prompts": "a08852bf88918458319d490857aa848eb61d08e08710e009a8f82d8b6773ed5b",
-  ".generated/prompts-v1": "0b601a768c9162d51ada1a23df82d6fd4c741e6504be8f8d1fb48656482b2cf3",
+  ".generated/prompts": "8b70bfe6e94bac3d50dcc8d210cc9ad841e4b2ae3dec0cd7239a8b3827e325e6",
+  ".generated/prompts-v1": "9ad9ea7a51a5e78a766140ec6e80a335fd11c187aa3b186cddd65bb60b6ff13e",
   "opencode.jsonc": "8f7ddd0c4c039177baaaf95ff563cd3be8054b50c70887e4929436d95a26d372",
   "opencode.v2.jsonc": "0e78cec17f5807ca987ded1ea1bcb69655ec77c9ed24691bbed8de5c029a02b6"
 }
