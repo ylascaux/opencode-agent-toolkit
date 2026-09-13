@@ -13,13 +13,19 @@ from runtime.opencode.adapter import OpenCodeAdapter  # noqa: E402
 
 
 def main() -> None:
+    if sys.argv[1:] not in ([], ['--native']):
+        raise SystemExit('Usage: generate-config [--native]')
+    adapter = OpenCodeAdapter()
+    if sys.argv[1:] == ['--native']:
+        from runtime.opencode.native import NativeOpenCodeAdapter
+        adapter = NativeOpenCodeAdapter()
     specs = load_normalized_agents()
     skills = load_normalized_skills()
-    outputs = OpenCodeAdapter().generate(specs, skills)
+    outputs = adapter.generate(specs, skills)
     for path in outputs:
         print(f"generated {path.name}: {len(specs)} agents")
     print("agent source: agents/<name>/{agent.json,prompt.md,permissions.json}; skill source: skills/<name>/{skill.json,SKILL.md}")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,16 +1,17 @@
 name: CI
-
 on:
   pull_request:
   push:
     branches: [main]
-
 permissions:
   contents: read
-
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v3
@@ -20,166 +21,44 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.18.0"
-      - name: Install OpenCode V2 plugin SDK
-        run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Verify OpenCode V2 plugin SDK resolution
-        run: npm ls @opencode/plugin --depth=0
-      - name: Python syntax
-        run: python3 -m compileall -q scripts tests
-      - name: Managed task shell syntax
+      # Only contributor tests of retained historical plugins need this SDK.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: python3 -m compileall -q scripts runtime tests
+      - name: Native shell syntax
         run: |
-          for script in scripts/task-run scripts/task-dind scripts/workspace-broker scripts/docker-runtime scripts/opencode-agents; do
+          for script in scripts/bootstrap scripts/opencode-agents scripts/doctor; do
             bash -n "$script"
           done
-      - name: Reliability, plan and sandbox core JavaScript syntax
-        run: |
-          node --check runtime/plugins/reliability-core.js
-          node --check runtime/plugins/non-interactive-shell.js
-          node --check runtime/plugins/plan-approval-core.js
-          node --check runtime/plugins/sandbox-v1.js
-      - name: V1 watchdog JavaScript syntax
-        run: |
-          node --check runtime/plugins/reliability-v1.js
-          node --check runtime/plugins/reliability-v1-legacy.js
-      - name: Native-loadable V2 TypeScript module execution
-        run: |
-          node runtime/plugins/reliability-v2.ts
-          node runtime/plugins/reliability-v2-legacy.ts
-          node runtime/plugins/plan-approval-v2.ts
-          node plugins/reliability-approval/rpc.ts
-          ln -s rpc.ts plugins/reliability-approval/rpc.js
-          trap 'rm -f plugins/reliability-approval/rpc.js' EXIT
-          node plugins/reliability-approval/index.ts
-          node plugins/reliability-approval/tui.ts
-      - name: Ensure runtime internals are not auto-discovered as V2 plugins
-        run: test ! -d .opencode/plugins
-      - name: Generate configs and run tests
-        run: just check
-
-  runtime:
+      - run: just check
+  native-v2:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Build Docker runtime
-        run: docker build -t opencode-agent-toolkit:ci -f runtime/Dockerfile .
-      - name: Validate runtime tools and toolkit tests
-        run: |
-          docker run --rm --entrypoint bash opencode-agent-toolkit:ci -lc '
-            set -euo pipefail
-            cd /opt/oat
-            cp .env.example .env
-            set -a; source .env; set +a
-            command -v opencode
-            command -v opencode2
-            command -v python3
-            command -v node
-            command -v nix
-            command -v docker
-            python3 ./scripts/generate-config >/dev/null
-            python3 ./scripts/apply-reliability >/dev/null
-            python3 -m json.tool opencode.jsonc >/dev/null
-            python3 -m json.tool opencode.v2.jsonc >/dev/null
-            python3 -m unittest discover -s tests -v
-            node --test tests/*.test.mjs
-          '
-      - name: Validate persistent servers use dedicated DinD
-        env:
-          OAT_RUNTIME_IMAGE: opencode-agent-toolkit:ci
-          OAT_WORKSPACE_ROOT: ${{ github.workspace }}
-          OAT_DATA_DIR: ${{ runner.temp }}/oat-data
-          OAT_STATE_DIR: ${{ runner.temp }}/oat-state
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18.0"
+      - run: npm install --global @opencode/cli@0.0.0-beta-19507
+      - name: Real native V2 server without Docker or provider credentials
         run: |
           set -euo pipefail
-          mkdir -p "$OAT_DATA_DIR" "$OAT_STATE_DIR"
-          cp .env.example .env
-          docker compose -f compose.yaml config >/dev/null
-          trap 'docker compose -f compose.yaml down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
-          docker compose -f compose.yaml up -d --no-build oc-server oc2-server
-
-          for service in docker-agent oc-server oc2-server; do
-            cid="$(docker compose -f compose.yaml ps -q "$service")"
-            test -n "$cid"
-            healthy=0
-            for _ in $(seq 1 45); do
-              status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")"
-              if [ "$status" = healthy ]; then
-                healthy=1
-                break
-              fi
-              if [ "$status" = unhealthy ] || [ "$status" = exited ] || [ "$status" = dead ]; then
-                docker compose -f compose.yaml logs docker-agent oc-server oc2-server
-                exit 1
-              fi
-              sleep 1
-            done
-            test "$healthy" = 1
+          export HOME="$(mktemp -d)"
+          export XDG_DATA_HOME="$HOME/data" XDG_STATE_HOME="$HOME/state"
+          export XDG_CONFIG_HOME="$HOME/config" XDG_CACHE_HOME="$HOME/cache"
+          bash scripts/bootstrap
+          toolkit="$PWD"
+          project="$(mktemp -d)"
+          cd "$project"
+          OPENCODE_MAJOR=2 bash "$toolkit/scripts/opencode-agents" serve --hostname 127.0.0.1 --port 4096 > "$HOME/server.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat "$HOME/server.log"' EXIT
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4096/api/health; then ready=1; break; fi
+            kill -0 "$pid"
+            sleep 1
           done
-
-          for service in oc-server oc2-server; do
-            cid="$(docker compose -f compose.yaml ps -q "$service")"
-            if docker inspect "$cid" --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -qx '/var/run/docker.sock'; then
-              echo "$service unexpectedly has the host Docker socket" >&2
-              exit 1
-            fi
-            docker compose -f compose.yaml exec -T "$service" docker info >/dev/null
-          done
-
-          docker compose -f compose.yaml exec -T oc-server opencode --version
-          docker compose -f compose.yaml exec -T oc2-server opencode2 --version
-
-      - name: Validate managed-task rootless DinD endpoint
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          network=oat-ci-rootless-$RANDOM
-          dind=oat-ci-rootless-$RANDOM
-          workspace=oat-ci-workspace-$RANDOM
-          data=oat-ci-dind-data-$RANDOM
-          profile_loaded=0
-          cleanup() {
-            docker rm -f "$dind" >/dev/null 2>&1 || true
-            docker network rm "$network" >/dev/null 2>&1 || true
-            docker volume rm -f "$workspace" "$data" >/dev/null 2>&1 || true
-            if [ "$profile_loaded" = 1 ]; then
-              sudo apparmor_parser -R runtime/apparmor/oat-dind-rootless || true
-            fi
-          }
-          trap cleanup EXIT
-          # Permit userns for this DinD container only. Do not disable Ubuntu's
-          # host-wide AppArmor restriction to make the rootless test pass.
-          if docker info --format '{{json .SecurityOptions}}' | grep -q apparmor; then
-            sudo apparmor_parser -r runtime/apparmor/oat-dind-rootless
-            profile_loaded=1
-            export OAT_TASK_DIND_APPARMOR_PROFILE=oat-dind-rootless
-          fi
-          docker network create "$network" >/dev/null
-          docker volume create "$workspace" >/dev/null
-          docker volume create "$data" >/dev/null
-          docker run --rm --mount "type=volume,src=$workspace,dst=/workspace" alpine:3.22 \
-            sh -c 'chown 1000:1000 /workspace && chmod 0755 /workspace'
-          bash scripts/task-dind "$dind" "$network" "$workspace" "$data" \
-            docker:29-dind-rootless opencode-agent-toolkit:ci
-          # Go beyond docker info: start a nested container and verify that its
-          # rootless bind-mount write is visible in the shared workspace volume.
-          docker run --rm --network "$network" \
-            -e DOCKER_HOST=tcp://docker-agent:2375 \
-            --entrypoint timeout opencode-agent-toolkit:ci 60s \
-            docker run --rm --mount type=bind,src=/workspace,dst=/workspace \
-            alpine:3.22 sh -ec 'printf "rootless-ok\n" > /workspace/.dind-smoke'
-          docker run --rm --mount "type=volume,src=$workspace,dst=/workspace,readonly" \
-            alpine:3.22 grep -qx rootless-ok /workspace/.dind-smoke
-          docker inspect "$dind" --format '{{json .Mounts}}' | \
-            python3 -c 'import json,sys; assert all(m["Type"] == "volume" for m in json.load(sys.stdin))'
-
-  sandbox:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build sandbox image
-        run: docker build -t opencode-agent-toolkit-sandbox:ci -f sandbox/Dockerfile .
-      - name: Sandbox security doctor
-        env:
-          OAT_SANDBOX_ENGINE: docker
-          OAT_SANDBOX_IMAGE: opencode-agent-toolkit-sandbox:ci
-        run: bash scripts/sandbox-doctor
+          test "$ready" = 1

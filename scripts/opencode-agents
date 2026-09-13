@@ -5,191 +5,104 @@ SOURCE="${BASH_SOURCE[0]}"
 INVOKED_AS="$(basename "$0")"
 REQUESTED_MAJOR="${OPENCODE_MAJOR:-}"
 REQUESTED_BIN="${OPENCODE_BIN:-}"
-
 while [[ -L "$SOURCE" ]]; do
-  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
   SOURCE="$(readlink "$SOURCE")"
-  if [[ "$SOURCE" != /* ]]; then
-    SOURCE="$SOURCE_DIR/$SOURCE"
-  fi
+  [[ "$SOURCE" == /* ]] || SOURCE="$SOURCE_DIR/$SOURCE"
 done
-ROOT="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
 
-# Local synchronization must remain usable without provider setup or a runtime,
-# and dry-run/check must not create Python cache files on a fresh checkout.
-if [[ "${1:-}" == "sync" ]]; then
-  shift
-  exec python3 -B "$ROOT/scripts/sync-runtime" "$@"
-fi
-
-# Codex installation is a local project operation.  Like sync and the MCP
-# launcher, it must work without provider setup, Docker, or a toolkit .env.
-if [[ "${1:-}" == "codex" ]]; then
-  shift
-  exec python3 -B "$ROOT/scripts/codex" "$@"
-fi
-
-# MCP is a local stdio service and must not load profiles or trigger installation,
-# Docker startup, provider setup, or generated configuration.
-if [[ "${1:-}" == "memory" && "${2:-}" == "mcp" ]]; then
+# These local tools must work before installation and without provider credentials.
+case "${1:-}" in
+  sync) shift; exec python3 -B "$ROOT/scripts/sync-runtime" "$@" ;;
+  codex) shift; exec python3 -B "$ROOT/scripts/codex" "$@" ;;
+esac
+if [[ "${1:-}" == memory && "${2:-}" == mcp ]]; then
   shift 2
   exec python3 -B "$ROOT/scripts/memory-mcp" "$@"
 fi
 
-if [[ ! -f "$ROOT/.env" ]]; then
-  echo "Missing $ROOT/.env. Run: just install" >&2
-  exit 1
-fi
-
 set -a
-source "$ROOT/.env"
-[[ -f "$ROOT/.env.local" ]] && source "$ROOT/.env.local"
+if [[ -f "$ROOT/.env" ]]; then
+  source "$ROOT/.env"
+elif [[ -f "$ROOT/.env.example" ]]; then
+  source "$ROOT/.env.example"
+fi
+[[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
 
-# Explicit launcher/runtime selection wins over .env defaults.
-# `oc2` is a dedicated OpenCode 2 beta entrypoint and always selects V2.
-if [[ "$INVOKED_AS" == "oc2" ]]; then
+# Native-only, including upgrades from an existing Docker/sandbox installation.
+# Old runtime settings cannot silently bring containers or watchdogs back.
+export OAT_RUNTIME=host OAT_SANDBOX_ENABLED=0 PLAN_APPROVAL_MODE=off
+if [[ "$INVOKED_AS" == oc2 ]]; then
   OPENCODE_MAJOR=2
 elif [[ -n "$REQUESTED_MAJOR" ]]; then
   OPENCODE_MAJOR="$REQUESTED_MAJOR"
 fi
+[[ -z "$REQUESTED_BIN" ]] || OPENCODE_BIN="$REQUESTED_BIN"
+export OPENCODE_MAJOR="${OPENCODE_MAJOR:-1}"
 
-if [[ -n "$REQUESTED_BIN" ]]; then
-  OPENCODE_BIN="$REQUESTED_BIN"
-fi
-
-export OPENCODE_MAJOR
-[[ -z "${OPENCODE_BIN:-}" ]] || export OPENCODE_BIN
-
-# Managed tasks intentionally bypass the persistent project-mounted server. They
-# create their own cloned workspace, rootless DinD daemon and broker-owned PR.
-if [[ "${OAT_RUNTIME:-docker}" == "docker" && "${1:-}" == "task" ]]; then
+if [[ "${1:-}" == memory ]]; then
   shift
-  exec bash "$ROOT/scripts/task-run" "$@"
+  [[ $# -gt 0 ]] || set -- --help
+  exec python3 -B "$ROOT/scripts/memory" "$@"
 fi
 
-# Docker is the default runtime: OpenCode, Node, Python, Nix and plugin
-# dependencies stay out of the host. Set OAT_RUNTIME=host to retain the legacy
-# launcher while migrating or debugging.
-if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
-  exec bash "$ROOT/scripts/docker-runtime" "$@"
+configure() {
+  python3 -B "$ROOT/scripts/generate-config" --native >/dev/null
+  python3 -B "$ROOT/scripts/apply-memory" >/dev/null
+}
+if [[ "${1:-}" == config ]]; then
+  configure
+  echo "Native V1/V2 configurations generated."
+  exit 0
 fi
 
-# Memory is a global toolkit subcommand in legacy host mode.
-if [[ "${1:-}" == "memory" ]]; then
-  shift
-  if [[ $# -eq 0 ]]; then
-    exec python3 "$ROOT/scripts/memory" --help
-  fi
-  exec python3 "$ROOT/scripts/memory" "$@"
-fi
-
-# The generated V2 config always points at scripts/sandbox-shell-v2. When sandboxing
-# is disabled, that wrapper delegates to the user's real host shell instead of
-# changing shell semantics merely because the toolkit is installed.
-export OAT_SANDBOX_HOST_SHELL="${OAT_SANDBOX_HOST_SHELL:-${SHELL:-/bin/bash}}"
-
-python3 "$ROOT/scripts/generate-config" >/dev/null
-# OpenCode resolves relative skill sources from the active project cwd rather
-# than from OPENCODE_CONFIG. Register the toolkit-owned generated source through
-# inline config while preserving any user-provided inline settings.
-export OPENCODE_CONFIG_CONTENT="$(
-  python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills"
-)"
-if [[ -f "$ROOT/scripts/apply-memory" ]]; then
-  python3 "$ROOT/scripts/apply-memory" >/dev/null
-elif [[ "${OAT_MEMORY_ENABLED:-0}" == "1" ]]; then
-  echo "Memory is enabled but $ROOT/scripts/apply-memory is missing" >&2
-  exit 1
-fi
-python3 "$ROOT/scripts/apply-reliability" >/dev/null
-
-# Resolve unset per-agent MODEL_* variables from the active LOW/MEDIUM/HIGH tiers.
-eval "$(python3 "$ROOT/scripts/resolve-models")"
-
-major="${OPENCODE_MAJOR:-1}"
-case "$major" in
-  1)
-    bin="${OPENCODE_BIN:-opencode}"
-    config="$ROOT/opencode.jsonc"
-    ;;
-  2)
-    bin="${OPENCODE_BIN:-opencode2}"
-    config="$ROOT/opencode.v2.jsonc"
-    ;;
+case "$OPENCODE_MAJOR" in
+  1) bin="${OPENCODE_BIN:-opencode}"; config="$ROOT/opencode.jsonc" ;;
+  2) bin="${OPENCODE_BIN:-opencode2}"; config="$ROOT/opencode.v2.jsonc" ;;
   auto)
     if command -v opencode2 >/dev/null 2>&1; then
-      bin="${OPENCODE_BIN:-opencode2}"
-      config="$ROOT/opencode.v2.jsonc"
-      major=2
+      export OPENCODE_MAJOR=2; bin="${OPENCODE_BIN:-opencode2}"; config="$ROOT/opencode.v2.jsonc"
     else
-      bin="${OPENCODE_BIN:-opencode}"
-      config="$ROOT/opencode.jsonc"
-      major=1
-    fi
-    ;;
-  *)
-    echo "OPENCODE_MAJOR must be 1, 2, or auto (got: $major)" >&2
-    exit 2
-    ;;
+      export OPENCODE_MAJOR=1; bin="${OPENCODE_BIN:-opencode}"; config="$ROOT/opencode.jsonc"
+    fi ;;
+  *) echo "OPENCODE_MAJOR must be 1, 2, or auto" >&2; exit 2 ;;
 esac
-
-if ! command -v "$bin" >/dev/null 2>&1; then
-  echo "OpenCode binary not found: $bin" >&2
+resolved="$(command -v "$bin" || true)"
+if [[ -z "$resolved" ]]; then
+  echo "Native OpenCode binary not found: $bin. Install it or set OPENCODE_BIN to its path." >&2
   exit 127
 fi
-
-if [[ "${OPENCODE_PREFLIGHT:-1}" == "1" ]]; then
-  bash "$ROOT/scripts/preflight"
+if [[ "$resolved" -ef "$SOURCE" ]]; then
+  echo "OPENCODE_BIN points to the toolkit launcher, not the native OpenCode binary." >&2
+  exit 2
 fi
 
+# Login/help must remain usable even when a model or the optional memory is broken.
+case "${1:-}" in
+  auth|--help|-h|--version|-v|version|upgrade) exec "$bin" "$@" ;;
+esac
+
+configure
+if [[ -f "$ROOT/scripts/opencode-skill-source" ]]; then
+  OPENCODE_CONFIG_CONTENT="$(python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills")"
+  export OPENCODE_CONFIG_CONTENT
+fi
+model_env="$(python3 -B "$ROOT/scripts/resolve-models")"
+eval "$model_env"
 export OPENCODE_CONFIG="$config"
 
-if [[ "${OAT_SANDBOX_ENABLED:-0}" != "1" ]]; then
-  exec "$bin" "$@"
-fi
-
-project_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || pwd -P)"
-export OAT_SANDBOX_PROJECT_ROOT="$(cd "$project_root" && pwd -P)"
-
-# Container identity is runtime state, never inherited configuration. A stale value
-# may otherwise leak from a previous shell/session into the next sandbox startup.
-unset OAT_SANDBOX_CONTAINER
-container="$(bash "$ROOT/scripts/sandbox-start" "$OAT_SANDBOX_PROJECT_ROOT" | tail -n 1)"
-[[ -n "$container" ]] || {
-  echo "Sandbox startup did not return a container name" >&2
-  exit 3
-}
-export OAT_SANDBOX_CONTAINER="$container"
-
-cleanup_sandbox() {
-  bash "$ROOT/scripts/sandbox-stop" "$OAT_SANDBOX_CONTAINER" || true
-}
-trap cleanup_sandbox EXIT INT TERM
-
-launch_args=("$@")
-if [[ "$major" == "2" ]]; then
-  has_standalone=0
+# V2 uses a fresh local runtime for interactive/run sessions. An explicitly
+# requested remote server or foreground serve command remains untouched.
+if [[ "$OPENCODE_MAJOR" == 2 ]]; then
+  standalone=1
+  [[ "${1:-}" != serve ]] || standalone=0
   for arg in "$@"; do
     case "$arg" in
-      --standalone) has_standalone=1 ;;
-      --server|--server=*)
-        echo "OpenCode V2 sandbox refuses --server: a shared/external server can retain stale sandbox state" >&2
-        exit 3
-        ;;
+      --server|--server=*|--standalone) standalone=0 ;;
     esac
   done
-  if [[ "$has_standalone" != "1" ]]; then
-    launch_args=(--standalone "$@")
-  fi
+  [[ "$standalone" == 0 ]] || set -- --standalone "$@"
 fi
-
-echo "OpenCode sandbox: $OAT_SANDBOX_CONTAINER ($OAT_SANDBOX_PROJECT_ROOT -> /workspace)" >&2
-[[ "$major" != "2" ]] || echo "OpenCode V2 sandbox server: standalone" >&2
-set +e
-"$bin" "${launch_args[@]}"
-status=$?
-set -e
-cleanup_sandbox
-trap - EXIT INT TERM
-exit "$status"
+exec "$bin" "$@"

@@ -1,186 +1,143 @@
-# OpenCode Agent Toolkit
+# OpenCode Agent Toolkit — native workflow
 
-Toolkit multi-agents **multi-runtime** pour OpenCode V1/V2 et Codex. Une même source canonique décrit les agents et les skills ; les adapters runtime génèrent ensuite les artefacts propres à OpenCode ou Codex sans dupliquer les prompts ni les politiques.
+Agents et skills partagés pour OpenCode V1/V2 et Codex, sans Docker pour `oc` et
+`oc2`. Le contrôle reste court : `meta-router -> lead/orchestrator -> specialist`.
+La synchronisation Codex et la mémoire externe sont conservées.
 
-Le plan de contrôle reste volontairement court et auditable :
+## Installation locale
 
-```text
-meta-router -> lead/orchestrator -> specialist
-```
+Prérequis : Bash, Python 3.11+, les exécutables natifs `opencode` / `opencode2`,
+et `just` pour les raccourcis. Node/npm ne sont nécessaires que pour installer
+les CLI via npm, développer les anciens plugins ou activer la mémoire externe.
+Le toolkit n'installe plus de runtime Docker, Nix ou environnement Python à votre insu.
 
-Les garde-fous de permissions, de fiabilité, d'isolation Docker/DinD et de mémoire restent indépendants du runtime.
-
-## État du projet
-
-Le socle multi-runtime couvre :
-
-- agents canoniques dans `agents/<name>/` ;
-- skills portables dans `skills/<name>/` ;
-- OpenCode V1/V2 ;
-- génération et lifecycle local Codex ;
-- mémoire Git privée optionnelle via MCP ;
-- sandbox et DinD isolés ;
-- acceptance runtime depuis un projet externe jetable.
-
-`VERSION` est la source de vérité pour les releases et `CHANGELOG.md` décrit les changements publiés.
-
-## Démarrer en cinq minutes
-
-Prérequis : Git, Bash, Python 3, Docker et [`just`](https://github.com/casey/just). Sur macOS : `brew install just`.
+Si les CLI ne sont pas déjà installées, une installation npm dans votre compte
+utilisateur est possible (ne remplacez pas une version existante sans raison) :
 
 ```bash
-git clone https://github.com/ylascaux/opencode-agent-toolkit.git
-cd opencode-agent-toolkit
+npm install --global --prefix "$HOME/.local" opencode-ai
+npm install --global --prefix "$HOME/.local" @opencode/cli@0.0.0-beta-19507
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+La version V2 est volontairement explicite : ne suivez pas automatiquement le canal
+beta sur une machine de travail. `OPENCODE_BIN` permet d'utiliser un autre chemin
+vers un véritable binaire natif, jamais vers `oc` ou `oc2` eux-mêmes.
+
+Dans le dépôt du toolkit :
+
+```bash
 just install
-just models
 just doctor
 ```
 
-`just install` est le chemin d'installation complet et idempotent. Il crée/migre `.env`, construit l'image Docker runtime, installe les lanceurs `oc` et `oc2` dans `~/.local/bin`, puis recrée/redémarre le serveur OpenCode V2 avec l'image fraîchement construite. Il n'est plus nécessaire d'enchaîner `just install-user`, `just install-oc2` et `oc2 server restart` après une mise à jour.
+`just install` crée `.env` si nécessaire, génère les configurations et installe les
+deux liens utilisateur. Il préserve `.env` / `.env.local`, les modèles et la mémoire.
+Il ne lance ni tests, ni daemon, ni installation globale de dépendances.
 
-Pour forcer également un rebuild sans cache/pull des images :
+Depuis le projet à modifier :
 
 ```bash
-just refresh
+oc auth login
+oc2 auth login
+oc
+oc2
+oc2 run "Corrige le problème et ajoute un test"
 ```
 
-Pour la validation complète du dépôt :
+Le répertoire courant, le HOME, les credentials natifs, les arguments et les codes
+de sortie sont préservés. L'authentification et l'aide ne dépendent pas de la
+génération des agents, des modèles ou du plugin mémoire. V2 utilise une session
+locale `--standalone` par défaut, sans serveur persistant géré par le toolkit.
+Un serveur explicite reste possible avec `oc2 serve --hostname 127.0.0.1 --port 4096`
+ou `oc2 --server http://127.0.0.1:4096`. Ne l'exposez pas publiquement sans
+l'authentification native OpenCode.
+
+## Une surface `just` courte
+
+`install`, `profile`, `config`, `doctor`, `oc`, `oc2`, `sync`, `codex`, `memory`,
+`test`, `check`. Les sous-commandes passent leurs arguments tels quels.
 
 ```bash
+just profile copilot
+just memory status
+just memory candidates
+just sync codex
 just check
 ```
 
-## OpenCode
+Les opérations avancées historiques restent accessibles explicitement dans
+`scripts/`, mais ne font plus partie du démarrage normal. Le scanner/API et leurs
+dépendances sont optionnels. `test` / `check` sont réservés aux contributeurs :
+les tests historiques de plugins demandent Node et `npm ci` dans ce dépôt.
 
-Après installation, travaillez depuis le dépôt cible :
+## Agents sans supervision intrusive
+
+Les configurations utilisées par `oc` / `oc2` n'activent plus la sandbox, les
+plugins de watchdog ou de validation de plan, ni les anciens plafonds de 8/16
+étapes. Un orchestrateur silencieux n'est pas tué. La limite de parallélisme
+`MAX_PARALLEL_SUBAGENTS` reste une instruction aux agents, pas une garantie
+apportée par un superviseur externe.
+
+Le routage, les skills, les permissions explicites de chaque rôle et la revue
+indépendante sont conservés. Les commandes locales habituelles et Git distant
+ne nécessitent plus le contournement manuel de l'ancienne sandbox. Les protections
+contre la lecture de clés privées, les actions destructrices et l'écrasement des
+fichiers Codex personnels restent en place. Ce mode natif n'est **pas une isolation** :
+les outils s'exécutent avec les accès de votre compte et les permissions configurées.
+
+Les sources canoniques restent `agents/` et `skills/`. Le renderer natif produit
+les copies adaptées à OpenCode sans modifier les sources consommées par Codex.
+Le renderer historique reste disponible pour les intégrations existantes ;
+`oc sync opencode` utilise encore ce format historique. Un lancement `oc`/`oc2`
+régénère toujours le format natif.
+
+## Codex : synchronisation conservée
 
 ```bash
-cd ~/Projects/mon-projet
-oc .
-```
-
-Pour OpenCode V2 :
-
-```bash
-oc2 .
-```
-
-Les configurations générées du toolkit restent `opencode.jsonc` et `opencode.v2.jsonc`. Le launcher conserve le répertoire courant du projet et ajoute les skills toolkit sans masquer les skills locaux du projet.
-
-## Codex local
-
-Le même graphe normalisé d'agents et de skills alimente Codex :
-
-```bash
-cd /chemin/vers/opencode-agent-toolkit
 oc sync codex
+oc sync codex --dry-run
+oc sync codex --check
 
-cd ~/Projects/mon-projet
+cd /chemin/vers/le-projet
 oc codex install
 oc codex doctor
-```
-
-Pour enregistrer également la mémoire MCP portable :
-
-```bash
 oc codex install --with-memory
-```
-
-Pour retirer uniquement les fichiers gérés par le toolkit :
-
-```bash
 oc codex uninstall
 ```
 
-Le lifecycle Codex protège les fichiers utilisateur : un agent ou skill préexistant, ou un fichier géré modifié manuellement, provoque un conflit au lieu d'être écrasé ou supprimé silencieusement.
+Ces commandes restent utilisables sans Docker, sans binaire OpenCode et sans
+`.env` du toolkit. Les fichiers non gérés ou modifiés manuellement restent protégés
+par le manifest d'ownership. Les adapters Codex et le service MCP ne sont pas remplacés.
 
-## Agents et skills portables
-
-Source canonique :
-
-```text
-agents/<name>/
-  agent.json
-  prompt.md
-  permissions.json
-
-skills/<name>/
-  skill.json
-  SKILL.md
-```
-
-Synchronisation runtime :
+## Mémoire externe optionnelle
 
 ```bash
-oc sync opencode
-oc sync codex
-oc sync all
-
-oc sync codex --dry-run
-oc sync codex --check
-```
-
-`sync` génère des artefacts jetables et déterministes. Il ne publie aucune ressource distante et ne change pas implicitement l'agent racine.
-
-## Mémoire Git privée optionnelle
-
-La mémoire est fournie par le plugin autonome `ylascaux/opencode-memory-plugin`. Le toolkit le configure/consomme mais ne duplique pas son moteur.
-
-```bash
-cd ~/Projects/mon-projet
 oc memory enable git@github.com:USER/opencode-memory.git
 oc memory status
 oc memory capture-on
 oc memory candidates
 ```
 
-Pour Codex, le MCP portable expose uniquement les opérations non destructives/portables : status, search, render, propose et candidates. Les opérations `accept`, `promote` et `push` restent explicitement humaines.
+L'implémentation reste dans `opencode-memory-plugin`, désactivée par défaut pour
+une nouvelle installation. Les configurations existantes sont conservées.
+Codex utilise le MCP portable existant ; `accept`, `promote` et `push` restent des
+opérations explicites. Voir [la documentation mémoire](docs/fr/MEMORY.md).
 
-Le clone mémoire privé n'est pas monté directement dans la sandbox ou exposé à Codex.
+## Migration depuis Docker
 
-Voir [la documentation mémoire](docs/fr/MEMORY.md).
+Mettez le dépôt à jour, vérifiez les CLI natives, puis exécutez `just install`.
+Les anciens réglages `OAT_RUNTIME=docker` et `OAT_SANDBOX_ENABLED=1` ne réactivent
+pas les conteneurs. Les anciens conteneurs ne sont ni arrêtés ni supprimés
+implicitement, et aucun volume n'est effacé.
 
-## Isolation et sécurité
+Les credentials qui n'existent que dans un ancien volume Docker ne sont pas
+importés automatiquement : utilisez `oc auth login` / `oc2 auth login` sur l'hôte.
+Arrêtez ensuite explicitement l'ancienne stack avec `docker compose down` depuis
+le toolkit ; **sans `-v`**, pour conserver les anciennes données. `oc2 server ...`
+et `oc2 task ...` appartenaient à l'ancien wrapper Docker : utilisez maintenant les
+commandes natives `serve`, `--server` ou `run`.
 
-Le runtime Docker est le chemin principal. Le toolkit conserve les invariants suivants :
-
-- pas de montage du `docker.sock` hôte dans le runtime normal ;
-- DinD dédié pour les serveurs persistants ;
-- rootless DinD pour les tâches managées ;
-- frontières de permissions par agent ;
-- pas de secrets dans les artefacts générés ;
-- aucune promotion/push automatique de mémoire ;
-- installation/uninstall Codex basée sur un manifest d'ownership et des hashes.
-
-Diagnostics utiles :
-
-```bash
-just doctor
-just sandbox-doctor
-oc codex doctor
-```
-
-## Acceptance runtime
-
-L'acceptance intégrée utilise une copie temporaire du toolkit et un dépôt Git externe synthétique. Elle n'utilise pas le HOME/XDG réel, `.env.local`, les credentials provider ou un vault mémoire privé.
-
-```bash
-OAT_ACCEPTANCE_SKIP_MEMORY=1 python3 -B scripts/runtime-acceptance
-```
-
-La CI exécute aussi un smoke Docker contre un vrai serveur OpenCode V2 authentifié. L'intégration du plugin mémoire privé utilise le vrai repo piné lorsqu'un token inter-repo dédié est configuré ; sinon le skip est explicite et aucun faux serveur MCP n'est substitué.
-
-Voir [Runtime acceptance](docs/en/RUNTIME_ACCEPTANCE.md).
-
-## Repères développeur
-
-```bash
-just config                  # régénère les configurations OpenCode
-just check                   # génération + tests Python + tests runtime Node
-just agents                  # inspecte les agents et leur topologie
-just new-agent mon-agent --parent orchestrator
-just reliability             # politique de fiabilité effective
-just configure-litellm       # découverte LiteLLM optionnelle
-```
-
-Les overrides persistants par agent doivent aller dans `.env.local` afin de ne pas être écrasés par `just profile`.
+La CI principale teste le chemin natif, pas Docker/DinD. Les sources historiques
+restent disponibles pour retour arrière et ne sont pas un second mode implicite.
+`VERSION` et `CHANGELOG.md` restent les références des releases publiées.

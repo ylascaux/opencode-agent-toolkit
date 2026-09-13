@@ -21,25 +21,7 @@ jobs:
           OAT_ACCEPTANCE_SKIP_MEMORY: "1"
         run: python3 -B scripts/runtime-acceptance
 
-  docker:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Build current runtime image
-        run: docker build -t opencode-agent-toolkit:acceptance -f runtime/Dockerfile .
-      - name: Core acceptance against isolated project
-        env:
-          OAT_ACCEPTANCE_SKIP_MEMORY: "1"
-        run: python3 -B scripts/runtime-acceptance
-      - name: Real OpenCode V2 skill API smoke
-        env:
-          OAT_RUNTIME_IMAGE: opencode-agent-toolkit:acceptance
-        run: python3 -B scripts/opencode-v2-skill-smoke
-
+  # Real native OC2 server acceptance is in ci.yml, without Docker/DinD.
   private-memory:
     runs-on: ubuntu-latest
     env:
