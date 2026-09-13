@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-export OPENCODE_MAJOR=1
-export OAT_OC_NATIVE_BIN="$ROOT/scripts/opencode-v1-native-client"
-exec "$ROOT/scripts/opencode-agents" "$@"
