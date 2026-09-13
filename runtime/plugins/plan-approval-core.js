@@ -256,11 +256,15 @@ export function createPlanApprovalGate({ mode = "changes", onStateChange } = {})
     if (oldRoot === newRoot || !states.has(oldRoot)) return
 
     const childState = states.get(oldRoot)
-    // The root session is authoritative because only the visible root user's
-    // approval/rejection can authorize mutation. A child that briefly created
-    // its own planning/waiting state before the parent relation was observed
-    // must never revoke an already-approved root request.
-    if (!states.has(newRoot)) states.set(newRoot, childState)
+    const rootState = states.get(newRoot)
+    // Before approval, a child may be the component that actually presented
+    // the plan, so its WAITING state must reach the visible root. Once the root
+    // is APPROVED or REJECTED, however, only a new root-user turn may change
+    // that decision; late child state can never revoke it.
+    if (!rootState) states.set(newRoot, childState)
+    else if (!["approved", "rejected"].includes(rootState.status)) {
+      if (rootState.status === "planning" && childState.status === "waiting") states.set(newRoot, childState)
+    }
     states.delete(oldRoot)
   }
 
@@ -284,8 +288,6 @@ export function createPlanApprovalGate({ mode = "changes", onStateChange } = {})
       return
     }
 
-    // One approval covers exactly one visible root request. A later root-user
-    // turn starts a new scope and therefore a new approval cycle.
     setState(root, "planning", current.status === "waiting" ? "plan-change-requested" : "new-user-turn")
   }
 
@@ -297,8 +299,6 @@ export function createPlanApprovalGate({ mode = "changes", onStateChange } = {})
     processedAssistant.set(dedupKey, value)
 
     const [, current] = stateFor(sessionID)
-    // Approval is sticky for the current root request. Legacy reapproval markers
-    // and repeated plan markers emitted by child agents cannot revoke it.
     if (current.status === "approved") return
 
     if (containsPlanApprovalMarker(value) || containsPlanReapprovalMarker(value)) {
