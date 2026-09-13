@@ -134,7 +134,7 @@ test("delegation failures distinguish retryable cancellation from terminal confi
   assert.equal(delegationFailureClass("application test failed"), "unknown")
 })
 
-test("delegation task keys are stable for the same parent, specialist and scope", () => {
+test("fresh delegations get distinct identities while explicit task_id is stable", () => {
   const first = delegationTaskKey({
     parentID: "platform",
     args: {
@@ -148,10 +148,14 @@ test("delegation task keys are stable for the same parent, specialist and scope"
     args: {
       subagent_type: "terraform-terragrunt",
       description: "Assess Terragrunt deployment semantics",
-      prompt: "Different continuation wording",
+      prompt: "Inspect dependencies",
     },
   })
-  assert.equal(first, second)
+  assert.notEqual(first, second)
+
+  const resumedA = delegationTaskKey({ parentID: "platform", args: { task_id: "leaf-123" } })
+  const resumedB = delegationTaskKey({ parentID: "platform", args: { task_id: "leaf-123" } })
+  assert.equal(resumedA, resumedB)
 })
 
 test("V1 fallback task reservation is released after execute.after", async () => {
@@ -199,7 +203,7 @@ test("V1 fallback task reservation is released after execute.after", async () =>
   )
 })
 
-test("V1 cancelled leaf retry resumes the same task_id instead of creating a new child", async () => {
+test("V1 explicit task_id continuation resumes the same cancelled leaf", async () => {
   await withEnv(
     {
       MAX_PARALLEL_SUBAGENTS: 2,
@@ -248,8 +252,9 @@ test("V1 cancelled leaf retry resumes the same task_id instead of creating a new
         },
       })
 
-      const retryInput = { sessionID: "platform-architect", tool: "task", args: { ...args } }
-      const retryOutput = { args: { ...args } }
+      const retryArgs = { ...args, task_id: "leaf-task-1" }
+      const retryInput = { sessionID: "platform-architect", tool: "task", args: retryArgs }
+      const retryOutput = { args: { ...retryArgs } }
       await hooks["tool.execute.before"](retryInput, retryOutput)
 
       assert.equal(retryOutput.args.task_id, "leaf-task-1")
