@@ -56,6 +56,10 @@ services:
       DOCKER_HOST: tcp://docker-agent:2375
       OPENCODE_MAJOR: "1"
       OPENCODE_CONFIG: /opt/oat/opencode.jsonc
+      # V1 is published on host loopback only. Do not inherit the OC2 server
+      # password here: recent native V1 attach clients can otherwise return 401
+      # even when given the matching Basic Auth credentials.
+      OPENCODE_SERVER_PASSWORD: ""
     volumes:
       - type: bind
         source: ${OAT_WORKSPACE_ROOT:?set OAT_WORKSPACE_ROOT through scripts/docker-runtime}
