@@ -272,8 +272,44 @@ if [[ "${1:-}" == "memory" ]]; then
 fi
 
 if [[ "$major" == "1" ]]; then
+  # Keep execution, credentials and tools in Docker, but prefer the matching
+  # native V1 client for TUI/run so host clipboard, browser and terminal
+  # integration work normally on macOS/Linux.
+  use_native_v1=0
+  native_v1_bin="${OAT_OC_NATIVE_BIN:-opencode}"
+  v1_client_mode="${OAT_OC_CLIENT_MODE:-auto}"
+  case "$v1_client_mode" in
+    auto|native|container) ;;
+    *)
+      echo "OAT_OC_CLIENT_MODE must be auto, native, or container (got: $v1_client_mode)" >&2
+      exit 2
+      ;;
+  esac
+
+  if [[ "$v1_client_mode" != "container" ]]; then
+    if command -v "$native_v1_bin" >/dev/null 2>&1; then
+      host_version="$($native_v1_bin --version 2>/dev/null | head -n 1 || true)"
+      server_version="$("${compose[@]}" exec -T "$service" opencode --version 2>/dev/null | head -n 1 || true)"
+      if [[ -n "$host_version" && "$host_version" == "$server_version" ]]; then
+        use_native_v1=1
+      elif [[ "$v1_client_mode" == "native" ]]; then
+        echo "Native OpenCode V1 version does not match Docker server: host=$host_version server=$server_version" >&2
+        exit 3
+      else
+        echo "Native OpenCode V1 version mismatch; falling back to container TUI (host=$host_version server=$server_version)" >&2
+      fi
+    elif [[ "$v1_client_mode" == "native" ]]; then
+      echo "Native OpenCode V1 client not found: $native_v1_bin" >&2
+      echo "Install the matching opencode-ai client or set OAT_OC_CLIENT_MODE=container" >&2
+      exit 127
+    fi
+  fi
+
   if [[ $# -eq 0 ]]; then
     run_preflight
+    if [[ "$use_native_v1" == "1" ]]; then
+      exec "$native_v1_bin" attach "http://127.0.0.1:$host_port" --dir "$cwd"
+    fi
     exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
       opencode attach http://127.0.0.1:4096 --dir "$cwd"
   fi
@@ -281,6 +317,9 @@ if [[ "$major" == "1" ]]; then
   if [[ "$1" == "run" ]]; then
     shift
     run_preflight
+    if [[ "$use_native_v1" == "1" ]]; then
+      exec "$native_v1_bin" run --attach "http://127.0.0.1:$host_port" --dir "$cwd" "$@"
+    fi
     exec "${compose[@]}" exec "${exec_opts[@]}" -w "$cwd" "$service" \
       opencode run --attach http://127.0.0.1:4096 --dir "$cwd" "$@"
   fi
