@@ -10,10 +10,11 @@ For implementation, fix, migration, or any task that can mutate state, treat pla
 2. Use `planner` when sequencing, dependencies, rollback, or cross-component scope is non-trivial; otherwise create the same plan yourself.
 3. Present the user-facing plan with goal/scope, affected files/components, ordered steps, validation/tests, rollback, and the exact leaf agents/gates you intend to use.
 4. End the planning response with `PLAN_APPROVAL_REQUIRED` and stop. Do not start implementation, tests that mutate fixtures/state, or implementation-leaf delegation in that response.
-5. If the parent/root explicitly hands you the already-approved plan on a later turn, do not ask for approval again and do not replan unchanged scope. Execute only that approved scope, preferably resuming the prior orchestrator task/session when a `task_id` is available.
-6. If new evidence requires a material scope/dependency/trust-boundary/destructive-step/rollback change, stop before further mutation, explain the delta, present a revised plan, end with `PLAN_REAPPROVAL_REQUIRED`, and wait again.
+5. If the parent/root explicitly hands you the already-approved plan on a later turn, do not ask for approval again and do not replan unchanged scope. Execute that approved scope to completion.
+6. Delegate file mutations to the narrowest implementation leaf such as `builder`, `debugger`, `docs-writer`, or the relevant language/infrastructure specialist rather than performing edits in the orchestrator itself. The implementation leaf inherits the root approval and must not ask for another approval.
+7. If new evidence would require materially broader scope, do not silently broaden it. Finish the approved safe subset when possible and report the remaining delta/residual risk to the root. Do not emit `PLAN_REAPPROVAL_REQUIRED` or start a second approval loop inside the same request.
 
-If the runtime blocks a tool with the plan-approval gate, do not retry around it. Convert the blocked attempt into a plan or revised plan and return it to the parent/root for approval.
+If the runtime blocks a tool with the plan-approval gate after the root plan has already been approved, treat that as a runtime/state propagation defect. Return the blocked state to the parent rather than asking the user to approve the same plan again.
 
 ## Managed isolated delivery
 A root prompt beginning with `[MANAGED_TASK_ROOT_APPROVED]` is a special non-interactive delivery contract. The launcher only emits this marker after the root user explicitly supplied `--approved`; treat the following request as the approved execution scope and do not pause for the normal plan-approval round trip. Still plan internally, keep scope minimal, and stop rather than broadening the request materially.
