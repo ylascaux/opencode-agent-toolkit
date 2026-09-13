@@ -81,7 +81,9 @@ class InstallationSurfaceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             config = json.loads(result.stdout)
             self.assertEqual(config['experimental'], {'user-setting': True})
-            self.assertEqual(config['skills'], ['/user/skills', str(skills.resolve())])
+            self.assertEqual(len(config['skills']), 2)
+            self.assertEqual(config['skills'][0], '/user/skills')
+            self.assertEqual(Path(config['skills'][1]).resolve(), skills.resolve())
 
     def test_user_link_install_is_idempotent_and_reversible(self):
         with tempfile.TemporaryDirectory() as tmp:

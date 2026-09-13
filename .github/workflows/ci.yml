@@ -67,5 +67,17 @@ jobs:
             sleep 1
           done
           test "$ready" = 1
-          curl -fsS -u "opencode:$OPENCODE_SERVER_PASSWORD" -H "x-opencode-directory: $project" http://127.0.0.1:4096/api/skill > "$HOME/skills.json"
-          python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert isinstance(p.get("data"),list), p; names={s["name"] for s in p["data"]}; expected={"project-skill","terraform-review","test-review"}; assert expected <= names, (expected-names, names); print("PASS native skill discovery:", len(names))' "$HOME/skills.json"
+          # A healthy listener precedes PluginInternal.boot and its skill transforms.
+          # Wait for the required catalog, not merely HTTP 200 or an empty data list.
+          ready=0
+          for _ in $(seq 1 30); do
+            curl -fsS -u "opencode:$OPENCODE_SERVER_PASSWORD" -H "x-opencode-directory: $project" http://127.0.0.1:4096/api/skill > "$HOME/skills.json"
+            if python3 -c 'import json,sys,pathlib; p=json.load(open(sys.argv[1])); assert isinstance(p.get("data"),list), p; assert pathlib.Path(p["location"]["directory"]).resolve()==pathlib.Path(sys.argv[2]).resolve(), p; names={s["name"] for s in p["data"]}; sys.exit(0 if {"project-skill","terraform-review","test-review"} <= names else 1)' "$HOME/skills.json" "$project"; then
+              ready=1
+              break
+            fi
+            kill -0 "$pid"
+            sleep 1
+          done
+          if [[ "$ready" != 1 ]]; then cat "$HOME/skills.json"; echo 'Required native skills were not discovered' >&2; exit 1; fi
+          python3 -c 'import json,sys; print("PASS native skill discovery:", sorted(s["name"] for s in json.load(open(sys.argv[1]))["data"]))' "$HOME/skills.json"
