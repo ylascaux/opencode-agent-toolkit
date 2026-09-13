@@ -16,11 +16,11 @@ class PlanApprovalTests(unittest.TestCase):
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], cwd=ROOT, env=env, check=True)
         subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], cwd=ROOT, env=env, check=True)
 
-    def test_policy_defaults_to_changes_mode(self):
+    def test_policy_defaults_to_off(self):
         policy = json.loads((ROOT / "reliability.json").read_text())
-        self.assertEqual(policy["plan_approval"]["default_mode"], "changes")
+        self.assertEqual(policy["plan_approval"]["default_mode"], "off")
 
-    def test_only_v2_loads_the_plan_gate(self):
+    def test_only_v2_loads_the_optional_plan_gate(self):
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
         self.assertIn("./runtime/plugins/plan-approval-v2", v2["plugins"])
         self.assertTrue((ROOT / "runtime" / "plugins" / "plan-approval-v2").is_dir())
@@ -61,19 +61,25 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertIn("AFFECTED FILES / COMPONENTS", planner)
         self.assertIn("ROLLBACK", planner)
 
-    def test_environment_documents_all_plan_modes(self):
+    def test_environment_documents_gate_as_opt_in(self):
         text = (ROOT / ".env.example").read_text()
-        self.assertIn("PLAN_APPROVAL_MODE=changes", text)
-        self.assertIn("off", text)
-        self.assertIn("always", text)
+        self.assertIn("PLAN_APPROVAL_MODE=off", text)
+        self.assertIn("changes = opt-in", text)
+        self.assertIn("always  = opt-in", text)
 
-    def test_runtime_gate_is_fail_closed_for_mutation(self):
+    def test_runtime_gate_remains_available_when_explicitly_enabled(self):
         core = (ROOT / "runtime" / "plugins" / "plan-approval-core.js").read_text()
         v2 = (ROOT / "runtime" / "plugins" / "plan-approval-v2.ts").read_text()
         self.assertIn("toolRequiresPlanApproval", core)
         self.assertIn("runtime-blocked-unapproved-change", core)
         self.assertIn('ctx.tool.hook("execute.before"', v2)
         self.assertIn("throw new Error(blockedMessage(decision))", v2)
+
+    def test_bootstrap_migrates_the_old_changes_default_to_off(self):
+        bootstrap = (ROOT / "scripts" / "bootstrap").read_text()
+        self.assertIn("PLAN_APPROVAL_MODE=changes", bootstrap)
+        self.assertIn("PLAN_APPROVAL_MODE=off", bootstrap)
+        self.assertIn("Migrated PLAN_APPROVAL_MODE from changes to off", bootstrap)
 
 
 if __name__ == "__main__":
