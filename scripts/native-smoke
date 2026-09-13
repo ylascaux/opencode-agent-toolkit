@@ -22,13 +22,15 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def install_memory_fixture(toolkit: Path, home: Path) -> None:
+def install_memory_fixture(toolkit: Path, home: Path, marker: Path) -> None:
     plugin = home / ".local/share/opencode-agent-toolkit/plugins/opencode-memory-plugin"
     dist = plugin / "dist"
     dist.mkdir(parents=True)
     (plugin / "package.json").write_text('{"type":"module"}\n')
     (dist / "v2.js").write_text(
-        'export default { id: "opencode.memory.smoke", async setup() {} }\n'
+        'import { writeFileSync } from "node:fs"\n'
+        'export default { id: "opencode.memory.smoke", async setup() { '
+        'writeFileSync(process.env.OAT_MEMORY_SMOKE_MARKER, "loaded\\n") } }\n'
     )
     (dist / "v1.js").write_text(
         'export default async function memorySmoke() { return {} }\n'
@@ -45,6 +47,7 @@ def install_memory_fixture(toolkit: Path, home: Path) -> None:
         "OAT_MEMORY_CAPTURE_ENABLED=1\n"
         f"OAT_MEMORY_PLUGIN_DIR={plugin}\n"
         f"OAT_MEMORY_DIR={vault}\n"
+        f"OAT_MEMORY_SMOKE_MARKER={marker}\n"
     )
 
 
@@ -79,9 +82,12 @@ def main() -> int:
         skill.write_text("---\nname: project-skill\ndescription: Local project smoke skill\n---\n\nFixture.\n")
         subprocess.run(["git", "init", "-q"], cwd=project, env=env, check=True)
         launcher = home / ".local/bin" / ("oc2" if args.major == "2" else "oc")
+        memory_marker = work / "memory-plugin-loaded"
 
         if args.major == "2":
-            install_memory_fixture(toolkit, home)
+            install_memory_fixture(toolkit, home, memory_marker)
+            # beta-19507's management list can omit configured local plugins, so
+            # keep it diagnostic only; the setup() marker below is authoritative.
             plugins = subprocess.run(
                 [str(launcher), "plugin", "list"],
                 cwd=project,
@@ -93,10 +99,11 @@ def main() -> int:
                 check=False,
             )
             assert plugins.returncode == 0, plugins.stdout
-            assert "opencode.memory.smoke" in plugins.stdout, plugins.stdout
+            print(f"V2 plugin management list: {plugins.stdout.strip() or '<empty>'}")
             wrapper = toolkit / ".generated/plugins/opencode-memory-plugin-v2"
             assert (wrapper / "index.js").is_file(), wrapper
-            print("V2 plugin list contains opencode.memory.smoke")
+            manifest = json.loads((wrapper / "package.json").read_text())
+            assert manifest["exports"] == "./index.js", manifest
 
         with socket.socket() as port_probe:
             port_probe.bind(("127.0.0.1", 0))
@@ -119,7 +126,7 @@ def main() -> int:
                 ids = set()
                 deadline = time.monotonic() + 90
                 # HTTP readiness precedes asynchronous resource discovery in V2.
-                # Wait for the actual catalogue, not merely the first HTTP 200.
+                # Wait for the actual catalogue and, for V2, plugin setup execution.
                 while time.monotonic() < deadline and server.poll() is None:
                     try:
                         payload = fetch("/api/skill" if args.major == "2" else "/config")
@@ -129,7 +136,8 @@ def main() -> int:
                         ids = {item["id"] for item in payload["data"]}
                         agent_payload = fetch("/api/agent")
                         agent_ids = {item["id"] for item in agent_payload.get("data", [])}
-                        if expected <= ids and {"meta-router", "orchestrator", "builder"} <= agent_ids:
+                        resources_ready = expected <= ids and {"meta-router", "orchestrator", "builder"} <= agent_ids
+                        if resources_ready and memory_marker.is_file():
                             break
                     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                         pass
@@ -141,7 +149,9 @@ def main() -> int:
                     assert payload.get("location", {}).get("directory") == str(project), payload
                     agent_ids = {item["id"] for item in agent_payload.get("data", [])}
                     assert {"meta-router", "orchestrator", "builder"} <= agent_ids, agent_payload
-                    print(f"V2 discovered skills: {sorted(ids)}; agents: {len(agent_ids)}")
+                    assert memory_marker.is_file(), "V2 memory plugin setup() never executed"
+                    assert memory_marker.read_text().strip() == "loaded"
+                    print(f"V2 discovered skills: {sorted(ids)}; agents: {len(agent_ids)}; memory plugin setup: loaded")
                 else:
                     assert payload["default_agent"] == "meta-router", payload
                     assert "orchestrator" in payload["agent"] and "builder" in payload["agent"]
