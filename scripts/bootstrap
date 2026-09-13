@@ -69,6 +69,40 @@ install_launchers() {
   bash "$ROOT/scripts/user-link" install oc2
 }
 
+install_native_v1_client() {
+  local bin_dir wrapper env_local tmp_env
+  bin_dir="${OPENCODE_TOOLKIT_BIN_DIR:-$HOME/.local/bin}"
+  wrapper="$bin_dir/oat-opencode-v1-native"
+  env_local="$ROOT/.env.local"
+
+  mkdir -p "$bin_dir"
+  install -m 0755 "$ROOT/scripts/opencode-v1-native-client" "$wrapper"
+  touch "$env_local"
+  chmod 600 "$env_local" 2>/dev/null || true
+
+  if grep -Eq '^OAT_OC_NATIVE_BIN=.*/oat-opencode-v1-native$' "$env_local"; then
+    tmp_env="$(mktemp "${TMPDIR:-/tmp}/oat-env-local.XXXXXX")"
+    awk -v value="$wrapper" '
+      /^OAT_OC_NATIVE_BIN=.*\/oat-opencode-v1-native$/ { print "OAT_OC_NATIVE_BIN=" value; next }
+      { print }
+    ' "$env_local" > "$tmp_env"
+    cat "$tmp_env" > "$env_local"
+    rm -f "$tmp_env"
+    export OAT_OC_NATIVE_BIN="$wrapper"
+    echo "Updated managed native OpenCode V1 client: $wrapper"
+    return
+  fi
+
+  if grep -Eq '^OAT_OC_NATIVE_BIN=' "$env_local" || grep -Eq '^OAT_OC_NATIVE_BIN=' "$ROOT/.env"; then
+    echo "Keeping explicit OAT_OC_NATIVE_BIN override"
+    return
+  fi
+
+  printf '\n# Managed by just install for native V1 clipboard/browser integration.\nOAT_OC_NATIVE_BIN=%s\n' "$wrapper" >> "$env_local"
+  export OAT_OC_NATIVE_BIN="$wrapper"
+  echo "Installed native OpenCode V1 auth client: $wrapper"
+}
+
 materialize_generated_artifacts() {
   local image uid gid
   image="${OAT_RUNTIME_IMAGE:-opencode-agent-toolkit:local}"
@@ -122,6 +156,7 @@ if [[ "${OAT_RUNTIME:-docker}" == "docker" ]]; then
 
   echo
   echo "Installing launchers..."
+  install_native_v1_client
   install_launchers
 
   echo
