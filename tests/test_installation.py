@@ -10,223 +10,62 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallationSurfaceTests(unittest.TestCase):
-    def test_justfile_is_primary_command_surface(self):
+    def test_daily_just_surface_is_small_and_uses_positional_arguments(self):
         text = (ROOT / "justfile").read_text()
-        for recipe in [
-            "install:",
-            'profile name="copilot":',
-            "profiles:",
-            "agents:",
-            "new-agent name *args:",
-            'install-user command="oc":',
-            'uninstall-user command="oc":',
-            'user-status command="oc":',
-            "configure-litellm *args:",
-            "doctor:",
-            "preflight:",
-            "reliability:",
-            "check:",
-            "config:",
-            "run *args:",
-            "scan *args:",
-            "api:",
-            "models:",
-        ]:
-            self.assertIn(recipe, text)
-        self.assertNotIn("\nconfigure *args:", text)
+        recipes = [line for line in text.splitlines() if line and not line.startswith((" ", "#", "[", "set ")) and ":" in line]
+        self.assertLessEqual(len(recipes), 13)  # includes default and the hidden CI alias
+        for command in ("install:", "uninstall:", "config:", "doctor:", "test:", "sync *args:", "codex *args:", "memory *args:"):
+            self.assertIn(command, text)
+        self.assertIn("set positional-arguments", text)
+        self.assertNotIn("{{args}}", text)
+        self.assertNotIn("sandbox-on:", text)
+        self.assertNotIn("docker-build:", text)
 
-    def test_config_recipe_never_invokes_litellm_or_interactive_configurator(self):
-        text = (ROOT / "justfile").read_text()
-        config_block = text.split("\nconfig:\n", 1)[1].split("\ntest:\n", 1)[0]
-        self.assertIn("generate-config", config_block)
-        self.assertIn("apply-reliability", config_block)
-        self.assertNotIn("configure-models", config_block)
-        self.assertNotIn("litellm", config_block.lower())
+    def test_native_is_default_and_no_control_plugin_is_loaded_at_startup(self):
+        self.assertIn("OAT_RUNTIME=host", (ROOT / ".env.example").read_text())
+        text = (ROOT / "scripts/opencode-agents").read_text()
+        for legacy in ("scripts/docker-runtime", "scripts/sandbox-start", "scripts/apply-reliability", "scripts/apply-memory", "scripts/preflight"):
+            self.assertNotIn(legacy, text)
+        self.assertIn('exec "$bin" "$@"', text)
 
-    def test_makefile_is_not_required(self):
-        self.assertFalse((ROOT / "Makefile").exists())
-
-    def test_installation_scripts_exist(self):
-        for name in [
-            "bootstrap", "doctor", "configure-models", "generate-config", "opencode-agents",
-            "opencode-skill-source", "user-link", "apply-profile", "resolve-models", "apply-reliability", "preflight",
-            "show-reliability", "agent_config.py", "new-agent", "docker-build", "docker-runtime",
-        ]:
-            self.assertTrue((ROOT / "scripts" / name).exists(), name)
-
-    def test_docker_runtime_is_the_default_install_path(self):
-        env_example = (ROOT / ".env.example").read_text()
-        bootstrap = (ROOT / "scripts" / "bootstrap").read_text()
-        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
-
-        self.assertIn("OAT_RUNTIME=docker", env_example)
-        self.assertIn('"${OAT_RUNTIME:-docker}" == "docker"', bootstrap)
-        self.assertIn('bash ./scripts/docker-build', bootstrap)
-        self.assertIn('"${OAT_RUNTIME:-docker}" == "docker"', launcher)
-        self.assertIn('exec bash "$ROOT/scripts/docker-runtime" "$@"', launcher)
-
-    def test_opencode_v2_plugin_sdk_dependency_is_pinned(self):
-        package = json.loads((ROOT / "package.json").read_text())
-        self.assertTrue(package.get("private"))
-        self.assertEqual(package.get("type"), "module")
-        self.assertEqual(
-            package.get("dependencies", {}).get("@opencode/plugin"),
-            "0.0.0-beta-19398",
-        )
-        self.assertIn("node_modules/", (ROOT / ".gitignore").read_text().splitlines())
-
-    def test_bootstrap_keeps_legacy_host_dependency_install_as_explicit_fallback(self):
-        text = (ROOT / "scripts" / "bootstrap").read_text()
-        self.assertIn('OAT_RUNTIME=host', text)
-        self.assertIn("npm ci --no-audit --no-fund", text)
-        self.assertIn("npm install --no-audit --no-fund", text)
-        self.assertIn("package-lock.json", text)
-        self.assertIn("Installed OpenCode plugin dependencies", text)
-
-    def test_preflight_loads_local_env_and_checks_v2_plugin_sdk(self):
-        text = (ROOT / "scripts" / "preflight").read_text()
-        self.assertIn('source "$ROOT/.env"', text)
-        self.assertIn('source "$ROOT/.env.local"', text)
-        self.assertIn('npm --prefix "$ROOT" ls @opencode/plugin --depth=0', text)
-        self.assertIn("@opencode/plugin is missing; run 'just install'", text)
-
-    def test_opencode_skill_source_preserves_user_inline_config(self):
+    def test_real_catalogue_generates_self_contained_native_configs(self):
+        # A complete checkout validates the actual catalogue, not only renderer fixtures.
         with tempfile.TemporaryDirectory() as tmp:
-            skills = Path(tmp) / "skills"
-            skills.mkdir()
-            env = os.environ.copy()
-            env["OPENCODE_CONFIG_CONTENT"] = json.dumps({
-                "experimental": {"user-setting": True},
-                "skills": ["/user/skills"],
-            })
-            result = subprocess.run(
-                ["python3", str(ROOT / "scripts" / "opencode-skill-source"), str(skills)],
-                env=env,
-                capture_output=True,
-                text=True,
-            )
+            checkout = Path(tmp) / "toolkit"
+            checkout.mkdir()
+            for folder in ("agents", "skills", "runtime"):
+                shutil.copytree(ROOT / folder, checkout / folder)
+            (checkout / "scripts").mkdir()
+            for name in ("configure-local", "native_config.py"):
+                shutil.copy2(ROOT / "scripts" / name, checkout / "scripts" / name)
+            command = ["python3", "-B", str(checkout / "scripts/configure-local")]
+            result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            config = json.loads(result.stdout)
-            self.assertEqual(config["experimental"], {"user-setting": True})
-            self.assertEqual(config["skills"], ["/user/skills", str(skills.resolve())])
+            for name, key, plugin_key in (("opencode.jsonc", "agent", "plugin"), ("opencode.v2.jsonc", "agents", "plugins")):
+                config = json.loads((checkout / name).read_text())
+                self.assertEqual(config["default_agent"], "meta-router")
+                self.assertIn("orchestrator", config[key])
+                self.assertEqual(config[plugin_key], [])
+                self.assertNotIn("shell", config)
+                self.assertTrue(all("steps" not in agent for agent in config[key].values()))
+                self.assertNotIn("{file:", json.dumps(config))
+            self.assertTrue((checkout / ".opencode/skills/test-review/SKILL.md").is_file())
+            self.assertEqual(subprocess.run([*command, "--check"], capture_output=True).returncode, 0)
 
-    def test_user_link_install_is_idempotent_and_reversible(self):
+    def test_user_links_are_idempotent_and_do_not_replace_user_files(self):
         with tempfile.TemporaryDirectory() as tmp:
-            bin_dir = Path(tmp) / "bin"
-            env = os.environ.copy()
-            env["OPENCODE_TOOLKIT_BIN_DIR"] = str(bin_dir)
-            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
-            script = ROOT / "scripts" / "user-link"
-
-            subprocess.run(["bash", str(script), "install", "oc-test"], check=True, env=env, capture_output=True, text=True)
-            link = bin_dir / "oc-test"
-            self.assertTrue(link.is_symlink())
-            self.assertEqual(os.readlink(link), str(ROOT / "scripts" / "opencode-agents"))
-
-            subprocess.run(["bash", str(script), "install", "oc-test"], check=True, env=env, capture_output=True, text=True)
-            subprocess.run(["bash", str(script), "uninstall", "oc-test"], check=True, env=env, capture_output=True, text=True)
-            self.assertFalse(link.exists())
-            self.assertFalse(link.is_symlink())
-
-    def test_user_link_launcher_resolves_toolkit_root_through_symlink(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            toolkit = tmp_path / "toolkit"
-            scripts = toolkit / "scripts"
-            scripts.mkdir(parents=True)
-
-            for name in [
-                "opencode-agents", "opencode-skill-source", "generate-config", "user-link", "resolve-models",
-                "apply-reliability", "apply-memory", "memory_plugin.py", "preflight",
-                "agent_config.py",
-            ]:
-                shutil.copy2(ROOT / "scripts" / name, scripts / name)
-            shutil.copytree(ROOT / "agents", toolkit / "agents")
-            shutil.copytree(ROOT / "skills", toolkit / "skills")
-            shutil.copytree(ROOT / "runtime", toolkit / "runtime")
-            shutil.copy2(ROOT / "reliability.json", toolkit / "reliability.json")
-            (toolkit / ".env").write_text(
-                "OPENCODE_MAJOR=1\n"
-                "OAT_RUNTIME=host\n"
-                "OPENCODE_PREFLIGHT=1\n"
-                "OAT_SANDBOX_ENABLED=0\n"
-                "OAT_MEMORY_ENABLED=0\n"
-                "MODEL_PROFILE=test\n"
-                "MODEL_LOW=test/low\n"
-                "MODEL_MEDIUM=test/medium\n"
-                "MODEL_HIGH=test/high\n"
-            )
-
-            fake_opencode = tmp_path / "fake-opencode"
-            fake_opencode.write_text(
-                "#!/usr/bin/env bash\n"
-                "if [[ \"${1:-}\" == \"auth\" && \"${2:-}\" == \"list\" ]]; then\n"
-                "  echo '1 credential'\n"
-                "  exit 0\n"
-                "fi\n"
-                "if [[ \"${1:-}\" == \"models\" ]]; then\n"
-                "  printf '%s\\n' \"${MODEL_LOW:-}\" \"${MODEL_MEDIUM:-}\" \"${MODEL_HIGH:-}\"\n"
-                "  exit 0\n"
-                "fi\n"
-                "printf 'cwd=%s\\nconfig=%s\\nargs=%s\\nmodel=%s\\ninline=%s\\n' \"$PWD\" \"${OPENCODE_CONFIG:-}\" \"$*\" \"${MODEL_BUILDER:-}\" \"${OPENCODE_CONFIG_CONTENT:-}\"\n"
-            )
-            fake_opencode.chmod(0o755)
-
-            bin_dir = tmp_path / "bin"
-            env = os.environ.copy()
-            # Keep the isolated toolkit's test profile from inheriting explicit
-            # per-agent model overrides from the parent environment.
-            for key in [key for key in env if key.startswith("MODEL_")]:
-                env.pop(key)
-            env.pop("OPENCODE_MAJOR", None)
-            env["OPENCODE_CONFIG_CONTENT"] = json.dumps({"experimental": {"user-setting": True}})
-            env["OPENCODE_TOOLKIT_BIN_DIR"] = str(bin_dir)
-            env["OPENCODE_BIN"] = str(fake_opencode)
-            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
-
-            subprocess.run(
-                ["bash", str(scripts / "user-link"), "install", "oc-test"],
-                check=True,
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-
-            project = tmp_path / "project"
-            project.mkdir()
-            result = subprocess.run(
-                [str(bin_dir / "oc-test"), "run", "hello"],
-                cwd=project,
-                env=env,
-                capture_output=True,
-                text=True,
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            output = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
-            self.assertEqual(Path(output["cwd"]).resolve(), project.resolve())
-            self.assertEqual(Path(output["config"]).resolve(), (toolkit / "opencode.jsonc").resolve())
-            self.assertEqual(output["args"], "run hello")
-            self.assertEqual(output["model"], "test/medium")
-            inline = json.loads(output["inline"])
-            self.assertEqual(inline["experimental"], {"user-setting": True})
-            self.assertIn(str((toolkit / ".opencode" / "skills").resolve()), inline["skills"])
-            self.assertTrue((toolkit / ".opencode" / "skills" / "test-review" / "SKILL.md").is_file())
-
-    def test_user_link_refuses_to_overwrite_existing_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            bin_dir = Path(tmp) / "bin"
-            bin_dir.mkdir(parents=True)
-            existing = bin_dir / "oc-test"
-            existing.write_text("keep-me")
-
-            env = os.environ.copy()
-            env["OPENCODE_TOOLKIT_BIN_DIR"] = str(bin_dir)
-            script = ROOT / "scripts" / "user-link"
-            result = subprocess.run(["bash", str(script), "install", "oc-test"], env=env, capture_output=True, text=True)
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(existing.read_text(), "keep-me")
+            directory = Path(tmp) / "bin"
+            env = {**os.environ, "OPENCODE_TOOLKIT_BIN_DIR": str(directory)}
+            command = ["bash", str(ROOT / "scripts/user-link")]
+            for _ in range(2):
+                result = subprocess.run([*command, "install", "oc-test"], env=env, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((directory / "oc-test").resolve(), (ROOT / "scripts/opencode-agents").resolve())
+            self.assertEqual(subprocess.run([*command, "uninstall", "oc-test"], env=env, capture_output=True).returncode, 0)
+            user_file = directory / "oc-test"
+            user_file.write_text("keep me")
+            self.assertNotEqual(subprocess.run([*command, "install", "oc-test"], env=env, capture_output=True).returncode, 0)
+            self.assertEqual(user_file.read_text(), "keep me")
 
 
 if __name__ == "__main__":
