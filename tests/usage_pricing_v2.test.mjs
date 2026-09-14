@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import UsagePricingV2, { estimateCost, findModel, tokenTotal } from "../runtime/plugins/usage-pricing-v2.js"
+import { UsagePricingV2 } from "../runtime/plugins/usage-pricing-v2.js"
+import { estimateCost, findModel, tokenTotal } from "../runtime/plugins/usage-pricing-core.js"
 
 const tokens = {
   input: 1_000_000,
@@ -97,9 +98,21 @@ test("marks unavailable pricing explicitly for subagents", async () => {
 test("observability failures never fail the OC2 session", async () => {
   const plugin = await UsagePricingV2({
     client: {
-      session: { get: async () => { throw new Error("server unavailable") } },
-      config: { providers: async () => { throw new Error("provider unavailable") } },
-      tui: { showToast: async () => { throw new Error("no tui") } },
+      session: {
+        get: async () => {
+          throw new Error("server unavailable")
+        },
+      },
+      config: {
+        providers: async () => {
+          throw new Error("provider unavailable")
+        },
+      },
+      tui: {
+        showToast: async () => {
+          throw new Error("no tui")
+        },
+      },
     },
   })
 
