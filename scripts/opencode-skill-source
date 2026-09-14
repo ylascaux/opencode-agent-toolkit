@@ -50,11 +50,15 @@ def main() -> int:
 
     rendered = str(source)
     config["skills"] = [*current, *([] if rendered in current else [rendered])]
+    major = os.environ.get("OPENCODE_MAJOR", "1").strip()
 
     memory_plugin = os.environ.get("OAT_NATIVE_MEMORY_PLUGIN", "").strip()
     if memory_plugin:
-        major = os.environ.get("OPENCODE_MAJOR", "1").strip()
         append_unique(config, "plugins" if major == "2" else "plugin", memory_plugin)
+
+    usage_plugin = os.environ.get("OAT_NATIVE_USAGE_PLUGIN", "").strip()
+    if usage_plugin and major == "2":
+        append_unique(config, "plugins", usage_plugin)
 
     print(json.dumps(config, separators=(",", ":"), sort_keys=True))
     return 0

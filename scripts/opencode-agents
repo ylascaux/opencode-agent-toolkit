@@ -92,6 +92,19 @@ else
   unset OAT_NATIVE_MEMORY_PLUGIN || true
 fi
 
+# OC2 currently persists real token counters with cost=0. Load a read-only,
+# fail-open observer that estimates cost from the provider's own model pricing
+# metadata and surfaces it in the TUI. V1 keeps its native cost calculation.
+usage_plugin="$ROOT/runtime/plugins/usage-pricing-v2.js"
+if [[ "$major" == 2 && -f "$usage_plugin" ]]; then
+  export OAT_NATIVE_USAGE_PLUGIN="$usage_plugin"
+else
+  unset OAT_NATIVE_USAGE_PLUGIN || true
+  if [[ "$major" == 2 ]]; then
+    printf '%s\n' 'OC2 usage pricing plugin missing; continuing without estimated cost.' >&2
+  fi
+fi
+
 export OPENCODE_CONFIG="$config"
 inline_config="$(python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills")"
 export OPENCODE_CONFIG_CONTENT="$inline_config"
