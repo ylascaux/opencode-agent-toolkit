@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render native V1/V2 configuration without installing or contacting anything."""
+"""Render the current stable OpenCode configuration without provider calls."""
 from __future__ import annotations
 
 import argparse
@@ -19,7 +19,6 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="check for drift without writing")
     args = parser.parse_args()
     files = render_files(ROOT, load_normalized_agents(), load_normalized_skills())
-    # Retain ownership/path validation, without runtime approval/cost machinery.
     plan = ArtifactPlan(ROOT, files)
     plan.validate()
     if args.check:
@@ -29,7 +28,7 @@ def main() -> int:
         return int(bool(changes))
     write_files(files)
     (ROOT / ".opencode" / "skills").mkdir(parents=True, exist_ok=True)
-    print("Native OpenCode V1/V2 configs generated (no runtime plugins).")
+    print("Stable OpenCode 2 configuration generated.")
     return 0
 
 
