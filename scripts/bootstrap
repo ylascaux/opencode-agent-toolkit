@@ -51,24 +51,33 @@ case "${OAT_AI_MEMORY_ENABLED:-1}" in
     }
     memory_version="${OAT_AI_MEMORY_VERSION:-0.15.4}"
     memory_vendor="${OAT_AI_MEMORY_VENDOR_DIR:-$HOME/.local/share/opencode-agent-toolkit/vendor/ai-memory}"
-    memory_home="${OAT_AI_MEMORY_HOME:-$memory_vendor/node_modules/create-ai-memory}"
     memory_root="${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}"
     memory_repo="${OAT_AI_MEMORY_REPO:-git@github.com:ylascaux/opencode-memory.git}"
 
-    installed_version=""
-    if [[ -f "$memory_home/package.json" ]]; then
-      installed_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$memory_home/package.json" 2>/dev/null || true)"
-    fi
-    if [[ "$installed_version" != "$memory_version" ]]; then
-      command -v npm >/dev/null 2>&1 || {
-        echo "npm is required to install create-ai-memory@$memory_version." >&2
-        exit 127
+    if [[ -n "${OAT_AI_MEMORY_HOME:-}" ]]; then
+      memory_home="$OAT_AI_MEMORY_HOME"
+      [[ -f "$memory_home/package.json" ]] || {
+        echo "OAT_AI_MEMORY_HOME does not contain create-ai-memory: $memory_home" >&2
+        exit 2
       }
-      mkdir -p "$memory_vendor"
-      npm install --prefix "$memory_vendor" --no-save --no-package-lock --no-audit --no-fund "create-ai-memory@$memory_version"
-      memory_home="$memory_vendor/node_modules/create-ai-memory"
+      installed_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$memory_home/package.json")"
+      printf 'Using explicit create-ai-memory installation: %s (%s)\n' "$memory_home" "$installed_version"
     else
-      printf 'Keeping create-ai-memory version: %s\n' "$installed_version"
+      memory_home="$memory_vendor/node_modules/create-ai-memory"
+      installed_version=""
+      if [[ -f "$memory_home/package.json" ]]; then
+        installed_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$memory_home/package.json" 2>/dev/null || true)"
+      fi
+      if [[ "$installed_version" != "$memory_version" ]]; then
+        command -v npm >/dev/null 2>&1 || {
+          echo "npm is required to install create-ai-memory@$memory_version." >&2
+          exit 127
+        }
+        mkdir -p "$memory_vendor"
+        npm install --prefix "$memory_vendor" --no-save --no-package-lock --no-audit --no-fund "create-ai-memory@$memory_version"
+      else
+        printf 'Keeping create-ai-memory version: %s\n' "$installed_version"
+      fi
     fi
 
     if [[ ! -d "$memory_root" ]]; then
