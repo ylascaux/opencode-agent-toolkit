@@ -32,11 +32,11 @@ class NativeConfigTests(unittest.TestCase):
             "builder": agent("builder", ("orchestrator",)),
         }
 
-    def test_open_code_2_config_uses_native_schema_and_memory_plugin(self):
+    def test_open_code_2_config_uses_native_schema_without_memory_plugin(self):
         config = native.render_config(self.agents)
         self.assertEqual(config["default_agent"], "meta-router")
         self.assertEqual(config["agents"]["builder"]["model"], "{env:MODEL_BUILDER}")
-        self.assertEqual(config["plugins"], ["-rehydra", "-rehydra.*", "oc2-memory@0.1.1"])
+        self.assertEqual(config["plugins"], ["-rehydra", "-rehydra.*"])
         self.assertIn(
             {"action": "subagent", "resource": "orchestrator", "effect": "allow"},
             config["agents"]["meta-router"]["permissions"],
