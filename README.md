@@ -14,7 +14,7 @@ d'agents, les modèles par niveau, les skills et la synchronisation Codex.
 
 ## Installation / mise à jour
 
-Prérequis : Bash, Python 3.11+, npm et `just`.
+Prérequis : Bash, Python 3.11+ et `just`. npm n'est requis que si `opencode` n'est pas déjà installé.
 
 ```bash
 git pull
@@ -24,8 +24,8 @@ just doctor
 
 `just install` :
 
-1. retire l'ancien paquet npm `opencode-ai` s'il est encore installé ;
-2. installe/met à jour `@opencode/cli@latest`, la distribution OpenCode 2 ;
+1. si `opencode` existe déjà dans le PATH, **ne touche pas à cette installation** ;
+2. sinon, installe `@opencode/cli@latest` avec npm ;
 3. génère `opencode.jsonc` au format natif OpenCode 2 ;
 4. installe uniquement `~/.local/bin/oc` ;
 5. supprime l'ancien lien toolkit `~/.local/bin/oc2` s'il existe.
