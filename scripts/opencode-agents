@@ -63,8 +63,11 @@ esac
 python3 -B "$ROOT/scripts/configure-local" >/dev/null
 eval "$(python3 -B "$ROOT/scripts/resolve-models")"
 
-if ! python3 -B "$ROOT/scripts/configure-memory" >/dev/null; then
-  printf '%s\n' 'Memory configuration failed; continuing with opencode-mem defaults.' >&2
+# oc2-memory stores plain Markdown. Point it at an Obsidian vault folder or a
+# Git checkout when explicitly configured; otherwise the plugin uses its own
+# local default directory.
+if [[ -n "${OAT_MARKDOWN_MEMORY_DIR:-}" ]]; then
+  export PI_MEMORY_DIR="$OAT_MARKDOWN_MEMORY_DIR"
 fi
 
 export OPENCODE_CONFIG="$config"
