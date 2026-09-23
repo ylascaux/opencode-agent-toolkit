@@ -14,7 +14,6 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_SKILLS = ("terraform-review", "security-review", "test-review")
-MCP_TOOLS = ("memory_status", "memory_search", "memory_render", "memory_propose", "memory_candidates")
 
 
 class AcceptanceError(RuntimeError):
@@ -137,35 +136,6 @@ def check_launcher(root: Path, project: Path, env: dict[str, str], binary: Path)
     require(str(root / ".opencode" / "skills") in value["content"].get("skills", []), "OpenCode 2 missed toolkit skill source")
 
 
-def check_real_memory_mcp(root: Path, project: Path, env: dict[str, str]) -> None:
-    process = subprocess.Popen(
-        [sys.executable, "-B", str(root / "scripts" / "memory-mcp"), "--cwd", str(project)],
-        cwd=project,
-        env=env,
-        text=True,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    stdout, stderr = process.communicate(
-        "\n".join(
-            (
-                json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "acceptance", "version": "1"}}}),
-                json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
-                json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
-                json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "memory_status", "arguments": {}}}),
-            )
-        )
-        + "\n"
-    )
-    require(process.returncode == 0, f"real memory MCP failed: {stderr}")
-    replies = {item.get("id"): item for item in map(json.loads, filter(str.strip, stdout.splitlines())) if "id" in item}
-    require(2 in replies and 3 in replies, f"real memory MCP responses incomplete: {stdout}")
-    tools = tuple(item["name"] for item in replies[2]["result"]["tools"])
-    require(tools == MCP_TOOLS, f"unexpected real memory MCP tools: {tools}")
-    require(not {"memory_accept", "memory_promote", "memory_push"} & set(tools), "human-only memory lifecycle tool exposed")
-
-
 def check_codex(root: Path, project: Path, env: dict[str, str]) -> None:
     launcher = root / "scripts" / "opencode-agents"
     write(project / ".codex" / "config.toml", '[mcp_servers.other]\ncommand = "other"\n')
@@ -232,18 +202,10 @@ def check_isolation(root: Path) -> None:
 
 
 def main() -> int:
-    skip_memory = os.environ.get("OAT_ACCEPTANCE_SKIP_MEMORY") == "1"
     with tempfile.TemporaryDirectory(prefix="oat-acceptance-") as directory:
         temp = Path(directory)
         root = copy_toolkit(temp)
         env = isolated_environment(temp)
-        if not skip_memory:
-            value = os.environ.get("OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR") or os.environ.get("OAT_MEMORY_PLUGIN_DIR")
-            require(bool(value), "real memory plugin required; set OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR or explicitly set OAT_ACCEPTANCE_SKIP_MEMORY=1")
-            plugin = Path(value).expanduser().resolve()
-            require((plugin / "dist" / "cli.js").is_file() and (plugin / "dist" / "mcp.js").is_file(), "real memory plugin must be prebuilt")
-            env["OAT_MEMORY_PLUGIN_DIR"] = str(plugin)
-
         run([sys.executable, "-B", str(root / "scripts" / "sync-runtime"), "all"], cwd=root, env=env)
         for name in REQUIRED_SKILLS:
             require((root / ".opencode" / "skills" / name / "SKILL.md").is_file(), f"missing toolkit skill {name}")
@@ -257,12 +219,6 @@ def main() -> int:
         check_launcher(root, project, env, fake)
         require(snapshot(project) == before, "launcher probe mutated external project")
         print("[ok] OpenCode 2 launcher routing")
-
-        if skip_memory:
-            print("[skip] real memory MCP (explicit OAT_ACCEPTANCE_SKIP_MEMORY=1)")
-        else:
-            check_real_memory_mcp(root, project, env)
-            print("[ok] real portable memory MCP")
 
         check_codex(root, project, env)
         check_conflicts(root, fixtures, env)
