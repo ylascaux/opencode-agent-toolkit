@@ -50,19 +50,8 @@ def main() -> int:
 
     rendered = str(source)
     config["skills"] = [*current, *([] if rendered in current else [rendered])]
-    major = os.environ.get("OPENCODE_MAJOR", "1").strip()
-
-    memory_plugin = os.environ.get("OAT_NATIVE_MEMORY_PLUGIN", "").strip()
-    if memory_plugin and major == "1":
-        append_unique(config, "plugin", memory_plugin)
-
-    v2_memory_plugin = os.environ.get("OAT_NATIVE_V2_MEMORY_PLUGIN", "").strip()
-    if v2_memory_plugin and major == "2":
-        append_unique(config, "plugins", v2_memory_plugin)
-
-    usage_plugin = os.environ.get("OAT_NATIVE_USAGE_PLUGIN", "").strip()
-    if usage_plugin and major == "2":
-        append_unique(config, "plugins", usage_plugin)
+    # Package plugins are declared in the generated OpenCode 2 config.
+    # This inline layer only adds toolkit skill sources and preserves user config.
 
     print(json.dumps(config, separators=(",", ":"), sort_keys=True))
     return 0
