@@ -107,7 +107,7 @@ def render_config(specs: Mapping[str, Any]) -> dict:
             name: {"description": description, "template": template, "agent": primary}
             for name, (description, template) in COMMANDS.items()
         },
-        "plugins": ["opencode-mem@2.26.0"],
+        "plugins": ["-rehydra", "-rehydra.*", "oc2-memory@0.1.1"],
     }
     config["experimental"] = {"subagent_depth": 2}
     config["compaction"] = {"auto": True, "keep": {"tokens": 15000}, "buffer": 20000}
