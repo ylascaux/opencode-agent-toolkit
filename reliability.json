@@ -40,31 +40,18 @@
   },
   "lead_parallel_env": {
     "meta-router": "MAX_PARALLEL_META_ROUTER",
-    "orchestrator": "MAX_PARALLEL_ORCHESTRATOR",
-    "review-lead": "MAX_PARALLEL_REVIEW_LEAD",
-    "platform-architect": "MAX_PARALLEL_PLATFORM_ARCHITECT",
-    "security-lead": "MAX_PARALLEL_SECURITY_LEAD"
+    "orchestrator": "MAX_PARALLEL_ORCHESTRATOR"
   },
   "step_caps": {
     "meta-router": 12,
     "orchestrator": 16,
-    "review-lead": 12,
-    "security-lead": 12,
     "platform-architect": 14,
-    "deep-reasoner": 14,
-    "arbiter": 10,
-    "evidence-auditor": 10,
-    "terraform-terragrunt": 14,
+    "security-lead": 12,
+    "reviewer": 12,
+    "research-runner": 12,
     "debugger": 14,
     "builder": 16,
-    "python-specialist": 14,
-    "go-specialist": 14,
-    "project-scanner": 10,
-    "architecture-designer": 12,
-    "aws-platform": 12,
-    "kubernetes": 12,
     "tester": 12,
-    "pentest": 10,
     "default": 10
   }
 }

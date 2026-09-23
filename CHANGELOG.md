@@ -13,18 +13,23 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ### Changed
 
+- Reduce the active OpenCode runtime catalog from 41 agents to nine core roles, with technology specializations handled as skills/competencies instead of permanent agent identities.
+- Mediate agent-to-agent collaboration through structured parent-owned handoffs and compact mission state; free-form peer conversations are not part of the routing model.
+- Keep orchestration, architecture, independent review and security on HIGH while routine implementation, debugging, testing, routing and research use MEDIUM.
 - Move Copilot and Codex default tiers to GPT-6: Luna 6 for LOW/MEDIUM and Sol 6 for HIGH.
-- Promote orchestrator, planner and all review-profile agents to HIGH so orchestration, planning, review and security use the strongest default tier.
+- Promote orchestrator and the critical architecture/review/security roles to HIGH so high-impact decisions use the strongest default tier.
+
 - Use `opencode-memory-plugin` as the single OpenCode memory runtime, backed by the existing Git/Markdown `opencode-memory` vault.
 - Keep memory capture quarantine-only: automatic session capture creates local candidates but never commits or pushes durable memory.
 - Migrate the short-lived `OAT_AI_MEMORY_*` / `create-ai-memory` configuration to `OAT_MEMORY_*` during `just install`.
+- Remove the global `@rehydra/opencode` package configuration when present and disable `rehydra` plugin IDs in generated OpenCode configuration.
+- OpenCode 2 stable remains the only runtime: `oc` launches the official `opencode` binary and existing OpenCode installations are never overwritten by `just install`.
 
 ### Fixed
 
 - Load the native memory plugin from the daily `oc` launcher so `session.idle` actually triggers automatic candidate extraction.
 - Inject the same plugin's rendered context and `oat-memory` MCP into OpenCode 2 instead of relying on the agent to call `add_note` voluntarily.
 - Allow first-session capture in repositories that do not yet have a `projects/<repo>/` directory, without creating empty templates or dirtying the memory vault.
-
 
 ## [0.1.2] - 2026-09-13
 

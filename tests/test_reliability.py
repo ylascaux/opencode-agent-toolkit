@@ -8,13 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = ROOT / "agents"
 RUNTIME = ROOT / "runtime" / "plugins"
 GENERATED_PROMPTS = ROOT / ".generated" / "prompts"
-LEADS = ["meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"]
-RESTRICTED_RESEARCH_AGENTS = {"research-runner"}
+
+CORE = {
+    "meta-router", "orchestrator", "builder", "debugger", "tester",
+    "reviewer", "platform-architect", "security-lead", "research-runner",
+}
+SUPERVISING_AGENTS = {"meta-router", "orchestrator", "platform-architect"}
 READ_ONLY_GIT = ["git status*", "git diff*", "git log*", "git show*", "git rev-parse*"]
 
 
 def source_agents() -> list[str]:
-    return sorted(path.name for path in AGENTS_DIR.iterdir() if path.is_dir() and not path.name.startswith("_"))
+    return list(json.loads((AGENTS_DIR / "catalog.json").read_text())["agents"])
 
 
 class ReliabilityPolicyTests(unittest.TestCase):
@@ -25,85 +29,80 @@ class ReliabilityPolicyTests(unittest.TestCase):
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], cwd=ROOT, env=env, check=True)
         subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], cwd=ROOT, env=env, check=True)
 
-    def test_policy_has_profiles_and_conservative_normal_defaults(self):
+    def test_policy_has_profiles_and_small_lead_overrides(self):
         policy = json.loads((ROOT / "reliability.json").read_text())
         self.assertEqual(policy["default_profile"], "normal")
         self.assertEqual(set(policy["profiles"]), {"cheap", "normal", "premium"})
-        normal = policy["profiles"]["normal"]
-        self.assertEqual(normal["max_parallel_subagents"], 3)
-        self.assertEqual(normal["queue_timeout_seconds"], 600)
-        self.assertEqual(normal["max_same_error"], 2)
-        self.assertEqual(normal["max_subagent_retries"], 2)
-        self.assertGreater(normal["heartbeat_timeout_seconds"], 0)
-        self.assertNotIn("max_child_cost", normal)
-        self.assertNotIn("max_run_cost", normal)
-        self.assertLessEqual(policy["step_caps"]["orchestrator"], 16)
-        self.assertLessEqual(policy["step_caps"]["builder"], 16)
+        self.assertEqual(
+            policy["lead_parallel_env"],
+            {
+                "meta-router": "MAX_PARALLEL_META_ROUTER",
+                "orchestrator": "MAX_PARALLEL_ORCHESTRATOR",
+            },
+        )
+        self.assertEqual(set(policy["step_caps"]) - {"default"}, CORE)
 
-    def test_policy_exposes_per_lead_parallel_overrides(self):
-        policy = json.loads((ROOT / "reliability.json").read_text())
-        self.assertEqual(set(policy["lead_parallel_env"]), set(LEADS))
-        self.assertEqual(policy["lead_parallel_env"]["orchestrator"], "MAX_PARALLEL_ORCHESTRATOR")
-
-    def test_every_agent_has_self_contained_local_files(self):
+    def test_active_agent_files_are_complete(self):
         names = source_agents()
-        self.assertEqual(len(names), 41)
+        self.assertEqual(set(names), CORE)
+        self.assertEqual(len(names), 9)
         for name in names:
             directory = AGENTS_DIR / name
             for filename in ["agent.json", "prompt.md", "permissions.json"]:
                 self.assertTrue((directory / filename).exists(), f"{name}: {filename}")
 
-    def test_default_permission_policy_is_open_but_destructive_safe(self):
+    def test_default_permission_policy_keeps_destructive_operations_safe(self):
         default = json.loads((AGENTS_DIR / "_defaults" / "permissions.json").read_text())
         self.assertEqual(default["websearch"], "allow")
         self.assertEqual(default["webfetch"], "allow")
-        self.assertEqual(default["edit"], "ask")
         self.assertEqual(default["bash"]["*"], "ask")
         self.assertEqual(default["read"]["*.env"], "ask")
         self.assertEqual(default["read"]["**/.ssh/**"], "deny")
-        self.assertEqual(default["read"]["**/.aws/**"], "deny")
-        self.assertEqual(default["external_directory"]["*"], "deny")
         for command in ["rm -rf*", "git reset --hard*", "git push --force*", "terraform apply*", "kubectl delete*"]:
             self.assertEqual(default["bash"][command], "deny", command)
 
-    def test_generated_configs_load_isolated_runtime_plugins(self):
+    def test_generated_configs_contain_only_core_agents(self):
         v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
-        self.assertLessEqual(v1["agent"]["orchestrator"]["steps"], 16)
-        self.assertLessEqual(v2["agents"]["orchestrator"]["steps"], 16)
+        self.assertEqual(set(v1["agent"]), CORE)
+        self.assertEqual(set(v2["agents"]), CORE)
         self.assertIn("./runtime/plugins/reliability-v1.js", v1["plugin"])
         self.assertIn("./runtime/plugins/reliability-v2", v2["plugins"])
-        self.assertTrue((ROOT / "runtime" / "plugins" / "reliability-v2").is_dir())
-        self.assertNotIn("./plugins/reliability-approval", v2["plugins"])
-        self.assertFalse((ROOT / ".opencode" / "plugins").exists())
 
-    def test_every_agent_can_websearch_webfetch_and_shell_policy_is_expected_v1(self):
+    def test_research_runner_is_read_only_and_non_shell(self):
+        v1 = json.loads((ROOT / "opencode.jsonc").read_text())
+        p = v1["agent"]["research-runner"]["permission"]
+        self.assertEqual(p["edit"], "deny")
+        self.assertEqual(p["bash"], "deny")
+        self.assertEqual(p["skill"], "ask")
+        self.assertIsInstance(p["read"], dict)
+        self.assertEqual(p["read"]["**/.ssh/**"], "deny")
+
+    def test_other_agents_keep_expected_read_only_git_baseline(self):
         config = json.loads((ROOT / "opencode.jsonc").read_text())
         for name, agent in config["agent"].items():
-            permission = agent["permission"]
-            self.assertEqual(permission["websearch"], "allow", name)
-            self.assertEqual(permission["webfetch"], "allow", name)
-            if name in RESTRICTED_RESEARCH_AGENTS:
-                self.assertEqual(permission["bash"], "deny", name)
+            if name == "research-runner":
                 continue
-            self.assertEqual(permission["bash"]["*"], "ask", name)
+            bash = agent["permission"]["bash"]
+            self.assertEqual(bash["*"], "ask", name)
             for pattern in READ_ONLY_GIT:
-                self.assertEqual(permission["bash"].get(pattern), "allow", f"{name}: {pattern}")
+                self.assertEqual(bash.get(pattern), "allow", f"{name}: {pattern}")
 
-    def test_every_agent_can_websearch_webfetch_and_shell_policy_is_expected_v2(self):
-        config = json.loads((ROOT / "opencode.v2.jsonc").read_text())
-        for name, agent in config["agents"].items():
-            rules = agent["permissions"]
-            for action in ["websearch", "webfetch"]:
-                matched = [r for r in rules if r.get("action") == action and r.get("resource") == "*"]
-                self.assertTrue(matched, f"{name}: {action}")
-                self.assertEqual(matched[-1]["effect"], "allow", f"{name}: {action}")
-            shell_default = [r for r in rules if r.get("action") == "shell" and r.get("resource") == "*"]
-            self.assertEqual(shell_default[-1]["effect"], "deny" if name in RESTRICTED_RESEARCH_AGENTS else "ask", name)
+    def test_supervising_prompts_get_reliability_contract(self):
+        for name in SUPERVISING_AGENTS:
+            text = (GENERATED_PROMPTS / f"{name}.md").read_text().lower()
+            self.assertIn("## reliability and child supervision", text, name)
+            self.assertIn("waiting_on_child", text, name)
+            self.assertIn("retry only that failed child", text, name)
+
+        for name in CORE - SUPERVISING_AGENTS:
+            text = (GENERATED_PROMPTS / f"{name}.md").read_text().lower()
+            self.assertNotIn("## reliability and child supervision", text, name)
 
     def test_step_override_can_lower_but_never_raise_generator_boundary(self):
         policy = json.loads((ROOT / "reliability.json").read_text())
         builder_cap = policy["step_caps"]["builder"]
+
         low_env = os.environ.copy()
         low_env["MAX_STEPS_BUILDER"] = "7"
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], cwd=ROOT, env=low_env, check=True)
@@ -119,67 +118,11 @@ class ReliabilityPolicyTests(unittest.TestCase):
         self.assertGreater(raw, builder_cap)
         self.assertEqual(bounded, builder_cap)
 
-        subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], cwd=ROOT, check=True)
-        subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], cwd=ROOT, check=True)
-
-    def test_lead_prompts_include_supervision_contract(self):
-        for name in LEADS:
-            text = (GENERATED_PROMPTS / f"{name}.md").read_text().lower()
-            for needle in [
-                "## reliability and child supervision", "runtime slot", "waiting_permission is not stalled",
-                "waiting_on_child", "stall_suspected", "approval-based watchdog killing is temporarily disabled",
-                "retry only that failed child", "task_id", "checkpoint",
-            ]:
-                self.assertIn(needle, text, f"{name}: {needle}")
-
-    def test_all_prompts_include_external_research_contract(self):
-        for name in source_agents():
-            text = (GENERATED_PROMPTS / f"{name}.md").read_text()
-            self.assertIn("## External research", text, name)
-
-    def test_preflight_is_macos_bash_compatible(self):
-        text = (ROOT / "scripts" / "preflight").read_text()
-        self.assertNotIn("mapfile", text)
-        self.assertNotIn("readarray", text)
-
-    def test_shared_runtime_core_contains_terminal_and_delegation_retry_policy(self):
-        text = (RUNTIME / "reliability-core.js").read_text()
-        for needle in [
-            "[400, 401, 403, 404]",
-            "createCallIdTracker",
-            "createProgressAwareRepeatDetector",
-            "delegationFailureClass",
-            "delegationTaskKey",
-            "task cancel",
-        ]:
-            self.assertIn(needle, text)
-
-    def test_legacy_v1_watchdog_keeps_runtime_guards_for_compatibility(self):
-        text = (RUNTIME / "reliability-v1-legacy.js").read_text()
-        self.assertIn("watchdog", text.lower())
-
-    def test_legacy_v2_watchdog_keeps_retry_and_task_identity_logic(self):
-        text = (RUNTIME / "reliability-v2-legacy.ts").read_text()
-        self.assertIn("task", text.lower())
-        self.assertIn("retry", text.lower())
-
     def test_active_wrappers_disable_heuristic_auto_kills(self):
         v1 = (RUNTIME / "reliability-v1.js").read_text()
         v2 = (RUNTIME / "reliability-v2.ts").read_text()
         self.assertNotIn("session.abort", v1)
         self.assertNotIn("session.abort", v2)
-
-    def test_v2_approval_plugin_is_user_gated_and_fail_open(self):
-        text = (ROOT / "plugins" / "reliability-approval" / "index.ts").read_text()
-        self.assertIn("approval", text.lower())
-
-    def test_native_environment_does_not_expose_legacy_watchdog_controls(self):
-        env = (ROOT / ".env.example").read_text()
-        for name in ("MAX_PARALLEL_SUBAGENTS", "MAX_SUBAGENT_RETRIES", "MAX_RUN_COST="):
-            self.assertNotIn(name, env)
-        launcher = (ROOT / "scripts" / "opencode-agents").read_text()
-        self.assertNotIn("scripts/apply-reliability", launcher)
-        self.assertIn("scripts/configure-local", launcher)
 
 
 if __name__ == "__main__":

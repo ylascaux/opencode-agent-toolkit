@@ -1,0 +1,13 @@
+{
+  "agents": [
+    "meta-router",
+    "orchestrator",
+    "builder",
+    "debugger",
+    "tester",
+    "reviewer",
+    "platform-architect",
+    "security-lead",
+    "research-runner"
+  ]
+}

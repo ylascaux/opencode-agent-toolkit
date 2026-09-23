@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -6,36 +7,38 @@ ROOT = Path(__file__).resolve().parents[1]
 AGENTS = ROOT / "agents"
 CONTRACTS = ROOT / "contracts"
 
-RESEARCH_AGENTS = {
-    "source-discovery": ("low", "fast"),
-    "structured-extractor": ("medium", "general"),
-    "entity-resolver": ("medium", "reasoning"),
-}
-
 
 class ResearchPipelineTests(unittest.TestCase):
-    def test_research_agents_are_generic_bounded_leaves(self):
-        for name, (tier, profile) in RESEARCH_AGENTS.items():
-            config = json.loads((AGENTS / name / "agent.json").read_text())
-            prompt = (AGENTS / name / "prompt.md").read_text().lower()
-            self.assertIn("orchestrator", config["parents"], name)
-            self.assertIn("research-runner", config["parents"], name)
-            self.assertEqual(config["mode"], "subagent", name)
-            self.assertEqual(config["tier"], tier, name)
-            self.assertEqual(config["model_profile"], profile, name)
-            self.assertNotIn("livalyo", prompt, name)
-            self.assertIn("do not", prompt, name)
+    @classmethod
+    def setUpClass(cls):
+        subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], check=True)
+        cls.config = json.loads((ROOT / "opencode.jsonc").read_text())
 
-    def test_external_runner_has_no_local_mutation_capabilities(self):
+    def test_research_is_one_active_core_agent(self):
+        catalog = set(json.loads((AGENTS / "catalog.json").read_text())["agents"])
+        self.assertIn("research-runner", catalog)
+        for legacy in ["source-discovery", "structured-extractor", "entity-resolver", "evidence-auditor", "deep-reasoner"]:
+            self.assertNotIn(legacy, catalog)
+
         config = json.loads((AGENTS / "research-runner" / "agent.json").read_text())
-        permissions = json.loads((AGENTS / "research-runner" / "permissions.json").read_text())
         prompt = (AGENTS / "research-runner" / "prompt.md").read_text().lower()
-        self.assertEqual(config["parents"], ["meta-router"])
-        self.assertEqual(config["tier"], "low")
-        for permission in ["edit", "bash", "read", "skill"]:
-            self.assertEqual(permissions[permission], "deny")
-        self.assertIn("untrusted", prompt)
+        self.assertEqual(config["parents"], ["meta-router", "orchestrator"])
+        self.assertEqual(config["tier"], "medium")
+        self.assertEqual(config["mode"], "subagent")
+        self.assertIn("context7", prompt)
+        self.assertIn("single agent", prompt)
         self.assertIn("never mutate", prompt)
+
+    def test_research_runner_can_read_and_use_skills_but_cannot_mutate_or_shell(self):
+        permission = self.config["agent"]["research-runner"]["permission"]
+        self.assertEqual(permission["edit"], "deny")
+        self.assertEqual(permission["bash"], "deny")
+        self.assertEqual(permission["skill"], "ask")
+        self.assertEqual(permission["read"]["*"], "allow")
+        self.assertEqual(permission["read"]["**/.ssh/**"], "deny")
+        self.assertEqual(permission["external_directory"]["*"], "deny")
+        self.assertEqual(permission["websearch"], "allow")
+        self.assertEqual(permission["webfetch"], "allow")
 
     def test_research_contracts_are_strict_generic_envelopes(self):
         job = json.loads((CONTRACTS / "research-job.schema.json").read_text())
