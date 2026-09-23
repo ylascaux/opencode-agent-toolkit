@@ -9,7 +9,7 @@
 - Toolkit schema files are documentation/test artifacts. Do not try to read them from the target repository at runtime.
 - Routing Decision required fields: domains, complexity, risk, uncertainty, blast_radius, change_type, route, gates, escalation_triggers. Optional: parallelizable.
 - Routing enums: complexity=low|medium|high; risk=low|medium|high|critical; uncertainty=low|medium|high; blast_radius=local|service|multi-service|platform|production-critical; change_type=analysis|implementation|review|incident|migration|architecture|documentation|cost.
-- Agent Handoff required fields: status, summary, facts, assumptions, evidence, findings, residual_risks, recommended_next_agents, confidence. Optional: confidence_reason.
+- Agent Handoff required fields: status, summary, facts, assumptions, evidence, findings, residual_risks, recommended_next_agents, confidence. Optional: confidence_reason, state_updates, handoff_request.
 - Handoff status=complete|blocked|escalation_required; confidence=high|medium|low.
 - Evidence entries require type, status, result; evidence status=verified|partially_verified|unverified|contradicted.
 - Findings require severity, confidence, description; severity=critical|high|medium|low|info.
@@ -79,6 +79,8 @@ Finish delegated work with these sections:
 - RESIDUAL RISKS
 - RECOMMENDED NEXT AGENTS
 - CONFIDENCE: HIGH | MEDIUM | LOW with a short reason
+- STATE UPDATES: accepted decisions, changed artifacts, open questions when useful
+- HANDOFF REQUEST: optional next agent + reason + narrow task + required evidence; the parent decides whether to dispatch it
 
 The machine-readable equivalent follows the embedded Agent Handoff contract above; no runtime schema read is required.
 
