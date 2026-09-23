@@ -1,7 +1,6 @@
 FROM node:22-bookworm-slim
 
-ARG OPENCODE_V1_VERSION=latest
-ARG OPENCODE_V2_VERSION=beta
+ARG OPENCODE_VERSION=latest
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CI=1 \
@@ -15,27 +14,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-      bash \
-      ca-certificates \
-      curl \
-      direnv \
-      file \
-      git \
-      gnupg \
-      jq \
-      less \
-      nix-bin \
-      openssh-client \
-      procps \
-      python3 \
-      python3-pip \
-      python3-venv \
-      ripgrep \
-      shellcheck \
-      tini \
-      tree \
-      unzip \
-      xz-utils \
+      bash ca-certificates curl direnv file git gnupg jq less nix-bin \
+      openssh-client procps python3 python3-pip python3-venv ripgrep shellcheck \
+      tini tree unzip xz-utils \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
@@ -52,18 +33,11 @@ RUN apt-get update \
       > /etc/nix/nix.conf \
     && git config --system --add safe.directory '*'
 
-# Keep the two CLIs side-by-side. V2 currently ships as @opencode/cli@beta
-# and exposes the opencode2 binary; V1 exposes opencode.
-RUN npm install -g \
-      "opencode-ai@${OPENCODE_V1_VERSION}" \
-      "@opencode/cli@${OPENCODE_V2_VERSION}" \
+RUN npm install -g "@opencode/cli@${OPENCODE_VERSION}" \
     && npm cache clean --force
 
 WORKDIR /opt/oat
 
-# The host may still contain an old, uncommitted package-lock.json from the
-# pre-container workflow. Build only from the committed package.json so a stale
-# host lock cannot break the image build.
 COPY package.json ./
 RUN npm install --ignore-scripts --no-audit --no-fund
 
@@ -84,4 +58,4 @@ RUN chmod +x /opt/oat/runtime/entrypoint \
     && mkdir -p /root/.config /root/.local/share /root/.local/state /root/.cache
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/oat/runtime/entrypoint"]
-CMD ["2"]
+CMD ["serve"]
