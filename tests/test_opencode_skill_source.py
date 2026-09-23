@@ -74,7 +74,8 @@ class OpenCodeSkillSourceTests(unittest.TestCase):
             self.assertIn("existing", config["mcp"]["servers"])
             memory = config["mcp"]["servers"]["oat-memory"]
             self.assertEqual(memory["type"], "local")
-            self.assertEqual(memory["command"], ["node", str(cli), "mcp", "--cwd", str(base)])
+            self.assertEqual(memory["command"][:4], ["node", str(cli), "mcp", "--cwd"])
+            self.assertEqual(Path(memory["command"][4]).resolve(), base.resolve())
             self.assertEqual(memory["environment"]["OAT_MEMORY_PROJECT"], "demo")
             self.assertEqual(memory["environment"]["OAT_MEMORY_CAPTURE_ENABLED"], "1")
 
@@ -91,7 +92,7 @@ class OpenCodeSkillSourceTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             config = json.loads(result.stdout)
-            self.assertEqual(config["skills"], [str(skills.resolve())])
+            self.assertEqual([Path(value).resolve() for value in config["skills"]], [skills.resolve()])
             context7 = config["mcp"]["servers"]["context7"]
             self.assertEqual(context7, {
                 "type": "remote",
