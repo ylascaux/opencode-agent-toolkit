@@ -19,12 +19,17 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 - Move Copilot and Codex default tiers to GPT-6: Luna 6 for LOW/MEDIUM and Sol 6 for HIGH.
 - Promote orchestrator and the critical architecture/review/security roles to HIGH so high-impact decisions use the strongest default tier.
 
-- Replace the temporary `oc2-memory` integration with upstream `create-ai-memory@0.15.4`, installed outside the repository in toolkit-owned user data.
-- Keep `ylascaux/opencode-memory` as the Git/Obsidian source of truth and map create-ai-memory's expected compatibility paths onto `projects/`, `sessions/`, `lessons/` and `workstyle/` without changing the tracked layout.
-- Resolve the current memory project from the active Git repository and `projects/index.json`.
-- Inject project/global/previous-session context into OpenCode instructions and expose project-aware `oat-memory` MCP tools for search, notes, lessons and status.
+- Use `opencode-memory-plugin` as the single OpenCode memory runtime, backed by the existing Git/Markdown `opencode-memory` vault.
+- Keep memory capture quarantine-only: automatic session capture creates local candidates but never commits or pushes durable memory.
+- Migrate the short-lived `OAT_AI_MEMORY_*` / `create-ai-memory` configuration to `OAT_MEMORY_*` during `just install`.
 - Remove the global `@rehydra/opencode` package configuration when present and disable `rehydra` plugin IDs in generated OpenCode configuration.
 - OpenCode 2 stable remains the only runtime: `oc` launches the official `opencode` binary and existing OpenCode installations are never overwritten by `just install`.
+
+### Fixed
+
+- Load the native memory plugin from the daily `oc` launcher so `session.idle` actually triggers automatic candidate extraction.
+- Inject the same plugin's rendered context and `oat-memory` MCP into OpenCode 2 instead of relying on the agent to call `add_note` voluntarily.
+- Allow first-session capture in repositories that do not yet have a `projects/<repo>/` directory, without creating empty templates or dirtying the memory vault.
 
 ## [0.1.2] - 2026-09-13
 

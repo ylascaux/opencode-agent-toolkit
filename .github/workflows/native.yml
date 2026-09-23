@@ -33,45 +33,13 @@ jobs:
         run: |
           npm install -g @opencode/cli@latest --no-audit --no-fund
           opencode --version
-      - name: Validate upstream create-ai-memory adapter
-        shell: bash
+      - name: Validate native memory bridge
         run: |
-          set -euo pipefail
-          if ! command -v zsh >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y zsh
-          fi
-          MEMORY_VENDOR="$RUNNER_TEMP/oat-ai-memory"
-          MEMORY_HOME="$MEMORY_VENDOR/node_modules/create-ai-memory"
-          MEMORY_VAULT="$RUNNER_TEMP/opencode-memory"
-          MEMORY_CONTEXT="$RUNNER_TEMP/oat-memory-context.md"
-          npm install --prefix "$MEMORY_VENDOR" --no-save --no-package-lock --no-audit --no-fund create-ai-memory@0.15.4
-          mkdir -p "$MEMORY_VAULT"
-          git -C "$MEMORY_VAULT" init -q
-          python3 -B scripts/ai-memory-adapter prepare \
-            --home "$MEMORY_HOME" \
-            --root "$MEMORY_VAULT" \
-            --cwd "$PWD" \
-            --context-file "$MEMORY_CONTEXT"
-          grep -q 'OpenCode toolkit memory integration' "$MEMORY_CONTEXT"
-          test -L "$MEMORY_VAULT/_Global_Profile.md"
-          test -L "$MEMORY_VAULT/_session_logs"
-          test -f "$MEMORY_VAULT/projects/opencode-agent-toolkit/context.md"
-          {
-            printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}'
-            printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
-          } | OAT_AI_MEMORY_HOME="$MEMORY_HOME" \
-              OAT_AI_MEMORY_ROOT="$MEMORY_VAULT" \
-              OAT_AI_MEMORY_PROJECT="opencode-agent-toolkit" \
-              OAT_AI_MEMORY_CONTEXT_FILE="$MEMORY_CONTEXT" \
-              python3 -B scripts/ai-memory-adapter mcp \
-                --home "$MEMORY_HOME" \
-                --root "$MEMORY_VAULT" \
-                --cwd "$PWD" \
-                --project "opencode-agent-toolkit" \
-                --context-file "$MEMORY_CONTEXT" > "$RUNNER_TEMP/mcp.out"
-          grep -q '"search_memory"' "$RUNNER_TEMP/mcp.out"
-          grep -q '"add_lesson"' "$RUNNER_TEMP/mcp.out"
+          python3 -m unittest \
+            tests.test_native_memory \
+            tests.test_opencode_skill_source \
+            tests.test_opencode_launcher \
+            tests.test_memory_plugin_integration
       - name: Native launch, configuration and project-context smoke
         run: python3 -B scripts/native-smoke
       - name: Validate configured plugins

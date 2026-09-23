@@ -21,6 +21,24 @@ def append_unique(config: dict, key: str, value: str) -> None:
     config[key] = current
 
 
+def mcp_servers(config: dict) -> dict:
+    mcp = config.get("mcp", {})
+    if mcp is None:
+        mcp = {}
+    if not isinstance(mcp, dict):
+        print("OPENCODE_CONFIG_CONTENT.mcp must be an object", file=sys.stderr)
+        raise SystemExit(2)
+    servers = mcp.get("servers", {})
+    if servers is None:
+        servers = {}
+    if not isinstance(servers, dict):
+        print("OPENCODE_CONFIG_CONTENT.mcp.servers must be an object", file=sys.stderr)
+        raise SystemExit(2)
+    mcp["servers"] = servers
+    config["mcp"] = mcp
+    return servers
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: opencode-skill-source SKILLS_DIR", file=sys.stderr)
@@ -51,42 +69,65 @@ def main() -> int:
     rendered = str(source)
     config["skills"] = [*current, *([] if rendered in current else [rendered])]
 
-    context_file = os.environ.get("OAT_AI_MEMORY_CONTEXT_FILE", "").strip()
-    adapter = os.environ.get("OAT_AI_MEMORY_ADAPTER", "").strip()
-    memory_home = os.environ.get("OAT_AI_MEMORY_HOME", "").strip()
-    memory_root = os.environ.get("OAT_AI_MEMORY_ROOT", "").strip()
-    memory_project = os.environ.get("OAT_AI_MEMORY_PROJECT", "").strip()
+    memory_target = os.environ.get("OAT_MEMORY_PLUGIN_TARGET", "").strip()
+    context_file = os.environ.get("OAT_MEMORY_CONTEXT_FILE", "").strip()
+    if memory_target:
+        target = Path(memory_target).expanduser().absolute()
+        if target.is_symlink() or not target.exists():
+            print("Native memory plugin target is missing or unsafe", file=sys.stderr)
+            return 2
+        append_unique(config, "plugins", str(target))
 
-    if context_file:
-        context = Path(context_file).expanduser().absolute()
-        if context.is_symlink() or not context.is_file():
-            print("AI memory context file is missing or unsafe", file=sys.stderr)
-            return 2
-        instructions = config.get("instructions", [])
-        if instructions is None:
-            instructions = []
-        if not isinstance(instructions, list) or not all(isinstance(item, str) and item for item in instructions):
-            print("OPENCODE_CONFIG_CONTENT.instructions must be an array of non-empty strings", file=sys.stderr)
-            return 2
-        context_text = str(context)
-        config["instructions"] = [*instructions, *([] if context_text in instructions else [context_text])]
+        if context_file:
+            context = Path(context_file).expanduser().absolute()
+            if context.is_symlink() or not context.is_file():
+                print("Native memory context file is missing or unsafe", file=sys.stderr)
+                return 2
+            instructions = config.get("instructions", [])
+            if instructions is None:
+                instructions = []
+            if not isinstance(instructions, list) or not all(isinstance(item, str) and item for item in instructions):
+                print("OPENCODE_CONFIG_CONTENT.instructions must be an array of non-empty strings", file=sys.stderr)
+                return 2
+            context_text = str(context)
+            config["instructions"] = [*instructions, *([] if context_text in instructions else [context_text])]
+
+        data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+        plugin = Path(
+            os.environ.get("OAT_MEMORY_PLUGIN_DIR")
+            or data_home / "opencode-agent-toolkit" / "plugins" / "opencode-memory-plugin"
+        ).expanduser().absolute()
+        cli = plugin / "dist" / "cli.js"
+        if cli.is_file():
+            servers = mcp_servers(config)
+            if "oat-memory" not in servers:
+                inherited = {}
+                for name in (
+                    "OAT_MEMORY_ENABLED",
+                    "OAT_MEMORY_CAPTURE_ENABLED",
+                    "OAT_MEMORY_REPO",
+                    "OAT_MEMORY_DIR",
+                    "OAT_MEMORY_CANDIDATE_DIR",
+                    "OAT_MEMORY_PROJECT",
+                    "OAT_MEMORY_MAX_CHARS",
+                    "OAT_MEMORY_EXTRA_HATS",
+                ):
+                    value = os.environ.get(name, "").strip()
+                    if value:
+                        inherited[name] = value
+                server = {
+                    "type": "local",
+                    "command": ["node", str(cli), "mcp", "--cwd", os.getcwd()],
+                }
+                if inherited:
+                    server["environment"] = inherited
+                servers["oat-memory"] = server
 
     context7_enabled = os.environ.get("OAT_CONTEXT7_ENABLED", "1").strip().lower() not in {
         "0", "false", "no", "off"
     }
     if context7_enabled:
-        mcp = config.get("mcp", {})
-        if mcp is None:
-            mcp = {}
-        if not isinstance(mcp, dict):
-            print("OPENCODE_CONFIG_CONTENT.mcp must be an object", file=sys.stderr)
-            return 2
-        servers = mcp.get("servers", {})
-        if servers is None:
-            servers = {}
-        if not isinstance(servers, dict):
-            print("OPENCODE_CONFIG_CONTENT.mcp.servers must be an object", file=sys.stderr)
-            return 2
+        servers = mcp_servers(config)
         if "context7" not in servers:
             context7 = {
                 "type": "remote",
@@ -98,37 +139,6 @@ def main() -> int:
                     "Authorization": "Bearer {env:CONTEXT7_API_KEY}",
                 }
             servers["context7"] = context7
-        mcp["servers"] = servers
-        config["mcp"] = mcp
-
-    if adapter and memory_home and memory_root and memory_project:
-        mcp = config.get("mcp", {})
-        if mcp is None:
-            mcp = {}
-        if not isinstance(mcp, dict):
-            print("OPENCODE_CONFIG_CONTENT.mcp must be an object", file=sys.stderr)
-            return 2
-        servers = mcp.get("servers", {})
-        if servers is None:
-            servers = {}
-        if not isinstance(servers, dict):
-            print("OPENCODE_CONFIG_CONTENT.mcp.servers must be an object", file=sys.stderr)
-            return 2
-        if "oat-memory" not in servers:
-            servers["oat-memory"] = {
-                "type": "local",
-                "command": ["python3", adapter, "mcp"],
-                "protocol": "legacy",
-                "codemode": False,
-                "environment": {
-                    "OAT_AI_MEMORY_HOME": memory_home,
-                    "OAT_AI_MEMORY_ROOT": memory_root,
-                    "OAT_AI_MEMORY_PROJECT": memory_project,
-                    "OAT_AI_MEMORY_CONTEXT_FILE": context_file,
-                },
-            }
-        mcp["servers"] = servers
-        config["mcp"] = mcp
 
     print(json.dumps(config, separators=(",", ":"), sort_keys=True))
     return 0

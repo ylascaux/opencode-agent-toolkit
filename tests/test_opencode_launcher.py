@@ -31,7 +31,21 @@ class OpenCodeLauncherTests(unittest.TestCase):
         self.write_script("configure-local", "")
         self.write_script("resolve-models", "print('export MODEL_BUILDER=test/medium')\n")
         self.write_script("configure-memory", "")
-        self.write_script("opencode-skill-source", "print('{}')\n")
+        self.write_script(
+            "native_memory.py",
+            "import sys\n"
+            "from pathlib import Path\n"
+            "args=sys.argv[1:]\n"
+            "if '--context-file' in args:\n"
+            "    Path(args[args.index('--context-file')+1]).write_text('# memory\\n')\n"
+            "print('/fixture/memory-plugin')\n",
+        )
+        self.write_script(
+            "opencode-skill-source",
+            "import json,os\n"
+            "print(json.dumps({'plugins':[os.environ.get('OAT_MEMORY_PLUGIN_TARGET')],"
+            "'instructions':[os.environ.get('OAT_MEMORY_CONTEXT_FILE')]}))\n",
+        )
 
         native = self.bin / "opencode"
         native.write_text(
@@ -42,7 +56,8 @@ class OpenCodeLauncherTests(unittest.TestCase):
             "'args': sys.argv[1:],"
             "'config': os.environ.get('OPENCODE_CONFIG'),"
             "'model': os.environ.get('MODEL_BUILDER'),"
-            "'cwd': os.getcwd()"
+            "'cwd': os.getcwd(),"
+            "'inline': os.environ.get('OPENCODE_CONFIG_CONTENT')"
             "}))\n"
         )
         native.chmod(0o755)
@@ -65,6 +80,13 @@ class OpenCodeLauncherTests(unittest.TestCase):
         self.assertEqual(output["args"], ["--standalone", "run", "hello"])
         self.assertEqual(Path(output["config"]).resolve(), self.toolkit / "opencode.jsonc")
         self.assertEqual(output["model"], "test/medium")
+
+    def test_oc_prepares_native_memory_before_launch(self):
+        output = self.output(self.launch("run", "hello"))
+        inline = json.loads(output["inline"])
+        self.assertEqual(inline["plugins"], ["/fixture/memory-plugin"])
+        self.assertEqual(len(inline["instructions"]), 1)
+        self.assertTrue(Path(inline["instructions"][0]).name.startswith("oat-memory-"))
 
     def test_server_commands_are_not_forced_standalone(self):
         for args in (("serve", "--port", "4096"), ("plugin", "list"), ("service", "status")):

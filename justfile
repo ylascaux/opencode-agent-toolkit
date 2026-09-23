@@ -8,7 +8,7 @@ default:
 install:
     bash ./scripts/bootstrap
 
-# Remove only toolkit launchers. Keep OpenCode, auth, upstream memory package and vault data.
+# Remove only toolkit launchers. Keep OpenCode, auth, memory plugin checkout and vault data.
 uninstall:
     bash ./scripts/user-link uninstall oc
     bash ./scripts/user-link uninstall oc2 || true
@@ -42,7 +42,7 @@ sync *args:
 codex *args:
     python3 -B ./scripts/codex "$@"
 
-# Legacy private memory CLI kept only for Codex/MCP compatibility.
+# Persistent memory review/maintenance CLI.
 memory *args:
     bash ./scripts/opencode-agents memory "$@"
 

@@ -14,7 +14,7 @@ d'agents, les modèles par niveau, les skills et la synchronisation Codex.
 
 ## Installation / mise à jour
 
-Prérequis : Bash, Python 3.11+, Zsh et `just`. npm est requis pour installer `create-ai-memory` (sauf si `OAT_AI_MEMORY_HOME` pointe déjà vers une installation valide) et pour OpenCode uniquement si le binaire `opencode` est absent.
+Prérequis : Bash, Python 3.11+, Git, Node.js et `just`. npm n'est requis pour OpenCode que si le binaire `opencode` est absent.
 
 ```bash
 git pull
@@ -26,11 +26,11 @@ just doctor
 
 1. si `opencode` existe déjà dans le PATH, **ne touche pas à cette installation** ;
 2. sinon, installe `@opencode/cli@latest` avec npm ;
-3. installe la version pinée de `create-ai-memory` dans les données utilisateur du toolkit si nécessaire ;
-4. clone `opencode-memory` seulement si le vault local n'existe pas ;
-5. génère `opencode.jsonc` au format natif OpenCode 2 ;
-6. installe uniquement `~/.local/bin/oc` ;
-7. supprime l'ancien lien toolkit `~/.local/bin/oc2` s'il existe.
+3. clone/réutilise le vault privé `~/opencode-memory` ;
+4. installe et construit la version pinée de `opencode-memory-plugin` dans les données utilisateur du toolkit ;
+5. migre automatiquement l'ancien bloc `OAT_AI_MEMORY_*` s'il provient de l'intégration temporaire `create-ai-memory` ;
+6. génère `opencode.jsonc` au format natif OpenCode 2 ;
+7. installe uniquement `~/.local/bin/oc` et retire l'ancien lien `oc2`.
 
 L'authentification OpenCode reste dans le stockage natif du CLI et n'est pas
 réinitialisée par le toolkit.
@@ -104,101 +104,88 @@ Une définition `context7` déjà fournie par l'utilisateur dans
 `OPENCODE_CONFIG_CONTENT.mcp.servers` reste prioritaire et n'est jamais
 écrasée.
 
-## Mémoire persistante : create-ai-memory + opencode-memory
+## Mémoire persistante : opencode-memory-plugin + opencode-memory
 
-Le toolkit utilise directement le package upstream :
-
-```text
-create-ai-memory@0.15.4
-```
-
-Il n'est ni forké ni ajouté comme submodule. `just install` l'installe dans un
-répertoire utilisateur géré par le toolkit :
+Le runtime mémoire quotidien est désormais unique :
 
 ```text
-~/.local/share/opencode-agent-toolkit/vendor/ai-memory/
+oc
+ ├── opencode-memory-plugin
+ │    ├── contexte projet/workstyle/hats
+ │    ├── capture automatique sur session.idle
+ │    └── extraction de candidats mémoire
+ ├── oat-memory MCP
+ └── ~/opencode-memory (Git/Markdown/Obsidian)
 ```
 
-Le vault reste séparé dans le repo Git/Obsidian :
+Le plugin est versionné séparément et installé dans :
+
+```text
+~/.local/share/opencode-agent-toolkit/plugins/opencode-memory-plugin/
+```
+
+Le vault reste lisible et indépendant du runtime :
 
 ```text
 ~/opencode-memory/
 ├── projects/
-├── sessions/
-├── lessons/
 ├── workstyle/
 ├── hats/
 ├── inbox/
+├── sessions/      # ancien contenu conservé, non requis par le nouveau runtime
+├── lessons/
 └── templates/
 ```
 
-Par défaut le toolkit utilise :
+Configuration par défaut :
 
 ```bash
-OAT_AI_MEMORY_ROOT=$HOME/opencode-memory
-OAT_AI_MEMORY_REPO=https://github.com/ylascaux/opencode-memory.git
+OAT_MEMORY_ENABLED=1
+OAT_MEMORY_CAPTURE_ENABLED=1
+OAT_MEMORY_REPO=https://github.com/ylascaux/opencode-memory.git
+OAT_MEMORY_DIR=$HOME/opencode-memory
 ```
 
-Si le clone n'existe pas encore, `just install` le clone. Pour un repo privé GitHub, Git doit être authentifié (par exemple avec `gh auth login` puis `gh auth setup-git`). Un clone existant n'est ni remplacé ni automatiquement pullé.
+Au lancement de `oc`, aucun clone, pull ou build n'est effectué. Le launcher
+utilise uniquement le plugin déjà installé par `just install`, rend le contexte
+mémoire local et charge le plugin OpenCode 2 natif. Le même plugin expose aussi
+le MCP `oat-memory`.
 
-### Compatibilité avec create-ai-memory
-
-L'upstream attend des noms comme `_projects/`, `_session_logs/`,
-`_lessons/`, `_Global_Profile.md` et `_Standards.md`. Le toolkit crée une
-vue de compatibilité locale sans changer l'organisation réelle du vault :
-
-```text
-_Global_Profile.md  -> workstyle/preferences.md
-_Standards.md       -> workstyle/engineering.md
-_session_logs       -> sessions/
-_lessons            -> lessons/
-_projects/<repo>.md -> projects/<repo>/context.md
-```
-
-Ces liens sont ajoutés à `.git/info/exclude`, donc ils ne polluent pas le repo.
-Les vraies notes, sessions et leçons restent dans les dossiers lisibles dans
-Obsidian et versionnables avec Git.
-
-Le projet courant est résolu depuis le repo Git actif et, quand il existe,
-`projects/index.json` peut mapper un nom de repo ou un remote vers un identifiant
-de mémoire différent.
-
-### Intégration OpenCode
-
-Au lancement de `oc` :
-
-1. le projet courant est identifié ;
-2. create-ai-memory prépare le contexte global + projet + dernière session ;
-3. ce contexte est injecté dans les instructions OpenCode ;
-4. un serveur MCP local `oat-memory` est ajouté pour la session.
-
-Les outils MCP exposés sont :
-
-```text
-search_memory
-get_context
-read_note
-add_note
-add_lesson
-memory_status
-```
-
-Ainsi OpenCode peut chercher dans tout le vault, ajouter une note à la session
-courante ou créer une leçon transverse sans utiliser `opencode-start`.
-
-Le package upstream reste la source de vérité pour la logique de contexte,
-recherche, notes, leçons et backup Git. L'adaptateur du toolkit ne réimplémente
-pas ces règles ; il mappe seulement ton layout et les expose proprement à
-OpenCode 2.
-
-### Désactivation / versions
+À chaque passage de session à l'état `idle`, le plugin lit uniquement les
+messages utilisateur/assistant, lance une extraction sans outils et crée des
+**candidats locaux**. Il ne stocke pas le transcript brut et ne commit/push
+jamais automatiquement le vault.
 
 ```bash
-# .env.local
-OAT_AI_MEMORY_ENABLED=0
+oc memory status
+oc memory candidates
+oc memory candidate <id>
+oc memory reject <id>
+oc memory accept <id>
+oc memory promote <id>
+oc memory approve-all
+```
 
-# ou pour tester une autre version upstream
-OAT_AI_MEMORY_VERSION=0.15.4
+`approve-all` accepte puis promeut les candidats et effectue un seul push.
+Pour un nouveau dépôt qui n'a pas encore de dossier `projects/<repo>/`, la
+capture utilise directement un identifiant stable dérivé du nom du repo ; elle
+n'a donc plus besoin de créer au préalable un template vide dans le vault.
+
+Les fichiers `sessions/*` créés par l'intégration temporaire
+`create-ai-memory` peuvent rester dans le repo : ils sont simplement ignorés
+par le nouveau moteur. Il n'est pas nécessaire de les remplir ni de les
+supprimer pour que la capture fonctionne.
+
+Pour désactiver toute la mémoire :
+
+```bash
+OAT_MEMORY_ENABLED=0
+```
+
+Pour garder la lecture/contexte mais couper uniquement la capture automatique :
+
+```bash
+OAT_MEMORY_CAPTURE_ENABLED=0
 ```
 
 ### Rehydra

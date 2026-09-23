@@ -26,22 +26,20 @@ fi
 [[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
 
-case "${OAT_AI_MEMORY_ENABLED:-1}" in
+case "${OAT_MEMORY_ENABLED:-1}" in
   0|false|FALSE|no|NO|off|OFF)
-    echo "AI memory: disabled"
+    echo "Memory: disabled"
     ;;
   *)
-    memory_home="${OAT_AI_MEMORY_HOME:-$HOME/.local/share/opencode-agent-toolkit/vendor/ai-memory/node_modules/create-ai-memory}"
-    memory_root="${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}"
-    if [[ ! -f "$memory_home/shell/ai-mem.zsh" ]]; then
-      echo "AI memory package missing: run just install" >&2
+    memory_root="${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
+    data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+    plugin_dir="${OAT_MEMORY_PLUGIN_DIR:-$data_home/opencode-agent-toolkit/plugins/opencode-memory-plugin}"
+    [[ -d "$memory_root" ]] || { echo "Memory vault missing: $memory_root" >&2; exit 1; }
+    [[ -f "$plugin_dir/dist/v2.js" && -f "$plugin_dir/dist/cli.js" ]] || {
+      echo "Memory plugin missing or incomplete: run just install" >&2
       exit 1
-    fi
-    if [[ ! -d "$memory_root" ]]; then
-      echo "AI memory vault missing: $memory_root" >&2
-      exit 1
-    fi
-    python3 -B "$ROOT/scripts/ai-memory-adapter" doctor --home "$memory_home" --root "$memory_root" --cwd "$PWD"
+    }
+    OAT_MEMORY_AUTO_SYNC=0 python3 -B "$ROOT/scripts/memory" status
     ;;
 esac
 
