@@ -199,7 +199,7 @@ def zsh_call(home: Path, vault: Path, project: str, function: str, args: list[st
     module = home / "shell" / "ai-mem.zsh"
     script = r"""
 set -e
-source "$OAT_AI_MEMORY_MODULE" >/dev/null 2>&1
+source "$OAT_AI_MEMORY_MODULE"
 export AI_MEM_ROOT="$OAT_AI_MEMORY_ROOT"
 export AI_MEM_FORCE_PROJECT="$OAT_AI_MEMORY_PROJECT"
 "$OAT_AI_MEMORY_FUNCTION" "$@"
