@@ -29,7 +29,7 @@ def main() -> int:
         return int(bool(changes))
     write_files(files)
     (ROOT / ".opencode" / "skills").mkdir(parents=True, exist_ok=True)
-    print("Native OpenCode V1/V2 configs generated (no runtime plugins).")
+    print("Native OpenCode 2 config generated.")
     return 0
 
 

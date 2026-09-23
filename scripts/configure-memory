@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 def active_provider() -> str:
-    explicit = os.getenv("OAT_OC2_MEMORY_PROVIDER", "").strip()
+    explicit = os.getenv("OAT_MEMORY_PROVIDER", "").strip()
     if explicit:
         return explicit
     for key in ("MODEL_MEDIUM", "MODEL_HIGH", "MODEL_LOW"):

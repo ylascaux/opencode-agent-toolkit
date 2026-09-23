@@ -1,7 +1,6 @@
 FROM node:22-bookworm-slim
 
-ARG OPENCODE_V1_VERSION=latest
-ARG OPENCODE_V2_VERSION=beta
+ARG OPENCODE_VERSION=latest
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CI=1 \
@@ -52,11 +51,8 @@ RUN apt-get update \
       > /etc/nix/nix.conf \
     && git config --system --add safe.directory '*'
 
-# Keep the two CLIs side-by-side. V2 currently ships as @opencode/cli@beta
-# and exposes the opencode2 binary; V1 exposes opencode.
-RUN npm install -g \
-      "opencode-ai@${OPENCODE_V1_VERSION}" \
-      "@opencode/cli@${OPENCODE_V2_VERSION}" \
+# Released OpenCode 2 provides the single 'opencode' binary.
+RUN npm install -g "@opencode/cli@${OPENCODE_VERSION}" \
     && npm cache clean --force
 
 WORKDIR /opt/oat
@@ -84,4 +80,4 @@ RUN chmod +x /opt/oat/runtime/entrypoint \
     && mkdir -p /root/.config /root/.local/share /root/.local/state /root/.cache
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/oat/runtime/entrypoint"]
-CMD ["2"]
+CMD ["server"]
