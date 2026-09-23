@@ -14,7 +14,7 @@ d'agents, les modèles par niveau, les skills et la synchronisation Codex.
 
 ## Installation / mise à jour
 
-Prérequis : Bash, Python 3.11+ et `just`. npm n'est requis que si `opencode` n'est pas déjà installé.
+Prérequis : Bash, Python 3.11+, Zsh et `just`. npm est requis pour installer `create-ai-memory` (sauf si `OAT_AI_MEMORY_HOME` pointe déjà vers une installation valide) et pour OpenCode uniquement si le binaire `opencode` est absent.
 
 ```bash
 git pull
@@ -26,9 +26,11 @@ just doctor
 
 1. si `opencode` existe déjà dans le PATH, **ne touche pas à cette installation** ;
 2. sinon, installe `@opencode/cli@latest` avec npm ;
-3. génère `opencode.jsonc` au format natif OpenCode 2 ;
-4. installe uniquement `~/.local/bin/oc` ;
-5. supprime l'ancien lien toolkit `~/.local/bin/oc2` s'il existe.
+3. installe la version pinée de `create-ai-memory` dans les données utilisateur du toolkit si nécessaire ;
+4. clone `opencode-memory` seulement si le vault local n'existe pas ;
+5. génère `opencode.jsonc` au format natif OpenCode 2 ;
+6. installe uniquement `~/.local/bin/oc` ;
+7. supprime l'ancien lien toolkit `~/.local/bin/oc2` s'il existe.
 
 L'authentification OpenCode reste dans le stockage natif du CLI et n'est pas
 réinitialisée par le toolkit.
