@@ -9,105 +9,41 @@ PROFILE = runpy.run_path(str(ROOT / "scripts" / "apply-profile"))
 
 
 class ModelProfileTests(unittest.TestCase):
-    def test_resolver_maps_agents_to_three_tiers(self):
+    def test_resolver_maps_core_agents_to_three_tiers(self):
         resolve = RESOLVER["resolve"]
         result = resolve({
-            "MODEL_LOW": "test/luna",
-            "MODEL_MEDIUM": "test/terra",
+            "MODEL_LOW": "test/luna-low",
+            "MODEL_MEDIUM": "test/luna",
             "MODEL_HIGH": "test/sol",
         })
-        self.assertEqual(len(result), 41)
-        self.assertEqual(result["MODEL_MOCK_GENERATOR"], "test/luna")
-        self.assertEqual(result["MODEL_SECRETS"], "test/luna")
-        self.assertEqual(result["MODEL_SOURCE_DISCOVERY"], "test/luna")
-        self.assertEqual(result["MODEL_RESEARCH_RUNNER"], "test/luna")
-        self.assertEqual(result["MODEL_STRUCTURED_EXTRACTOR"], "test/terra")
-        self.assertEqual(result["MODEL_ENTITY_RESOLVER"], "test/terra")
-        self.assertEqual(result["MODEL_DOCS"], "test/terra")
-        self.assertEqual(result["MODEL_PROJECT_SCANNER"], "test/terra")
-        self.assertEqual(result["MODEL_EVIDENCE_AUDITOR"], "test/sol")
-        self.assertEqual(result["MODEL_BUILDER"], "test/terra")
-        self.assertEqual(result["MODEL_PLATFORM_ARCHITECT"], "test/sol")
-        self.assertEqual(result["MODEL_APPSEC"], "test/sol")
-
-    def test_default_quality_policy_keeps_only_bounded_agents_low(self):
-        tiers = RESOLVER["load_tiers"]()
-        low_agents = {name for name, tier in tiers.items() if tier == "low"}
-        self.assertEqual(low_agents, {"MODEL_MOCK_GENERATOR", "MODEL_SECRETS", "MODEL_SOURCE_DISCOVERY", "MODEL_RESEARCH_RUNNER"})
-
-    def test_architecture_evidence_sources_are_not_low(self):
-        tiers = RESOLVER["load_tiers"]()
-        for variable in [
-            "MODEL_PROJECT_SCANNER",
-            "MODEL_DOCS",
-            "MODEL_OBSERVABILITY",
-            "MODEL_FINOPS",
-            "MODEL_EVIDENCE_AUDITOR",
-            "MODEL_BRAINSTORM",
+        self.assertEqual(len(result), 9)
+        for key in [
+            "MODEL_META_ROUTER", "MODEL_BUILDER", "MODEL_DEBUGGER",
+            "MODEL_TESTER", "MODEL_RESEARCH_RUNNER",
         ]:
-            self.assertIn(tiers[variable], {"medium", "high"}, variable)
+            self.assertEqual(result[key], "test/luna", key)
+        for key in [
+            "MODEL_ORCHESTRATOR", "MODEL_REVIEWER",
+            "MODEL_PLATFORM_ARCHITECT", "MODEL_SECURITY_LEAD",
+        ]:
+            self.assertEqual(result[key], "test/sol", key)
 
-    def test_critical_control_roles_stay_high(self):
+    def test_default_quality_policy_has_no_low_core_agents(self):
         tiers = RESOLVER["load_tiers"]()
-        critical = [
-            "MODEL_ORCHESTRATOR",
-            "MODEL_PLANNER",
-            "MODEL_REVIEWER",
-            "MODEL_REVIEW_LEAD",
-            "MODEL_API_CONTRACT",
-            "MODEL_EVIDENCE_AUDITOR",
-            "MODEL_SUPPLY_CHAIN",
-            "MODEL_APPSEC",
-            "MODEL_IAC_SECURITY",
-            "MODEL_SECURITY_LEAD",
-            "MODEL_PENTEST",
-            "MODEL_THREAT_MODEL",
-            "MODEL_ARCHITECTURE",
-            "MODEL_PLATFORM_ARCHITECT",
-            "MODEL_ARBITER",
-            "MODEL_DEEP_REASONER",
-        ]
-        for variable in critical:
-            self.assertEqual(tiers[variable], "high", variable)
+        self.assertEqual(len(tiers), 9)
+        self.assertNotIn("low", set(tiers.values()))
+        self.assertEqual(tiers["MODEL_ORCHESTRATOR"], "high")
+        self.assertEqual(tiers["MODEL_REVIEWER"], "high")
+        self.assertEqual(tiers["MODEL_SECURITY_LEAD"], "high")
+        self.assertEqual(tiers["MODEL_PLATFORM_ARCHITECT"], "high")
 
-    def test_per_agent_override_wins_over_tier(self):
-        resolve = RESOLVER["resolve"]
-        result = resolve({
-            "MODEL_LOW": "test/luna",
-            "MODEL_MEDIUM": "test/terra",
-            "MODEL_HIGH": "test/sol",
-            "MODEL_BUILDER": "personal/codex",
-        })
-        self.assertEqual(result["MODEL_BUILDER"], "personal/codex")
-        self.assertEqual(result["MODEL_TESTER"], "test/terra")
-
-    def test_default_copilot_profile_is_gpt6_luna_luna_sol(self):
-        values = PROFILE["load_profile"]("copilot")
-        self.assertEqual(values["MODEL_LOW"], "github-copilot/gpt-6-luna")
-        self.assertEqual(values["MODEL_MEDIUM"], "github-copilot/gpt-6-luna")
-        self.assertEqual(values["MODEL_HIGH"], "github-copilot/gpt-6-sol")
-
-    def test_codex_profile_is_gpt6_luna_luna_sol(self):
-        values = PROFILE["load_profile"]("codex")
-        self.assertEqual(values["MODEL_PROFILE"], "codex")
-        self.assertEqual(values["MODEL_LOW"], "openai/gpt-6-luna")
-        self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-6-luna")
-        self.assertEqual(values["MODEL_HIGH"], "openai/gpt-6-sol")
-
-    def test_codex_astra_uses_luna6_below_high(self):
-        values = PROFILE["load_profile"]("codex_astra")
-        self.assertEqual(values["MODEL_PROFILE"], "codex_astra")
-        self.assertEqual(values["MODEL_LOW"], "openai/gpt-6-luna")
-        self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-6-luna")
-        self.assertEqual(values["MODEL_HIGH"], "openai/gpt-6-astra")
-
-    def test_profile_switch_backs_up_and_removes_generated_agent_mappings(self):
+    def test_apply_profile_replaces_generated_overrides_with_tiers(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             env_file = tmp_path / ".env"
             backup_file = tmp_path / ".env.model-overrides.backup"
             env_file.write_text(
-                "OPENCODE_MAJOR=1\n"
+                "OPENCODE_MAJOR=2\n"
                 "MODEL_PROFILE=old\n"
                 "MODEL_LOW=old/low\n"
                 "MODEL_MEDIUM=old/medium\n"
@@ -129,10 +65,11 @@ class ModelProfileTests(unittest.TestCase):
             text = env_file.read_text()
             self.assertIn("MODEL_PROFILE=copilot", text)
             self.assertIn("MODEL_LOW=github-copilot/gpt-6-luna", text)
+            self.assertIn("MODEL_MEDIUM=github-copilot/gpt-6-luna", text)
+            self.assertIn("MODEL_HIGH=github-copilot/gpt-6-sol", text)
             self.assertNotIn("MODEL_BUILDER=", text)
             self.assertIn("PROJECTS_ROOT=$HOME/Projects", text)
             self.assertTrue(backup_file.exists())
-            self.assertIn("MODEL_BUILDER=old/generated", backup_file.read_text())
 
 
 if __name__ == "__main__":

@@ -19,75 +19,49 @@ PROMPT_ACTION_LABELS = {"bash": "bash / shell", "task": "task / subagent"}
 
 COMMANDS = {
     "auto": (
-        "Automatically classify, plan and route a task",
-        "Route $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement. If the task can mutate state, gather only enough evidence to produce a concrete plan, surface it to the user, end with PLAN_APPROVAL_REQUIRED, and stop until explicit approval. After approval, execute the approved path and finish with evidence and residual risk.",
-    ),
-    "plan": (
-        "Create a user-approvable execution plan without implementing it",
-        "Plan $ARGUMENTS. Route read-only discovery/planning through the minimum sufficient path, include goal/scope, affected files/components, ordered steps, validation/tests, rollback, and delegated agents/gates. Do not mutate state. End with PLAN_APPROVAL_REQUIRED.",
-    ),
-    "ship": (
-        "Plan first, then implement with tests, independent review and adaptive security gates",
-        "Ship $ARGUMENTS. Classify risk first and delegate planning/delivery to orchestrator. Before any mutation, surface the concrete implementation plan and end with PLAN_APPROVAL_REQUIRED. Only after explicit user approval may orchestrator execute the approved scope, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence. Material scope deviations require PLAN_REAPPROVAL_REQUIRED.",
-    ),
-    "review": (
-        "Run independent adaptive review",
-        "Review $ARGUMENTS via review-lead. Select only review dimensions touched by the change, deduplicate findings, arbitrate material disagreement, and audit weak completion claims.",
-    ),
-    "architecture": (
-        "Design architecture with approval before artifact mutation",
-        "Design $ARGUMENTS via platform-architect. Gather evidence and stabilize the design first. If durable documentation or another artifact will be created/updated, surface the write/migration plan and end with PLAN_APPROVAL_REQUIRED before mutation. After explicit approval, have platform-architect delegate writing to docs-writer. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
-    ),
-    "architecture-review": (
-        "Independently review an existing architecture artifact",
-        "Independently review $ARGUMENTS via review-lead. Re-establish repository evidence with project-scanner when needed, select only relevant platform and security dimensions, do not treat the producer handoff as proof, and report contradictions, missing assumptions, rollback gaps, residual risks and confidence.",
-    ),
-    "security": (
-        "Run adaptive defense-in-depth security review",
-        "Security-review $ARGUMENTS via security-lead. Select only relevant threat-model/AppSec/IaC/supply-chain/secrets gates; pentest only explicitly authorized runtime scope. Deduplicate, rank and verify findings.",
-    ),
-    "debug": (
-        "Evidence-first debugging with approval before fixes",
-        "Debug $ARGUMENTS via orchestrator. Start with read-only reproduction/evidence and the affected specialist. Before applying a fix, surface the proposed fix/regression-test plan and end with PLAN_APPROVAL_REQUIRED. After explicit approval, implement the approved fix, add regression coverage, independently review it and add security gates if a trust boundary changes. Material deviations require PLAN_REAPPROVAL_REQUIRED.",
-    ),
-    "incident": (
-        "Investigate an incident and gate remediation behind a plan",
-        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses and identify blast radius. Investigation may stay read-only; before remediation or rollback mutation, surface the mitigation plan and end with PLAN_APPROVAL_REQUIRED. Execute only after explicit approval and re-request approval for material scope changes.",
-    ),
-    "cost": (
-        "Analyze platform cost and cost-performance trade-offs",
-        "Analyze $ARGUMENTS via platform-architect using FinOps plus only relevant AWS/Kubernetes/database/networking/performance perspectives. State source data, assumptions, trade-offs and confidence.",
-    ),
-}
-
-# V1 intentionally has no plan-approval workflow. Keep command wording aligned
-# with the V1 prompt/runtime configuration so commands do not recreate a pause.
-V1_COMMANDS = {
-    "auto": (
-        "Automatically classify, plan and route a task",
-        "Route $ARGUMENTS using the minimum sufficient path. Use the routing contract, keep delegation depth <= 2, escalate only on risk/uncertainty/disagreement. Execute the requested path and finish with evidence and residual risk.",
+        "Route a task through the minimum sufficient core agents",
+        "Route $ARGUMENTS using the active core catalog. Keep delegation depth <= 2, prefer one path over a committee, and obey the effective runtime approval mode rather than inventing an extra approval pause.",
     ),
     "plan": (
         "Create an execution plan without implementing it",
-        "Plan $ARGUMENTS. Route discovery/planning through the minimum sufficient path, include goal/scope, affected files/components, ordered steps, validation/tests, rollback, and delegated agents/gates. Do not implement the plan.",
+        "Plan $ARGUMENTS. Use repository evidence and research only when needed. Include scope, affected components, ordered steps, validation, rollback and the minimal core-agent route. Do not implement the plan.",
     ),
     "ship": (
-        "Implement with tests, independent review and adaptive security gates",
-        "Ship $ARGUMENTS. Classify risk first and delegate delivery to orchestrator, require relevant tests and independent review, add only security gates matching the changed attack surface, and audit non-trivial completion evidence.",
+        "Implement with tests and independent review",
+        "Ship $ARGUMENTS via orchestrator. Use builder/debugger/tester only as needed, require reviewer for independent final review, and add security-lead only when a security boundary materially changes.",
+    ),
+    "review": (
+        "Run independent correctness review",
+        "Review $ARGUMENTS via reviewer. Re-check the primary repository evidence, report findings by severity, and request security-lead or research-runner only when that adds distinct evidence.",
     ),
     "architecture": (
-        "Design architecture and produce durable artifacts when requested",
-        "Design $ARGUMENTS via platform-architect. Gather evidence and stabilize the design, then have platform-architect delegate durable writing to docs-writer when requested. Once the artifact exists, independently review it via review-lead against repository evidence. When trust boundaries, IAM, public exposure, secrets, or infrastructure-security posture materially change, run security-lead in parallel with review-lead. Synthesize only after required reviews complete; report evidence, trade-offs, rejected alternatives, migration/rollback and residual risks. Never let the producing path self-review.",
+        "Design platform/application architecture with independent review",
+        "Design $ARGUMENTS via platform-architect. Treat cloud, Kubernetes, Terraform, database, networking, SRE, observability and FinOps as architecture competencies rather than separate agents. Route implementation through orchestrator if requested, then use reviewer independently and security-lead when trust boundaries or exposure change.",
+    ),
+    "architecture-review": (
+        "Independently review an architecture artifact",
+        "Independently review $ARGUMENTS via reviewer using direct repository evidence. Add platform-architect for unresolved design trade-offs and security-lead for material trust/IAM/exposure concerns.",
+    ),
+    "security": (
+        "Run integrated security review",
+        "Security-review $ARGUMENTS via security-lead. Cover only materially relevant application, IAM, infrastructure, secrets, supply-chain and exposure surfaces; keep runtime testing authorized and non-destructive.",
     ),
     "debug": (
         "Evidence-first debugging with regression coverage",
-        "Debug $ARGUMENTS via orchestrator. Start with read-only reproduction/evidence and the affected specialist, then apply the fix, add regression coverage, independently review it and add security gates if a trust boundary changes.",
+        "Debug $ARGUMENTS via orchestrator. Use debugger for causal diagnosis, builder for the smallest fix, tester for regression coverage when useful, then reviewer independently.",
     ),
     "incident": (
         "Investigate and remediate an incident",
-        "Investigate $ARGUMENTS via orchestrator using evidence-first debugging plus SRE/observability and affected domain specialists. Separate facts from hypotheses, identify blast radius, then execute the required remediation or rollback and report the evidence.",
+        "Investigate $ARGUMENTS via orchestrator. Separate facts from hypotheses, identify blast radius, use debugger/research/security only when needed, apply the smallest justified remediation, and finish with reviewer evidence.",
+    ),
+    "cost": (
+        "Analyze platform cost and cost-performance trade-offs",
+        "Analyze $ARGUMENTS via platform-architect. Use research-runner when current pricing or provider facts are needed. State source data, assumptions, trade-offs and confidence.",
     ),
 }
+
+# V1 compatibility artifacts reuse the same small-agent command language.
+V1_COMMANDS = {}
 
 GENERATED_AGENT_KEYS = {
     "description", "mode", "model", "prompt", "system", "steps", "permission", "permissions",

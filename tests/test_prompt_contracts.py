@@ -5,6 +5,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPTS = ROOT / ".generated" / "prompts"
+CORE = {
+    "meta-router", "orchestrator", "builder", "debugger", "tester",
+    "reviewer", "platform-architect", "security-lead", "research-runner",
+}
 
 
 class PromptContractTests(unittest.TestCase):
@@ -14,7 +18,8 @@ class PromptContractTests(unittest.TestCase):
         subprocess.run(["python3", str(ROOT / "scripts" / "apply-reliability")], check=True)
         cls.config = json.loads((ROOT / "opencode.jsonc").read_text())
 
-    def test_every_agent_has_structured_prompt(self):
+    def test_every_active_agent_has_structured_prompt(self):
+        self.assertEqual(set(self.config["agent"]), CORE)
         required = [
             "# Role",
             "## Operating method",
@@ -25,94 +30,53 @@ class PromptContractTests(unittest.TestCase):
             "## Handoff",
             "## External research",
         ]
-        for name in self.config["agent"]:
-            source_dir = ROOT / "agents" / name
-            self.assertTrue((source_dir / "prompt.md").exists(), name)
-            path = PROMPTS / f"{name}.md"
-            self.assertTrue(path.exists(), name)
-            text = path.read_text()
+        for name in CORE:
+            text = (PROMPTS / f"{name}.md").read_text()
             for heading in required:
                 self.assertIn(heading, text, f"{name}: {heading}")
 
-    def test_handoff_schema_is_valid_json(self):
+    def test_handoff_schema_supports_mediated_agent_communication(self):
         data = json.loads((ROOT / "contracts" / "agent-handoff.schema.json").read_text())
         self.assertEqual(data["title"], "Agent Handoff")
         self.assertIn("confidence", data["required"])
+        self.assertIn("state_updates", data["properties"])
+        request = data["properties"]["handoff_request"]
+        self.assertEqual(request["required"], ["agent", "reason", "task"])
+        self.assertIn("required_evidence", request["properties"])
 
-    def test_routing_schema_is_valid_json(self):
-        data = json.loads((ROOT / "contracts" / "routing-decision.schema.json").read_text())
-        self.assertEqual(data["title"], "Routing Decision")
-        self.assertIn("route", data["required"])
-
-    def test_generated_prompts_embed_contracts_without_runtime_file_reads(self):
-        for name in self.config["agent"]:
+    def test_generated_prompts_embed_handoff_contract_without_runtime_schema_reads(self):
+        for name in CORE:
             text = (PROMPTS / f"{name}.md").read_text()
-            self.assertNotIn("`contracts/agent-handoff.schema.json`", text, name)
-            self.assertNotIn("`contracts/routing-decision.schema.json`", text, name)
+            self.assertNotIn("contracts/agent-handoff.schema.json", text, name)
             self.assertIn("Agent Handoff required fields:", text, name)
-            self.assertIn("Routing Decision required fields:", text, name)
+            self.assertIn("state_updates", text, name)
+            self.assertIn("handoff_request", text, name)
             self.assertIn("Do not try to read them from the target repository at runtime.", text, name)
 
-        meta_router = (PROMPTS / "meta-router.md").read_text()
-        self.assertIn("embedded Routing Decision contract below", meta_router)
+    def test_router_and_orchestrator_define_mediated_handoffs(self):
+        router = (PROMPTS / "meta-router.md").read_text().lower()
+        orch = (PROMPTS / "orchestrator.md").read_text().lower()
+        self.assertIn("## agent communication", router)
+        self.assertIn("do not hold free-form peer conversations", router)
+        self.assertIn("compact mission state", router)
+        self.assertIn("## agent communication", orch)
+        self.assertIn("children return structured handoffs", orch)
+        self.assertIn("maximum delegation depth is two", orch)
 
-    def test_architecture_workflow_is_staged_and_independent(self):
-        meta_router = (PROMPTS / "meta-router.md").read_text().lower()
-        self.assertIn("## architecture delivery workflow", meta_router)
-        self.assertIn("platform-architect", meta_router)
-        self.assertIn("review-lead", meta_router)
-        self.assertIn("security-lead", meta_router)
-        self.assertIn("parallelizable", meta_router)
-        self.assertIn("final independent reviewer", meta_router)
+    def test_architecture_security_and_research_are_self_contained(self):
+        architect = (PROMPTS / "platform-architect.md").read_text().lower()
+        security = (PROMPTS / "security-lead.md").read_text().lower()
+        research = (PROMPTS / "research-runner.md").read_text().lower()
+        self.assertIn("not separate agent identities", architect)
+        self.assertIn("do not delegate to appsec/iac/pentest/secrets subagents", security)
+        self.assertIn("context7", research)
+        self.assertIn("single agent", research)
 
-    def test_platform_architect_produces_review_ready_handoff(self):
-        text = (PROMPTS / "platform-architect.md").read_text().lower()
-        self.assertIn("## review-ready architecture output", text)
-        self.assertIn("docs-writer", text)
-        self.assertIn("artifact path", text)
-        self.assertIn("review-lead", text)
-        self.assertIn("security-lead", text)
-        self.assertIn("do not self-certify", text)
-
-    def test_review_lead_rechecks_architecture_from_direct_evidence(self):
-        text = (PROMPTS / "review-lead.md").read_text().lower()
-        self.assertIn("## architecture review policy", text)
-        self.assertIn("direct repository evidence", text)
-        self.assertIn("project-scanner", text)
-        self.assertIn("aws-platform", text)
-        self.assertIn("migration/rollback gaps", text)
-        self.assertIn("parallelize independent read-only dimensions", text)
-
-    def test_common_prompt_encourages_native_parallel_read_only_gates(self):
-        text = (PROMPTS / "meta-router.md").read_text().lower()
-        self.assertIn("native background subagents", text)
-        self.assertIn("same completed artifact", text)
-
-    def test_leads_use_delegation_economy_but_leaves_do_not(self):
-        for name in ["meta-router", "orchestrator", "review-lead", "platform-architect", "security-lead"]:
-            text = (PROMPTS / f"{name}.md").read_text().lower()
-            self.assertIn("## delegation economy", text, name)
-            self.assertIn("smallest sufficient set of children", text, name)
-            self.assertIn("do not delegate merely because a technology is detected", text, name)
-            self.assertIn("once a child returns complete", text, name)
-
-        for name in ["builder", "terraform-terragrunt", "project-scanner", "reviewer"]:
-            text = (PROMPTS / f"{name}.md").read_text().lower()
-            self.assertNotIn("## delegation economy", text, name)
-
-    def test_platform_architect_requires_material_specialist_trigger(self):
-        text = (PROMPTS / "platform-architect.md").read_text().lower()
-        self.assertIn("## architecture specialist trigger policy", text)
-        self.assertIn("do not fan out to every technology detected", text)
-        self.assertIn(".tf", text)
-        self.assertIn("terraform-terragrunt", text)
-        self.assertIn("module/state/provider/lifecycle/dependency/migration", text)
-        self.assertIn("material architecture decision", text)
-
-    def test_evidence_auditor_avoids_numeric_confidence(self):
-        text = (PROMPTS / "evidence-auditor.md").read_text().lower()
-        self.assertIn("high/medium/low", text)
-        self.assertNotIn("score from 0 to 100", text)
+    def test_reviewer_is_independent_and_read_only(self):
+        text = (PROMPTS / "reviewer.md").read_text().lower()
+        self.assertIn("independent read-only review", text)
+        self.assertIn("do not implement fixes", text)
+        self.assertIn("producer's summary", text)
 
 
 if __name__ == "__main__":

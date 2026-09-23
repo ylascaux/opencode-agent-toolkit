@@ -10,69 +10,60 @@ ROOT = Path(__file__).resolve().parents[1]
 AGENTS = ROOT / "agents"
 MODULE = runpy.run_path(str(ROOT / "scripts" / "agent_config.py"), run_name="agent_config_test")
 
+CORE = {
+    "meta-router",
+    "orchestrator",
+    "builder",
+    "debugger",
+    "tester",
+    "reviewer",
+    "platform-architect",
+    "security-lead",
+    "research-runner",
+}
+
 
 class AgentDirectoryLayoutTests(unittest.TestCase):
-    def test_exact_agent_catalog_is_directory_driven(self):
-        directories = sorted(
-            path for path in AGENTS.iterdir()
-            if path.is_dir() and not path.name.startswith("_")
-        )
-        self.assertEqual(len(directories), 41)
-        for directory in directories:
-            self.assertTrue((directory / "agent.json").is_file(), directory.name)
-            self.assertTrue((directory / "prompt.md").is_file(), directory.name)
-            self.assertTrue((directory / "permissions.json").is_file(), directory.name)
+    def test_active_catalog_is_small_and_explicit(self):
+        catalog = json.loads((AGENTS / "catalog.json").read_text())["agents"]
+        self.assertEqual(set(catalog), CORE)
+        self.assertEqual(len(catalog), 9)
+        for name in catalog:
+            directory = AGENTS / name
+            for filename in ["agent.json", "prompt.md", "permissions.json"]:
+                self.assertTrue((directory / filename).is_file(), f"{name}: {filename}")
 
-    def test_no_legacy_editable_catalogs_remain(self):
-        self.assertFalse((AGENTS / "manifest.json").exists())
-        self.assertFalse((AGENTS / "permissions").exists())
-        self.assertFalse((ROOT / "profiles" / "agent-tiers.json").exists())
-
-    def test_loader_builds_valid_graph_and_model_catalog(self):
+    def test_loader_uses_only_active_catalog_and_builds_valid_graph(self):
         specs = MODULE["load_agents"]()
         children = MODULE["children_by_parent"](specs)
-        self.assertEqual(len(specs), 41)
+        self.assertEqual(set(specs), CORE)
         self.assertEqual(specs["meta-router"].mode, "primary")
-        self.assertEqual(specs["builder"].tier, "medium")
-        self.assertEqual(specs["mock-generator"].tier, "low")
-        self.assertEqual(specs["source-discovery"].tier, "low")
-        self.assertEqual(specs["structured-extractor"].tier, "medium")
-        self.assertEqual(specs["entity-resolver"].tier, "medium")
-        self.assertEqual(specs["research-runner"].tier, "low")
+        self.assertEqual(specs["orchestrator"].tier, "high")
+        self.assertEqual(specs["reviewer"].tier, "high")
+        self.assertEqual(specs["security-lead"].tier, "high")
         self.assertEqual(specs["platform-architect"].tier, "high")
-        self.assertIn("docs-writer", children["platform-architect"])
-        self.assertIn("terraform-terragrunt", children["platform-architect"])
-        self.assertIn("source-discovery", children["orchestrator"])
-        self.assertIn("structured-extractor", children["orchestrator"])
-        self.assertIn("entity-resolver", children["orchestrator"])
-        self.assertIn("research-runner", children["meta-router"])
-        self.assertIn("source-discovery", children["research-runner"])
-        self.assertIn("structured-extractor", children["research-runner"])
-        self.assertIn("entity-resolver", children["research-runner"])
-        self.assertEqual(children["builder"], [])
+        self.assertEqual(specs["research-runner"].tier, "medium")
+        self.assertEqual(
+            set(children["meta-router"]),
+            {"orchestrator", "reviewer", "platform-architect", "security-lead", "research-runner"},
+        )
+        self.assertEqual(
+            set(children["orchestrator"]),
+            {"builder", "debugger", "tester", "reviewer", "security-lead", "research-runner"},
+        )
+        self.assertEqual(children["platform-architect"], ["reviewer"])
+        for leaf in ["builder", "debugger", "tester", "reviewer", "security-lead", "research-runner"]:
+            self.assertEqual(children[leaf], [])
 
-    def test_normalized_agents_keep_runtime_extensions_separate_from_common_intent(self):
-        normalized = MODULE["load_normalized_agents"]()
-        self.assertEqual(len(normalized), 41)
-        self.assertEqual(normalized["builder"].__class__.__module__, "runtime.common.normalization")
-        self.assertEqual(normalized["builder"].extensions, {"opencode": {}})
-        self.assertEqual(normalized["builder"].opencode, {})
-        self.assertEqual(normalized["meta-router"].parents, ())
-        self.assertIn("orchestrator", MODULE["children_by_parent"](normalized)["meta-router"])
-
-    def test_generated_manifest_is_derived_and_points_back_to_source(self):
+    def test_generated_manifest_contains_only_core_agents(self):
         subprocess.run(["python3", str(ROOT / "scripts" / "generate-config")], check=True)
         manifest = json.loads((ROOT / ".generated" / "agents.json").read_text())
-        self.assertEqual(len(manifest), 41)
-        self.assertEqual(manifest["aws-platform"]["source"], "agents/aws-platform")
-        self.assertIn("platform-architect", manifest["aws-platform"]["parents"])
-        self.assertIn("aws-platform", manifest["platform-architect"]["children"])
-        self.assertIn("orchestrator", manifest["source-discovery"]["parents"])
-        self.assertIn("research-runner", manifest["source-discovery"]["parents"])
+        self.assertEqual(set(manifest), CORE)
+        self.assertEqual(manifest["builder"]["source"], "agents/builder")
+        self.assertIn("reviewer", manifest["orchestrator"]["children"])
+        self.assertIn("reviewer", manifest["platform-architect"]["children"])
 
-    def test_new_agent_scaffolder_creates_all_three_files(self):
-        # Execute a copy of the scaffolder in a minimal temporary toolkit so the
-        # real repository is never mutated by the test.
+    def test_new_agent_scaffolder_does_not_implicitly_activate_agent(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "toolkit"
             scripts = root / "scripts"
@@ -84,7 +75,7 @@ class AgentDirectoryLayoutTests(unittest.TestCase):
                     str(scripts / "new-agent"),
                     "cloudflare",
                     "--parent",
-                    "platform-architect",
+                    "orchestrator",
                     "--tier",
                     "medium",
                     "--model-profile",
@@ -97,11 +88,8 @@ class AgentDirectoryLayoutTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             target = root / "agents" / "cloudflare"
             self.assertTrue((target / "agent.json").exists())
-            self.assertTrue((target / "prompt.md").exists())
-            self.assertTrue((target / "permissions.json").exists())
             config = json.loads((target / "agent.json").read_text())
-            self.assertEqual(config["parents"], ["platform-architect"])
-            self.assertEqual(config["model_env"], "MODEL_CLOUDFLARE")
+            self.assertEqual(config["parents"], ["orchestrator"])
 
 
 if __name__ == "__main__":

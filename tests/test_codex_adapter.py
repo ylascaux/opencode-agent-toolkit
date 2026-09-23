@@ -136,9 +136,9 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertEqual(report["children"], children[name])
             if not children[name]:
                 self.assertFalse(self.native_agent(plan, name)["agents"]["enabled"])
-        modified = {**self.specs, "builder": replace(self.specs["builder"], parents=("review-lead",))}
+        modified = {**self.specs, "builder": replace(self.specs["builder"], parents=("platform-architect",))}
         report = self.report(self.adapter.plan(modified))
-        self.assertIn("builder", report["agents"]["review-lead"]["children"])
+        self.assertIn("builder", report["agents"]["platform-architect"]["children"])
         self.assertNotIn("builder", report["agents"]["orchestrator"]["children"])
 
     def test_permissions_remain_canonical_with_conservative_native_sandbox(self):

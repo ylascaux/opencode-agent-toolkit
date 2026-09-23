@@ -6,10 +6,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED_PROMPTS = ROOT / ".generated" / "prompts"
+CORE = [
+    "meta-router",
+    "orchestrator",
+    "builder",
+    "debugger",
+    "tester",
+    "reviewer",
+    "platform-architect",
+    "security-lead",
+    "research-runner",
+]
 
 
 class PlanApprovalTests(unittest.TestCase):
-    """Legacy adapter contracts plus separation from the native launcher."""
+    """Optional plan-gate compatibility without forcing approval in normal use."""
 
     @classmethod
     def setUpClass(cls):
@@ -23,50 +34,44 @@ class PlanApprovalTests(unittest.TestCase):
         self.assertEqual(policy["plan_approval"]["default_mode"], "off")
 
     def test_only_v2_loads_the_optional_plan_gate(self):
+        v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
+        self.assertNotIn("./runtime/plugins/plan-approval-v2", v1["plugin"])
         self.assertIn("./runtime/plugins/plan-approval-v2", v2["plugins"])
         self.assertTrue((ROOT / "runtime" / "plugins" / "plan-approval-v2").is_dir())
 
-    def test_plan_approval_markers_are_v2_only(self):
+    def test_default_commands_do_not_create_an_artificial_approval_round_trip(self):
         v1 = json.loads((ROOT / "opencode.jsonc").read_text())
         v2 = json.loads((ROOT / "opencode.v2.jsonc").read_text())
         self.assertIn("plan", v1["command"])
-        for command in v1["command"].values():
+        self.assertIn("plan", v2["commands"])
+        for command in list(v1["command"].values()) + list(v2["commands"].values()):
             self.assertNotIn("PLAN_APPROVAL_REQUIRED", command["template"])
             self.assertNotIn("PLAN_REAPPROVAL_REQUIRED", command["template"])
-        self.assertIn("PLAN_APPROVAL_REQUIRED", v2["commands"]["plan"]["template"])
-        self.assertIn("PLAN_APPROVAL_REQUIRED", v2["commands"]["ship"]["template"])
-        self.assertIn("PLAN_REAPPROVAL_REQUIRED", v2["commands"]["ship"]["template"])
 
     def test_v1_prompts_disable_plan_approval(self):
         v1_prompts = ROOT / ".generated" / "prompts-v1"
-        for name in ["meta-router", "orchestrator", "planner", "builder", "tester"]:
+        for name in CORE:
             text = (v1_prompts / f"{name}.md").read_text()
             self.assertIn("Effective `PLAN_APPROVAL_MODE`: `off`", text, name)
             self.assertIn("Do not pause solely for PLAN_APPROVAL_REQUIRED", text, name)
 
-    def test_generated_prompts_include_global_plan_contract(self):
-        for name in ["meta-router", "orchestrator", "planner", "builder", "tester"]:
+    def test_generated_prompts_keep_optional_global_plan_contract(self):
+        for name in CORE:
             text = (GENERATED_PROMPTS / f"{name}.md").read_text()
             self.assertIn("## Plan approval contract", text, name)
             self.assertIn("PLAN_APPROVAL_REQUIRED", text, name)
             self.assertIn("PLAN_REAPPROVAL_REQUIRED", text, name)
+            self.assertIn("Effective `PLAN_APPROVAL_MODE`: `off`", text, name)
 
-    def test_leads_expose_plan_boundary_specific_behavior(self):
-        orchestrator = (GENERATED_PROMPTS / "orchestrator.md").read_text()
-        router = (GENERATED_PROMPTS / "meta-router.md").read_text()
-        planner = (GENERATED_PROMPTS / "planner.md").read_text()
-        self.assertIn("## Plan-first delivery", orchestrator)
-        self.assertIn("user approval", orchestrator.lower())
-        self.assertIn("## Plan approval routing", router)
-        self.assertIn("root user", router.lower())
-        self.assertIn("AFFECTED FILES / COMPONENTS", planner)
-        self.assertIn("ROLLBACK", planner)
-
-    def test_native_environment_does_not_advertise_a_runtime_gate(self):
-        text = (ROOT / ".env.example").read_text()
-        self.assertNotIn("PLAN_APPROVAL_MODE=", text)
-        self.assertIn("OAT_RUNTIME=host", text)
+    def test_router_and_orchestrator_explicitly_avoid_extra_approval_when_off(self):
+        orchestrator = (GENERATED_PROMPTS / "orchestrator.md").read_text().lower()
+        router = (GENERATED_PROMPTS / "meta-router.md").read_text().lower()
+        self.assertIn("do not create an artificial approval round-trip", orchestrator)
+        for text in [router, orchestrator]:
+            self.assertIn("effective `plan_approval_mode`: `off`", text)
+            self.assertIn("do not pause solely for plan_approval_required", text)
+            self.assertNotIn("planner.md", text)
 
     def test_runtime_gate_remains_available_when_explicitly_enabled(self):
         core = (ROOT / "runtime" / "plugins" / "plan-approval-core.js").read_text()
