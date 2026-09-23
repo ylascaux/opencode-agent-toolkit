@@ -30,6 +30,7 @@ class Oc2LauncherTests(unittest.TestCase):
         self.write_script("configure-local", "")
         self.write_script("resolve-models", "print('export MODEL_BUILDER=test/medium')\n")
         self.write_script("opencode-skill-source", "print('{}')\n")
+        self.write_script("configure-v2-memory", "")
         for native in ("opencode", "opencode2"):
             file = self.bin / native
             file.write_text("#!/usr/bin/env python3\nimport json,os,sys\nprint(json.dumps({"
@@ -37,7 +38,8 @@ class Oc2LauncherTests(unittest.TestCase):
                             "'cwd': os.getcwd(), 'home': os.environ['HOME'],"
                             "'config': os.environ.get('OPENCODE_CONFIG'),"
                             "'major': os.environ.get('OPENCODE_MAJOR'),"
-                            "'model': os.environ.get('MODEL_BUILDER')}))\n"
+                            "'model': os.environ.get('MODEL_BUILDER'),"
+                            "'v2_memory': os.environ.get('OAT_NATIVE_V2_MEMORY_PLUGIN')}))\n"
                             "sys.exit(int(os.environ.get('FAKE_EXIT', '0')))\n")
             file.chmod(0o755)
         for name in ("oc", "oc2"):
@@ -66,6 +68,7 @@ class Oc2LauncherTests(unittest.TestCase):
         self.assertEqual(output["major"], "2")
         self.assertEqual(output["args"], ["--standalone", "run", "hello"])
         self.assertEqual(Path(output["config"]).resolve(), self.toolkit / "opencode.v2.jsonc")
+        self.assertEqual(output["v2_memory"], "opencode-mem@2.26.0")
 
     def test_oc_is_always_native_v1(self):
         self.env["OPENCODE_MAJOR"] = "2"
@@ -92,6 +95,11 @@ class Oc2LauncherTests(unittest.TestCase):
         for args in (("auth", "login"), ("auth", "list"), ("--help",), ("--version",)):
             with self.subTest(args=args):
                 self.assertEqual(self.output(self.launch(*args))["args"], list(args))
+
+    def test_oc2_memory_can_be_disabled_without_affecting_launcher(self):
+        self.env["OAT_OC2_MEMORY_ENABLED"] = "0"
+        output = self.output(self.launch("run", "hello"))
+        self.assertIsNone(output["v2_memory"])
 
     def test_explicit_server_and_standalone_are_not_rewritten(self):
         for args in (("--server", "http://localhost:4096", "run", "hello"),
