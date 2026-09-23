@@ -247,6 +247,12 @@ def atomic_write(path: Path, text: str) -> None:
 def prepare(vault: Path, home: Path, cwd: Path, context_file: Path) -> tuple[str, str]:
     project = ensure_layout(vault, home, cwd)
     context = zsh_call(home, vault, project, "ai-context", [project], cwd)
+    context += (
+        "\n\n## OpenCode toolkit memory integration\n"
+        "Use the `oat-memory` MCP tools for persistent-memory operations in this session. "
+        "Use `search_memory` instead of the shell-only `ai-mem-search`, "
+        "`add_note` for durable session notes, and `add_lesson` for reusable cross-project lessons."
+    )
     atomic_write(context_file, context)
     return project, context
 
