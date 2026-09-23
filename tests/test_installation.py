@@ -32,7 +32,7 @@ class InstallationSurfaceTests(unittest.TestCase):
             config = json.loads((checkout / "opencode.jsonc").read_text())
             self.assertEqual(config["default_agent"], "meta-router")
             self.assertIn("orchestrator", config["agents"])
-            self.assertEqual(config["plugins"], ["opencode-mem@2.26.0"])
+            self.assertEqual(config["plugins"], ["-rehydra", "-rehydra.*", "oc2-memory@0.1.1"])
             self.assertFalse((checkout / "opencode.v2.jsonc").exists())
             self.assertTrue((checkout / ".opencode/skills/test-review/SKILL.md").is_file())
 
