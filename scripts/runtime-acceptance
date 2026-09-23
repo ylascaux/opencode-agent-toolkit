@@ -124,18 +124,17 @@ def fake_opencode(path: Path) -> None:
     path.chmod(0o755)
 
 
-def check_launcher(root: Path, project: Path, env: dict[str, str], binary: Path, major: str) -> None:
+def check_launcher(root: Path, project: Path, env: dict[str, str], binary: Path) -> None:
     capture = Path(env["OAT_ACCEPTANCE_CAPTURE"])
     run(
         ["bash", str(root / "scripts" / "opencode-agents"), "--acceptance-probe"],
         cwd=project,
-        env={**env, "OPENCODE_MAJOR": major, "OPENCODE_BIN": str(binary)},
+        env={**env, "OPENCODE_BIN": str(binary)},
     )
     value = json.loads(capture.read_text())
-    require(value["cwd"] == str(project.resolve()), f"OpenCode V{major} changed external cwd")
-    expected = root / ("opencode.v2.jsonc" if major == "2" else "opencode.jsonc")
-    require(value["config"] == str(expected), f"OpenCode V{major} selected wrong config")
-    require(str(root / ".opencode" / "skills") in value["content"].get("skills", []), f"OpenCode V{major} missed toolkit skill source")
+    require(value["cwd"] == str(project.resolve()), "OpenCode 2 changed external cwd")
+    require(value["config"] == str(root / "opencode.jsonc"), "OpenCode 2 selected wrong config")
+    require(str(root / ".opencode" / "skills") in value["content"].get("skills", []), "OpenCode 2 missed toolkit skill source")
 
 
 def check_real_memory_mcp(root: Path, project: Path, env: dict[str, str]) -> None:
@@ -252,14 +251,12 @@ def main() -> int:
         fixtures = temp / "projects"
         project = make_project(fixtures, "external-project")
         before = snapshot(project)
-        fake_v1, fake_v2 = temp / "fake-v1", temp / "fake-v2"
-        fake_opencode(fake_v1)
-        fake_opencode(fake_v2)
+        fake = temp / "fake-opencode"
+        fake_opencode(fake)
         env["OAT_ACCEPTANCE_CAPTURE"] = str(temp / "launcher.json")
-        check_launcher(root, project, env, fake_v1, "1")
-        check_launcher(root, project, env, fake_v2, "2")
-        require(snapshot(project) == before, "launcher probes mutated external project")
-        print("[ok] OpenCode V1/V2 launcher routing")
+        check_launcher(root, project, env, fake)
+        require(snapshot(project) == before, "launcher probe mutated external project")
+        print("[ok] OpenCode 2 launcher routing")
 
         if skip_memory:
             print("[skip] real memory MCP (explicit OAT_ACCEPTANCE_SKIP_MEMORY=1)")
