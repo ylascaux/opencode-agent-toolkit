@@ -94,40 +94,50 @@ oc codex uninstall
 Pour la configuration OpenCode utilisée au quotidien, utilisez `just config` ;
 les lanceurs natifs la régénèrent également avant de démarrer.
 
-## Mémoire : optionnelle et fail-open
+## Mémoire OpenCode V2 : plugin tiers `opencode-mem`
 
-`oc memory ...` et le MCP portable de Codex restent séparés du runtime principal.
-L'installation de base (`just install`) ne clone, ne construit et ne synchronise
-toujours aucun plugin.
+`oc2` charge par défaut le paquet publié `opencode-mem@2.26.0`. Ce plugin est
+maintenu hors de ce dépôt et OpenCode V2 l'installe via son mécanisme natif de
+plugins. Le toolkit ne clone, ne build et ne maintient donc plus son plugin
+mémoire maison pour V2.
 
-Pour activer la mémoire OpenCode une fois le dépôt mémoire connu :
+Au premier lancement, si `~/.config/opencode/opencode-mem.jsonc` n'existe pas,
+le toolkit crée une configuration minimale pour rendre l'auto-capture utile
+immédiatement : le provider est déduit du profil `MODEL_*` actif et
+`opencodeModel` vaut `inherit`, afin d'utiliser le modèle réel de la session.
+Un fichier existant n'est jamais écrasé.
 
-```bash
-oc memory enable git@github.com:USER/opencode-memory.git
-oc memory capture-on
-```
+La mémoire est locale, par projet par défaut, avec recherche vectorielle,
+auto-capture à l'idle et réinjection des souvenirs pertinents. Le serveur Web du
+plugin est désactivé dans la configuration minimale créée par le toolkit ; vous
+pouvez le réactiver dans le fichier du plugin si vous souhaitez son interface.
 
-`oc memory enable` prépare explicitement le plugin et le vault local. Ensuite,
-`oc` et `oc2` chargent automatiquement ce plugin **uniquement s'il est déjà
-disponible localement**. V1 utilise son hook d'injection natif ; V2 charge le
-plugin de capture et injecte le contexte rendu dans les prompts des agents.
-
-Le démarrage natif reste fail-open : si le plugin, le vault ou le rendu mémoire
-est indisponible, OpenCode démarre sans mémoire. Le lancement ne fait aucun
-clone/pull/build et force l'auto-sync et le mode strict à off pour le processus
-OpenCode. Pour rafraîchir volontairement plugin/vault, utilisez :
+Pour désactiver la mémoire V2 ou changer le paquet épinglé :
 
 ```bash
-oc memory sync
+# .env.local
+OAT_OC2_MEMORY_ENABLED=0
+
+# ou, pour tester explicitement une autre version
+OAT_OC2_MEMORY_PLUGIN=opencode-mem@2.26.0
 ```
 
-Les candidats restent locaux jusqu'aux commandes humaines d'acceptation et de
-promotion. Désactiver la capture ou toute la mémoire reste explicite :
+Si la déduction du provider ne convient pas :
 
 ```bash
-oc memory capture-off
-oc memory disable
+OAT_OC2_MEMORY_PROVIDER=github-copilot
 ```
+
+Le premier usage du moteur d'embeddings local peut télécharger son modèle. Les
+outils mémoire manuels du plugin restent disponibles même si l'auto-capture ne
+peut pas utiliser de provider.
+
+### Compatibilité V1 / Codex
+
+L'ancien bridge privé `oc memory ...` reste présent uniquement pour ne pas casser
+les usages V1/Codex existants. Il n'est plus chargé par `oc2`. De même,
+`oc codex install --with-memory` reste un chemin de compatibilité séparé et ne
+conditionne pas le fonctionnement de la mémoire OpenCode V2.
 
 ## Migration depuis Docker
 
