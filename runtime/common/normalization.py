@@ -12,6 +12,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = ROOT / "agents"
 DEFAULTS_DIR = AGENTS_DIR / "_defaults"
+CATALOG_PATH = AGENTS_DIR / "catalog.json"
 SKILLS_DIR = ROOT / "skills"
 
 VALID_MODES = {"primary", "all", "subagent"}
