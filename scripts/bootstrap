@@ -30,8 +30,7 @@ else
 fi
 
 # Rehydra is intentionally not part of this toolkit. OpenCode stores the exact
-# configured package target, so a versioned entry such as
-# @rehydra/opencode@0.13.0 must be removed with that exact target.
+# configured package target, so remove all installed targets that match it.
 rehydra_targets=()
 while IFS= read -r target; do
   [[ -n "$target" ]] && rehydra_targets+=("$target")
@@ -50,62 +49,79 @@ unset rehydra_targets target
 if [[ ! -f "$ROOT/.env" ]]; then
   (umask 077; cp "$ROOT/.env.example" "$ROOT/.env")
 fi
+
+# Migrate the short-lived create-ai-memory configuration introduced in #86.
+# Preserve every unrelated setting and let .env.local continue to override it.
+if grep -q '^OAT_AI_MEMORY_' "$ROOT/.env" 2>/dev/null; then
+  python3 - "$ROOT/.env" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+lines = path.read_text().splitlines()
+values = {}
+for line in lines:
+    match = re.match(r"^\s*([A-Z0-9_]+)=(.*)$", line)
+    if match:
+        values[match.group(1)] = match.group(2).strip()
+
+enabled_raw = values.get("OAT_AI_MEMORY_ENABLED", "1")
+enabled = "0" if enabled_raw.lower() in {"0", "false", "no", "off"} else "1"
+repo = values.get("OAT_AI_MEMORY_REPO", "https://github.com/ylascaux/opencode-memory.git")
+root = values.get("OAT_AI_MEMORY_ROOT", "$HOME/opencode-memory")
+
+drop = {
+    "OAT_MEMORY_ENABLED",
+    "OAT_MEMORY_CAPTURE_ENABLED",
+    "OAT_MEMORY_REPO",
+    "OAT_MEMORY_DIR",
+}
+output = []
+for line in lines:
+    match = re.match(r"^\s*([A-Z0-9_]+)=", line)
+    key = match.group(1) if match else ""
+    if key.startswith("OAT_AI_MEMORY_") or key in drop:
+        continue
+    output.append(line)
+
+while output and not output[-1].strip():
+    output.pop()
+output.extend([
+    "",
+    "# Persistent memory: native opencode-memory-plugin + private Markdown/Git vault.",
+    f"OAT_MEMORY_ENABLED={enabled}",
+    f"OAT_MEMORY_CAPTURE_ENABLED={enabled}",
+    f"OAT_MEMORY_REPO={repo}",
+    f"OAT_MEMORY_DIR={root}",
+])
+path.write_text("\n".join(output).rstrip() + "\n")
+PY
+fi
+
 set -a
 source "$ROOT/.env"
 [[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
 
-case "${OAT_AI_MEMORY_ENABLED:-1}" in
+case "${OAT_MEMORY_ENABLED:-1}" in
   0|false|FALSE|no|NO|off|OFF)
-    printf 'Persistent AI memory disabled by OAT_AI_MEMORY_ENABLED.\n'
+    printf 'Persistent memory disabled by OAT_MEMORY_ENABLED.\n'
     ;;
   *)
-    command -v zsh >/dev/null 2>&1 || {
-      echo "zsh is required by create-ai-memory." >&2
-      exit 127
-    }
-    memory_version="${OAT_AI_MEMORY_VERSION:-0.15.4}"
-    memory_vendor="${OAT_AI_MEMORY_VENDOR_DIR:-$HOME/.local/share/opencode-agent-toolkit/vendor/ai-memory}"
-    memory_root="${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}"
-    memory_repo="${OAT_AI_MEMORY_REPO:-https://github.com/ylascaux/opencode-memory.git}"
-
-    if [[ -n "${OAT_AI_MEMORY_HOME:-}" ]]; then
-      memory_home="$OAT_AI_MEMORY_HOME"
-      [[ -f "$memory_home/package.json" ]] || {
-        echo "OAT_AI_MEMORY_HOME does not contain create-ai-memory: $memory_home" >&2
-        exit 2
-      }
-      installed_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$memory_home/package.json")"
-      printf 'Using explicit create-ai-memory installation: %s (%s)\n' "$memory_home" "$installed_version"
-    else
-      memory_home="$memory_vendor/node_modules/create-ai-memory"
-      installed_version=""
-      if [[ -f "$memory_home/package.json" ]]; then
-        installed_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$memory_home/package.json" 2>/dev/null || true)"
-      fi
-      if [[ "$installed_version" != "$memory_version" ]]; then
-        command -v npm >/dev/null 2>&1 || {
-          echo "npm is required to install create-ai-memory@$memory_version." >&2
-          exit 127
-        }
-        mkdir -p "$memory_vendor"
-        npm install --prefix "$memory_vendor" --no-save --no-package-lock --no-audit --no-fund "create-ai-memory@$memory_version"
-      else
-        printf 'Keeping create-ai-memory version: %s\n' "$installed_version"
-      fi
-    fi
-
-    if [[ ! -d "$memory_root" ]]; then
-      command -v git >/dev/null 2>&1 || { echo "git is required to clone the memory vault." >&2; exit 127; }
-      [[ -n "$memory_repo" ]] || { echo "OAT_AI_MEMORY_ROOT does not exist and OAT_AI_MEMORY_REPO is empty." >&2; exit 2; }
-      if ! git clone "$memory_repo" "$memory_root"; then
+    command -v git >/dev/null 2>&1 || { echo "git is required for persistent memory." >&2; exit 127; }
+    command -v node >/dev/null 2>&1 || { echo "node is required for the OpenCode memory plugin." >&2; exit 127; }
+    memory_repo="${OAT_MEMORY_REPO:-https://github.com/ylascaux/opencode-memory.git}"
+    memory_dir="${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
+    [[ -n "$memory_repo" ]] || { echo "OAT_MEMORY_REPO cannot be empty while memory is enabled." >&2; exit 2; }
+    if [[ ! -d "$memory_dir" ]]; then
+      if ! git clone "$memory_repo" "$memory_dir"; then
         printf '%s\n' "Unable to clone private memory repository: $memory_repo" >&2
-        printf '%s\n' "Authenticate Git for GitHub (for example: gh auth login && gh auth setup-git), or point OAT_AI_MEMORY_ROOT at an existing local clone." >&2
+        printf '%s\n' "Authenticate Git for GitHub (for example: gh auth login && gh auth setup-git), or point OAT_MEMORY_DIR at an existing local clone." >&2
         exit 1
       fi
     fi
-
-    python3 -B "$ROOT/scripts/ai-memory-adapter" setup --home "$memory_home" --root "$memory_root" --cwd "$ROOT" >/dev/null
+    python3 -B "$ROOT/scripts/memory_plugin.py" >/dev/null
     ;;
 esac
 
@@ -114,8 +130,8 @@ bash "$ROOT/scripts/user-link" install oc
 bash "$ROOT/scripts/user-link" uninstall oc2 || true
 
 printf '\nToolkit launcher installed: oc\n'
-case "${OAT_AI_MEMORY_ENABLED:-1}" in
+case "${OAT_MEMORY_ENABLED:-1}" in
   0|false|FALSE|no|NO|off|OFF) ;;
-  *) printf 'Memory: create-ai-memory@%s + %s\n' "${OAT_AI_MEMORY_VERSION:-0.15.4}" "${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}" ;;
+  *) printf 'Memory: native automatic capture + %s\n' "${OAT_MEMORY_DIR:-$HOME/opencode-memory}" ;;
 esac
-printf 'Run: oc --version && oc mcp list\n'
+printf 'Run: oc --version && oc memory status\n'
