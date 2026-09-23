@@ -56,7 +56,7 @@ def native_permissions(value: Any) -> Any:
     return "allow" if value == "ask" else copy.deepcopy(value)
 
 
-def render_config(specs: Mapping[str, Any], *, v2: bool) -> dict:
+def render_config(specs: Mapping[str, Any]) -> dict:
     primary = next(name for name, spec in specs.items() if spec.mode == "primary")
     children: dict[str, list[str]] = {name: [] for name in specs}
     for name, spec in specs.items():
@@ -80,14 +80,13 @@ def render_config(specs: Mapping[str, Any], *, v2: bool) -> dict:
             **native_permissions(spec.permissions),
             "task": {"*": "deny", **{child: "allow" for child in delegated}},
         }
-        if v2:
-            rules = []
-            for action, values in permissions.items():
-                resources = {"*": values} if isinstance(values, str) else values
-                for resource, effect in resources.items():
-                    rules.append({"action": {"bash": "shell", "task": "subagent"}.get(action, action),
-                                  "resource": resource, "effect": effect})
-            permissions = rules
+        rules = []
+        for action, values in permissions.items():
+            resources = {"*": values} if isinstance(values, str) else values
+            for resource, effect in resources.items():
+                rules.append({"action": {"bash": "shell", "task": "subagent"}.get(action, action),
+                              "resource": resource, "effect": effect})
+        permissions = rules
         extension = copy.deepcopy(spec.extensions.get("opencode", {}))
         collisions = RESERVED & extension.keys()
         if collisions:
@@ -96,32 +95,29 @@ def render_config(specs: Mapping[str, Any], *, v2: bool) -> dict:
             "description": spec.description,
             "mode": spec.mode,
             "model": f"{{env:{spec.model_env}}}",
-            "system" if v2 else "prompt": "\n\n".join(parts),
-            "permissions" if v2 else "permission": permissions,
+            "system": "\n\n".join(parts),
+            "permissions": permissions,
             **extension,
         }
     config = {
         "$schema": "https://opencode.ai/config.json",
         "default_agent": primary,
-        "agents" if v2 else "agent": agents,
-        "commands" if v2 else "command": {
+        "agents": agents,
+        "commands": {
             name: {"description": description, "template": template, "agent": primary}
             for name, (description, template) in COMMANDS.items()
         },
-        "plugins" if v2 else "plugin": [],
+        "plugins": ["opencode-mem@2.26.0"],
     }
-    if v2:
-        config["experimental"] = {"subagent_depth": 2}
-        config["compaction"] = {"auto": True, "keep": {"tokens": 15000}, "buffer": 20000}
-    else:
-        config["subagent_depth"] = 2
+    config["experimental"] = {"subagent_depth": 2}
+    config["compaction"] = {"auto": True, "keep": {"tokens": 15000}, "buffer": 20000}
     return config
 
 
 def render_files(root: Path, specs: Mapping[str, Any], skills: Mapping[str, Any]) -> dict[Path, bytes]:
-    files = {}
-    for v2, name in ((False, "opencode.jsonc"), (True, "opencode.v2.jsonc")):
-        files[root / name] = (json.dumps(render_config(specs, v2=v2), indent=2) + "\n").encode()
+    files = {
+        root / "opencode.jsonc": (json.dumps(render_config(specs), indent=2) + "\n").encode()
+    }
     for name, skill in sorted(skills.items()):
         files[root / ".opencode" / "skills" / name / "SKILL.md"] = (
             f"---\nname: {name}\ndescription: {json.dumps(skill.description, ensure_ascii=False)}\n---\n\n"
