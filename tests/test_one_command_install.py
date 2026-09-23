@@ -11,15 +11,15 @@ class OneCommandInstallTests(unittest.TestCase):
         install = text.split("\ninstall:\n", 1)[1].split("\n\n", 1)[0]
         self.assertIn("bash ./scripts/bootstrap", install)
 
-    def test_bootstrap_generates_then_installs_without_runtime_setup(self):
+    def test_bootstrap_updates_stable_cli_installs_plugin_and_only_links_oc(self):
         text = (ROOT / "scripts/bootstrap").read_text()
-        generation = text.index('python3 -B "$ROOT/scripts/configure-local"')
-        self.assertLess(generation, text.index('bash "$ROOT/scripts/user-link" install oc'))
-        self.assertIn('bash "$ROOT/scripts/user-link" install oc2', text)
-        for legacy in ('bash ./scripts/docker-build', 'docker run ', 'docker-runtime',
-                       'python3 -m venv', 'pip install -', 'npm ci ', 'npm install -'):
-            self.assertNotIn(legacy, text)
-        self.assertIn('if [[ ! -f "$ROOT/.env" ]]', text)
+        self.assertIn("npm uninstall -g opencode-ai", text)
+        self.assertIn("npm install -g @opencode/cli@latest", text)
+        self.assertIn('opencode plugin add', text)
+        self.assertIn('scripts/configure-memory', text)
+        self.assertIn('scripts/user-link" uninstall oc2', text)
+        self.assertIn('scripts/user-link" install oc', text)
+        self.assertNotIn('scripts/user-link" install oc2', text)
 
     def test_bootstrap_remains_valid_bash(self):
         result = subprocess.run(["bash", "-n", str(ROOT / "scripts/bootstrap")], capture_output=True, text=True)
