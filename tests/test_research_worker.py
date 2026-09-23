@@ -23,7 +23,7 @@ def settings() -> WorkerSettings:
         execution_timeout_seconds=30,
         max_attempts=2,
         max_tier="medium",
-        opencode_command="opencode2 --server http://127.0.0.1:4096",
+        opencode_command="opencode --server http://127.0.0.1:4096",
         claim_path="/api/internal/research/v2/jobs/claim",
         result_path_template="/api/internal/research/v2/jobs/{job_id}/result",
     )
