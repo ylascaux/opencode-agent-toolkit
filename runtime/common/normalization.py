@@ -108,14 +108,24 @@ def validate_permission_tree(value: Any, *, path: str) -> None:
 def discover_agent_dirs() -> list[Path]:
     if not DEFAULTS_DIR.is_dir():
         raise SystemExit("Missing agents/_defaults directory")
-    directories = [
-        path
-        for path in AGENTS_DIR.iterdir()
-        if path.is_dir() and not path.name.startswith("_")
-    ]
-    if not directories:
-        raise SystemExit("No agents found under agents/<name>/")
-    return sorted(directories, key=lambda path: path.name)
+    catalog = load_json(CATALOG_PATH)
+    names = catalog.get("agents")
+    if (
+        not isinstance(names, list)
+        or not names
+        or not all(isinstance(name, str) and NAME_RE.fullmatch(name) for name in names)
+    ):
+        raise SystemExit("agents/catalog.json must contain a non-empty 'agents' array of valid names")
+    if len(set(names)) != len(names):
+        raise SystemExit("agents/catalog.json contains duplicate agent names")
+
+    directories = []
+    for name in names:
+        path = AGENTS_DIR / name
+        if not path.is_dir():
+            raise SystemExit(f"Catalog agent directory is missing: agents/{name}")
+        directories.append(path)
+    return directories
 
 
 def _resolved_config(name: str, directory: Path, defaults: dict) -> dict:
