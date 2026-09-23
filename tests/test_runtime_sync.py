@@ -36,7 +36,7 @@ class RuntimeSyncTests(unittest.TestCase):
             shutil.copytree(ROOT / directory, self.root / directory, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         scripts = self.root / "scripts"
         scripts.mkdir()
-        for filename in ("opencode-agents", "sync-runtime", "generate-config", "agent_config.py", "apply-reliability"):
+        for filename in ("opencode-agents", "sync-runtime", "generate-config", "agent_config.py"):
             shutil.copy2(ROOT / "scripts" / filename, scripts / filename)
         shutil.copy2(ROOT / "reliability.json", self.root / "reliability.json")
         self.launcher = self.root / "bin" / "oc"
@@ -125,19 +125,21 @@ class RuntimeSyncTests(unittest.TestCase):
         self.assertTrue((self.root / "opencode.jsonc").is_file())
         self.assertTrue((self.root / ".generated" / "codex" / "runtime.json").is_file())
 
-    def test_opencode_sync_matches_existing_generation_and_current_golden(self):
+    def test_opencode_sync_matches_stable_generation(self):
         self.assert_success(self.sync("opencode"))
-        paths = [self.root / "opencode.jsonc", self.root / "opencode.v2.jsonc", self.root / ".generated" / "agents.json"]
+        paths = [self.root / "opencode.jsonc", self.root / ".generated" / "agents.json"]
         paths += sorted((self.root / ".generated" / "prompts").glob("*.md"))
         actual = {str(p.relative_to(self.root)): p.read_bytes() for p in paths}
-        result = subprocess.run([sys.executable, "-B", str(self.root / "scripts" / "generate-config")], cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assertFalse((self.root / "opencode.v2.jsonc").exists())
+        result = subprocess.run(
+            [sys.executable, "-B", str(self.root / "scripts" / "generate-config")],
+            cwd=self.root,
+            env=self.env,
+            capture_output=True,
+            text=True,
+        )
         self.assert_success(result)
         self.assertEqual(actual, {str(p.relative_to(self.root)): p.read_bytes() for p in paths})
-        result = subprocess.run([sys.executable, "-B", str(self.root / "scripts" / "apply-reliability")], cwd=self.root, env=self.env, capture_output=True, text=True)
-        self.assert_success(result)
-        from test_config_parity import generated_output_digests
-        golden = json.loads((ROOT / "tests" / "fixtures" / "opencode-output.sha256.json").read_text())
-        self.assertEqual(generated_output_digests(self.root), golden)
 
     def test_unknown_runtime_and_conflicting_flags_fail_without_writes(self):
         before = filesystem_snapshot(self.root)
