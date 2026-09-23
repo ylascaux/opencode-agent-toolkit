@@ -5,43 +5,33 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NativeMemoryContractTests(unittest.TestCase):
-    def test_native_launcher_loads_memory_after_base_config_and_never_blocks(self):
+    def test_oc2_uses_published_memory_plugin_not_private_bridge(self):
         launcher = (ROOT / "scripts/opencode-agents").read_text()
-        configure = launcher.index('scripts/configure-local')
-        memory = launcher.index('scripts/native_memory.py')
-        inline = launcher.index('scripts/opencode-skill-source')
-        self.assertLess(configure, memory)
-        self.assertLess(memory, inline)
-        self.assertIn('OAT_MEMORY_AUTO_SYNC=0 OPENCODE_MEMORY_AUTO_SYNC=0', launcher)
-        self.assertIn('OAT_MEMORY_STRICT=0 OPENCODE_MEMORY_STRICT=0', launcher)
-        self.assertIn('OAT_NATIVE_MEMORY_PLUGIN', launcher)
-        self.assertIn('continuing without memory', launcher)
-
-    def test_native_memory_uses_only_existing_local_plugin_and_vault(self):
-        loader = (ROOT / "scripts/native_memory.py").read_text()
-        self.assertIn('OAT_MEMORY_PLUGIN_DIR', loader)
-        self.assertIn('data / "opencode-agent-toolkit" / "plugins" / "opencode-memory-plugin"', loader)
-        self.assertIn('not entry.is_file() or not vault.is_dir()', loader)
-        self.assertIn('"v2.js" if args.major == "2" else "v1.js"', loader)
-        self.assertIn('prepare_v2_wrapper', loader)
-        self.assertIn('f"export {{ default }} from', loader)
-        self.assertIn('"exports": "./index.js"', loader)
-        self.assertIn('"render", "--agent"', loader)
-        for forbidden in ('git clone', 'git pull', 'ensure_plugin(', 'npm install', 'pip install'):
-            self.assertNotIn(forbidden, loader)
-
-    def test_memory_plugin_is_added_to_highest_precedence_inline_config(self):
         inline = (ROOT / "scripts/opencode-skill-source").read_text()
-        self.assertIn('OAT_NATIVE_MEMORY_PLUGIN', inline)
-        self.assertIn('"plugins" if major == "2" else "plugin"', inline)
-        self.assertIn('append_unique', inline)
 
-    def test_explicit_memory_cli_still_owns_install_sync_and_capture(self):
-        memory = (ROOT / "scripts/memory").read_text()
-        self.assertIn('ensure_plugin(force_sync=True)', memory)
-        self.assertIn('sub.add_parser("sync"', memory)
-        self.assertIn('sub.add_parser("capture-on"', memory)
-        self.assertIn('OAT_MEMORY_CAPTURE_ENABLED', memory)
+        self.assertIn('OAT_OC2_MEMORY_PLUGIN:-opencode-mem@2.26.0', launcher)
+        self.assertIn('OAT_NATIVE_V2_MEMORY_PLUGIN', launcher)
+        self.assertIn('scripts/configure-v2-memory', launcher)
+        self.assertIn('if [[ "$major" == 1 ]]', launcher)
+        self.assertIn('scripts/native_memory.py" --major 1', launcher)
+        self.assertNotIn('scripts/native_memory.py" --major "$major"', launcher)
+
+        self.assertIn('v2_memory_plugin = os.environ.get("OAT_NATIVE_V2_MEMORY_PLUGIN"', inline)
+        self.assertIn('if v2_memory_plugin and major == "2"', inline)
+        self.assertIn('append_unique(config, "plugins", v2_memory_plugin)', inline)
+
+    def test_private_memory_bridge_is_v1_only_at_runtime(self):
+        inline = (ROOT / "scripts/opencode-skill-source").read_text()
+        self.assertIn('if memory_plugin and major == "1"', inline)
+        self.assertIn('append_unique(config, "plugin", memory_plugin)', inline)
+        self.assertNotIn('append_unique(config, "plugins" if major == "2" else "plugin", memory_plugin)', inline)
+
+    def test_oc2_memory_is_opt_out_and_version_pinned(self):
+        launcher = (ROOT / "scripts/opencode-agents").read_text()
+        env = (ROOT / ".env.example").read_text()
+        self.assertIn('OAT_OC2_MEMORY_ENABLED:-1', launcher)
+        self.assertIn('OAT_OC2_MEMORY_ENABLED=1', env)
+        self.assertIn('OAT_OC2_MEMORY_PLUGIN=opencode-mem@2.26.0', env)
 
 
 if __name__ == "__main__":

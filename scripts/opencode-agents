@@ -76,20 +76,39 @@ python3 -B "$ROOT/scripts/configure-local" >/dev/null
 resolved_models="$(python3 -B "$ROOT/scripts/resolve-models")"
 eval "$resolved_models"
 
-# Native memory is optional and fail-open. Startup never syncs or updates the
-# plugin/vault; explicit `oc memory sync` owns remote refresh. Strict failures
-# are disabled only for the OpenCode child runtime, not for explicit memory CLI.
+# The old private memory bridge is retained only for V1 compatibility.
+# OC2 uses the maintained third-party opencode-mem package instead.
 export OAT_MEMORY_AUTO_SYNC=0 OPENCODE_MEMORY_AUTO_SYNC=0
 export OAT_MEMORY_STRICT=0 OPENCODE_MEMORY_STRICT=0
 memory_plugin=""
-if ! memory_plugin="$(python3 -B "$ROOT/scripts/native_memory.py" --major "$major")"; then
-  printf '%s\n' 'OpenCode memory integration failed; continuing without memory.' >&2
-  memory_plugin=""
+if [[ "$major" == 1 ]]; then
+  if ! memory_plugin="$(python3 -B "$ROOT/scripts/native_memory.py" --major 1)"; then
+    printf '%s\n' 'OpenCode V1 memory integration failed; continuing without memory.' >&2
+    memory_plugin=""
+  fi
 fi
 if [[ -n "$memory_plugin" ]]; then
   export OAT_NATIVE_MEMORY_PLUGIN="$memory_plugin"
 else
   unset OAT_NATIVE_MEMORY_PLUGIN || true
+fi
+
+# OpenCode V2 installs npm plugins itself. Pin the package so toolkit upgrades
+# are deliberate, and keep the integration opt-out/fail-open.
+if [[ "$major" == 2 ]]; then
+  case "${OAT_OC2_MEMORY_ENABLED:-1}" in
+    0|false|FALSE|no|NO|off|OFF)
+      unset OAT_NATIVE_V2_MEMORY_PLUGIN || true
+      ;;
+    *)
+      export OAT_NATIVE_V2_MEMORY_PLUGIN="${OAT_OC2_MEMORY_PLUGIN:-opencode-mem@2.26.0}"
+      if ! python3 -B "$ROOT/scripts/configure-v2-memory" >/dev/null; then
+        printf '%s\n' 'OC2 memory configuration failed; continuing with plugin defaults.' >&2
+      fi
+      ;;
+  esac
+else
+  unset OAT_NATIVE_V2_MEMORY_PLUGIN || true
 fi
 
 # OC2 currently persists real token counters with cost=0. Load a read-only,

@@ -4,6 +4,14 @@ All notable toolkit changes are documented here.
 
 The project uses semantic versioning for tagged releases. `VERSION` is the release source of truth; Git tags use the corresponding `v<version>` form.
 
+## Unreleased
+
+### Changed
+
+- OpenCode V2 now uses the maintained third-party `opencode-mem@2.26.0` package for persistent memory instead of the toolkit's private V2 memory bridge.
+- OC2 creates a minimal `opencode-mem` configuration only when the user has none, inferring the provider from the active model profile and using the session model via `inherit`.
+- The private memory bridge remains available only for V1/Codex compatibility and is no longer injected into OC2.
+
 ## [0.1.2] - 2026-09-13
 
 Patch release removing semantic delegated-task deduplication.
