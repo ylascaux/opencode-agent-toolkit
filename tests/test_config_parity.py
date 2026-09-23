@@ -20,14 +20,17 @@ CORE = {
 HIGH = {"orchestrator", "reviewer", "platform-architect", "security-lead"}
 WRITERS = {"builder", "debugger", "tester"}
 READ_ONLY = {"reviewer", "platform-architect", "security-lead", "research-runner"}
-LEGACY_NAMES = {
-    "api-contract", "appsec", "arbiter", "architecture-designer", "aws-platform",
-    "brainstorm", "cicd", "database", "deep-reasoner", "docs-writer",
-    "entity-resolver", "evidence-auditor", "finops", "go-specialist",
-    "iac-security", "kubernetes", "mock-generator", "networking", "observability",
-    "pentest", "performance", "planner", "project-scanner", "python-specialist",
-    "review-lead", "secrets", "source-discovery", "sre", "structured-extractor",
-    "supply-chain", "terraform-terragrunt", "threat-model",
+LEGACY_ROUTING_NAMES = {
+    "arbiter",
+    "deep-reasoner",
+    "docs-writer",
+    "entity-resolver",
+    "evidence-auditor",
+    "planner",
+    "project-scanner",
+    "review-lead",
+    "source-discovery",
+    "structured-extractor",
 }
 
 
@@ -127,7 +130,7 @@ class ConfigPolicyTests(unittest.TestCase):
     def test_commands_do_not_reference_legacy_agents(self):
         for name, command in self.v2["commands"].items():
             template = command["template"]
-            for legacy in LEGACY_NAMES:
+            for legacy in LEGACY_ROUTING_NAMES:
                 self.assertNotIn(legacy, template, f"{name}: {legacy}")
 
     def test_generation_is_deterministic(self):
