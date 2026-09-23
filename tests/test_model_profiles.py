@@ -94,6 +94,13 @@ class ModelProfileTests(unittest.TestCase):
         self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-6-luna")
         self.assertEqual(values["MODEL_HIGH"], "openai/gpt-6-sol")
 
+    def test_codex_astra_uses_luna6_below_high(self):
+        values = PROFILE["load_profile"]("codex_astra")
+        self.assertEqual(values["MODEL_PROFILE"], "codex_astra")
+        self.assertEqual(values["MODEL_LOW"], "openai/gpt-6-luna")
+        self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-6-luna")
+        self.assertEqual(values["MODEL_HIGH"], "openai/gpt-6-astra")
+
     def test_profile_switch_backs_up_and_removes_generated_agent_mappings(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
