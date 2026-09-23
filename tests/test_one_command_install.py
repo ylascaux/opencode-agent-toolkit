@@ -11,13 +11,21 @@ class OneCommandInstallTests(unittest.TestCase):
         install = text.split("\ninstall:\n", 1)[1].split("\n\n", 1)[0]
         self.assertIn("bash ./scripts/bootstrap", install)
 
-    def test_bootstrap_installs_released_cli_and_only_oc_launcher(self):
+    def test_existing_opencode_is_preserved_before_any_npm_action(self):
         text = (ROOT / "scripts/bootstrap").read_text()
-        self.assertIn("npm uninstall -g opencode-ai", text)
-        self.assertIn("npm install -g @opencode/cli@latest", text)
+        detect = text.index("if command -v opencode")
+        npm = text.index("npm uninstall -g opencode-ai")
+        self.assertLess(detect, npm)
+        self.assertIn("OpenCode already installed", text)
+        self.assertIn("Keeping existing OpenCode version", text)
         self.assertIn('bash "$ROOT/scripts/user-link" install oc', text)
         self.assertIn('bash "$ROOT/scripts/user-link" uninstall oc2', text)
         self.assertNotIn('user-link" install oc2', text)
+
+    def test_missing_opencode_can_be_installed_with_npm(self):
+        text = (ROOT / "scripts/bootstrap").read_text()
+        self.assertIn("npm install -g @opencode/cli@latest", text)
+        self.assertIn("OpenCode is not installed and npm is unavailable", text)
 
     def test_bootstrap_remains_valid_bash(self):
         result = subprocess.run(["bash", "-n", str(ROOT / "scripts/bootstrap")], capture_output=True, text=True)
