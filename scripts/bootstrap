@@ -2,21 +2,49 @@
 set -euo pipefail
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 case "${1:-}" in
-  ""|--refresh) ;; # The previous refresh spelling now just regenerates local files.
+  ""|--refresh) ;;
   *) echo "Usage: $0 [--refresh]" >&2; exit 2 ;;
 esac
+
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 127; }
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || {
   echo "Python 3.11 or newer is required" >&2; exit 2;
 }
+
+if [[ "${OAT_INSTALL_OPENCODE:-1}" != "0" ]]; then
+  command -v npm >/dev/null 2>&1 || {
+    echo "npm is required to install/update OpenCode 2. Set OAT_INSTALL_OPENCODE=0 to keep an existing installation." >&2
+    exit 127
+  }
+  npm uninstall -g opencode-ai >/dev/null 2>&1 || true
+  npm install -g @opencode/cli@latest --no-audit --no-fund
+fi
+
+command -v opencode >/dev/null 2>&1 || {
+  echo "OpenCode 2 is not installed. Official npm install: npm install -g @opencode/cli" >&2
+  exit 127
+}
+version="$(opencode --version 2>/dev/null | head -n 1 || true)"
+[[ "$version" =~ ^2\. ]] || {
+  echo "OpenCode 2 is required; found: ${version:-unknown}. Run: npm uninstall -g opencode-ai && npm install -g @opencode/cli@latest" >&2
+  exit 2
+}
+opencode service stop >/dev/null 2>&1 || true
+
 if [[ ! -f "$ROOT/.env" ]]; then
   (umask 077; cp "$ROOT/.env.example" "$ROOT/.env")
 fi
+
 python3 -B "$ROOT/scripts/configure-local"
+python3 -B "$ROOT/scripts/configure-memory" || true
+
+if [[ "${OAT_INSTALL_PLUGINS:-1}" != "0" ]]; then
+  opencode plugin add "${OAT_MEMORY_PLUGIN:-opencode-mem@2.26.0}"
+fi
+
+# Remove the toolkit's obsolete beta-era launcher if it is still ours.
+bash "$ROOT/scripts/user-link" uninstall oc2 >/dev/null 2>&1 || true
 bash "$ROOT/scripts/user-link" install oc
-bash "$ROOT/scripts/user-link" install oc2
-printf '\nInstalled native oc and oc2. Run either from your project directory.\n'
-printf 'No Docker, npm install, pip install, background server or auth migration was run.\n'
-for binary in opencode opencode2; do
-  command -v "$binary" >/dev/null 2>&1 || printf 'Missing optional runtime: %s (install it before using its launcher).\n' "$binary"
-done
+
+printf '\nInstalled OpenCode 2 stable integration: oc -> opencode (%s).\n' "$version"
+printf 'Memory plugin: %s\n' "${OAT_MEMORY_PLUGIN:-opencode-mem@2.26.0}"
