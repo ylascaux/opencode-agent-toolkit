@@ -63,31 +63,25 @@ esac
 python3 -B "$ROOT/scripts/configure-local" >/dev/null
 eval "$(python3 -B "$ROOT/scripts/resolve-models")"
 
-# create-ai-memory is installed in toolkit-owned user data. The adapter keeps
-# the upstream package unmodified while mapping it onto the structured
-# opencode-memory Git/Obsidian vault.
-unset OAT_AI_MEMORY_ADAPTER OAT_AI_MEMORY_CONTEXT_FILE OAT_AI_MEMORY_PROJECT || true
-case "${OAT_AI_MEMORY_ENABLED:-1}" in
+# Native memory capture is loaded from the toolkit-managed external plugin.
+# Runtime startup never clones, pulls or builds; `just install` owns those actions.
+unset OAT_MEMORY_PLUGIN_TARGET OAT_MEMORY_CONTEXT_FILE || true
+case "${OAT_MEMORY_ENABLED:-1}" in
   0|false|FALSE|no|NO|off|OFF)
     ;;
   *)
-    memory_home="${OAT_AI_MEMORY_HOME:-$HOME/.local/share/opencode-agent-toolkit/vendor/ai-memory/node_modules/create-ai-memory}"
-    memory_root="${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}"
-    memory_adapter="$ROOT/scripts/ai-memory-adapter"
-    if [[ -f "$memory_home/shell/ai-mem.zsh" && -d "$memory_root" ]] && command -v zsh >/dev/null 2>&1; then
-      memory_context="${TMPDIR:-/tmp}/oat-ai-memory-${UID:-0}-$.md"
-      if memory_project="$(python3 -B "$memory_adapter" prepare --home "$memory_home" --root "$memory_root" --cwd "$PWD" --context-file "$memory_context")"; then
-        export OAT_AI_MEMORY_HOME="$memory_home"
-        export OAT_AI_MEMORY_ROOT="$memory_root"
-        export OAT_AI_MEMORY_PROJECT="$memory_project"
-        export OAT_AI_MEMORY_CONTEXT_FILE="$memory_context"
-        export OAT_AI_MEMORY_ADAPTER="$memory_adapter"
+    export OAT_MEMORY_CAPTURE_ENABLED="${OAT_MEMORY_CAPTURE_ENABLED:-1}"
+    memory_context="${TMPDIR:-/tmp}/oat-memory-${UID:-0}-$$.md"
+    if memory_target="$(python3 -B "$ROOT/scripts/native_memory.py" --major 2 --context-file "$memory_context")"; then
+      if [[ -n "$memory_target" ]]; then
+        export OAT_MEMORY_PLUGIN_TARGET="$memory_target"
+        [[ ! -f "$memory_context" ]] || export OAT_MEMORY_CONTEXT_FILE="$memory_context"
       else
         rm -f "$memory_context"
-        printf '%s\n' 'AI memory preparation failed; continuing without persistent memory.' >&2
       fi
     else
-      printf '%s\n' 'create-ai-memory or its vault is missing; run just install to enable persistent memory.' >&2
+      rm -f "$memory_context"
+      printf '%s\n' 'Native memory preparation failed; continuing without persistent memory.' >&2
     fi
     ;;
 esac
