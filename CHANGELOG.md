@@ -13,10 +13,11 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ### Changed
 
+- Reduce the active OpenCode runtime catalog from 41 agents to nine core roles, with technology specializations handled as skills/competencies instead of permanent agent identities.
+- Mediate agent-to-agent collaboration through structured parent-owned handoffs and compact mission state; free-form peer conversations are not part of the routing model.
+- Keep orchestration, architecture, independent review and security on HIGH while routine implementation, debugging, testing, routing and research use MEDIUM.
 - Move Copilot and Codex default tiers to GPT-6: Luna 6 for LOW/MEDIUM and Sol 6 for HIGH.
-- Promote orchestrator, planner and all review-profile agents to HIGH so orchestration, planning, review and security use the strongest default tier.
-
-### Changed
+- Promote orchestrator and the critical architecture/review/security roles to HIGH so high-impact decisions use the strongest default tier.
 
 - Replace the temporary `oc2-memory` integration with upstream `create-ai-memory@0.15.4`, installed outside the repository in toolkit-owned user data.
 - Keep `ylascaux/opencode-memory` as the Git/Obsidian source of truth and map create-ai-memory's expected compatibility paths onto `projects/`, `sessions/`, `lessons/` and `workstyle/` without changing the tracked layout.
