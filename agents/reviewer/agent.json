@@ -1,13 +1,14 @@
 {
-  "description": "Use for independent read-only correctness review of code changes. Do not implement fixes or substitute for AppSec/IaC security specialists.",
+  "description": "Use for independent read-only correctness review of code, infrastructure, tests and operational changes. Do not implement fixes.",
   "mode": "subagent",
   "model_env": "MODEL_REVIEWER",
   "tier": "high",
   "model_profile": "review",
-  "steps": 16,
+  "steps": 20,
   "parents": [
+    "meta-router",
     "orchestrator",
-    "review-lead"
+    "platform-architect"
   ],
   "opencode": {}
 }
