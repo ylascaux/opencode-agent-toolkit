@@ -30,6 +30,10 @@ else
   }
 fi
 
+# Rehydra is intentionally not part of this toolkit. Remove its global package
+# entry when present; ignore "not installed" and old-version errors.
+opencode plugin remove @rehydra/opencode >/dev/null 2>&1 || true
+
 if [[ ! -f "$ROOT/.env" ]]; then
   (umask 077; cp "$ROOT/.env.example" "$ROOT/.env")
 fi
@@ -40,5 +44,5 @@ bash "$ROOT/scripts/user-link" install oc
 bash "$ROOT/scripts/user-link" uninstall oc2 || true
 
 printf '\nToolkit launcher installed: oc\n'
-printf 'Memory plugin: opencode-mem@2.26.0 (loaded from generated OpenCode config).\n'
+printf 'Memory plugin: oc2-memory@0.1.1 (plain Markdown, Obsidian/Git friendly).\n'
 printf 'Run: oc --version && oc plugin list\n'
