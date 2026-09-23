@@ -35,3 +35,7 @@ jobs:
           opencode --version
       - name: Native launch, configuration and project-context smoke
         run: python3 -B scripts/native-smoke
+      - name: Validate configured plugins
+        run: |
+          python3 -B scripts/configure-local
+          OPENCODE_CONFIG="$PWD/opencode.jsonc" opencode plugin list
