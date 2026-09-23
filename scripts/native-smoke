@@ -48,6 +48,10 @@ def main() -> int:
             "OPENCODE_SERVER_USERNAME": "opencode", "OPENCODE_SERVER_PASSWORD": "native-smoke-only",
         }
         subprocess.run(["bash", str(toolkit / "scripts/bootstrap")], cwd=project, env=env, check=True)
+        if args.major == "2":
+            # .env is sourced after process env, so use the normal highest-precedence
+            # local override to keep CI independent from external npm/model downloads.
+            (toolkit / ".env.local").write_text("OAT_OC2_MEMORY_ENABLED=0\n")
         # A project-owned skill must survive alongside the toolkit skill sources.
         skill = project / ".agents/skills/project-skill/SKILL.md"
         skill.parent.mkdir(parents=True)
