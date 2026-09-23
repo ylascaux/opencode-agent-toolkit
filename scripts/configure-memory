@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Create a minimal opencode-mem config when the user has not configured it yet.
+
+The toolkit never overwrites an existing opencode-mem config. The provider is
+inferred from the active OpenCode model profile and the plugin follows the model
+used by each session via opencodeModel=inherit.
+"""
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from pathlib import Path
+
+
+def active_provider() -> str:
+    explicit = os.getenv("OAT_MEMORY_PROVIDER", "").strip()
+    if explicit:
+        return explicit
+    for key in ("MODEL_MEDIUM", "MODEL_HIGH", "MODEL_LOW"):
+        value = os.getenv(key, "").strip()
+        if "/" in value:
+            return value.split("/", 1)[0].strip()
+    return ""
+
+
+def atomic_write(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fchmod(stream.fileno(), 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def main() -> int:
+    config = Path.home() / ".config" / "opencode" / "opencode-mem.jsonc"
+    if config.exists():
+        if config.is_symlink() or not config.is_file():
+            print(f"Unsafe opencode-mem config path: {config}", file=os.sys.stderr)
+            return 1
+        return 0
+
+    provider = active_provider()
+    if not provider:
+        print(
+            "Unable to infer an OpenCode provider for opencode-mem; "
+            "manual memory tools will still work, but auto-capture needs "
+            "~/.config/opencode/opencode-mem.jsonc.",
+            file=os.sys.stderr,
+        )
+        return 0
+
+    payload = {
+        "opencodeProvider": provider,
+        "opencodeModel": "inherit",
+        "autoCaptureEnabled": True,
+        "webServerEnabled": False,
+        "memory": {"defaultScope": "project"},
+        "chatMessage": {
+            "enabled": True,
+            "maxMemories": 3,
+            "excludeCurrentSession": True,
+            "injectOn": "first",
+        },
+    }
+    atomic_write(config, (json.dumps(payload, indent=2) + "\n").encode())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
