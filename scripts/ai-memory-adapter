@@ -198,8 +198,11 @@ def ensure_layout(vault: Path, home: Path, cwd: Path) -> str:
 def zsh_call(home: Path, vault: Path, project: str, function: str, args: list[str], cwd: Path) -> str:
     module = home / "shell" / "ai-mem.zsh"
     script = r"""
+source "$OAT_AI_MEMORY_MODULE" || {
+  print -u2 -- "create-ai-memory: failed to source upstream module"
+  exit 1
+}
 set -e
-source "$OAT_AI_MEMORY_MODULE"
 export AI_MEM_ROOT="$OAT_AI_MEMORY_ROOT"
 export AI_MEM_FORCE_PROJECT="$OAT_AI_MEMORY_PROJECT"
 "$OAT_AI_MEMORY_FUNCTION" "$@"
