@@ -29,8 +29,23 @@ else
   }
 fi
 
-# Rehydra is intentionally not part of this toolkit.
-opencode plugin remove @rehydra/opencode >/dev/null 2>&1 || true
+# Rehydra is intentionally not part of this toolkit. OpenCode stores the exact
+# configured package target, so a versioned entry such as
+# @rehydra/opencode@0.13.0 must be removed with that exact target.
+rehydra_targets=()
+while IFS= read -r target; do
+  [[ -n "$target" ]] && rehydra_targets+=("$target")
+done < <(
+  opencode plugin list 2>/dev/null \
+    | grep -oE '@rehydra/opencode(@[^[:space:]]+)?' \
+    | sort -u \
+    || true
+)
+rehydra_targets+=("@rehydra/opencode")
+for target in "${rehydra_targets[@]}"; do
+  opencode plugin remove "$target" >/dev/null 2>&1 || true
+done
+unset rehydra_targets target
 
 if [[ ! -f "$ROOT/.env" ]]; then
   (umask 077; cp "$ROOT/.env.example" "$ROOT/.env")

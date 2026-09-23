@@ -19,7 +19,8 @@ class OneCommandInstallTests(unittest.TestCase):
         self.assertIn("OpenCode already installed", text)
         self.assertIn("Keeping existing OpenCode version", text)
         self.assertIn('bash "$ROOT/scripts/user-link" install oc', text)
-        self.assertIn('opencode plugin remove @rehydra/opencode', text)
+        self.assertIn('opencode plugin remove "$target"', text)
+        self.assertIn("@rehydra/opencode(@[^[:space:]]+)?", text)
         self.assertIn('bash "$ROOT/scripts/user-link" uninstall oc2', text)
         self.assertNotIn('user-link" install oc2', text)
 
