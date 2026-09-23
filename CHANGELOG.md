@@ -7,6 +7,8 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 ## Unreleased
 
 ### Changed
+- Replace `opencode-mem` with `oc2-memory@0.1.1`, a native OpenCode 2 plugin backed by plain Markdown that can live in an Obsidian vault and/or Git checkout.
+- Remove the global `@rehydra/opencode` package configuration during toolkit install when present, and disable `rehydra` plugin IDs in the generated config.
 
 - The toolkit now targets released OpenCode 2 only: `oc` launches the official `opencode` binary and the beta `oc2` / `opencode2` path is removed.
 - `just install` removes the legacy `opencode-ai` npm package when present and installs/updates `@opencode/cli@latest`.
