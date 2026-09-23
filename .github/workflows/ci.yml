@@ -20,10 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.18.0"
-      - name: Install stable OpenCode plugin SDK
-        run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Verify stable plugin SDK resolution
-        run: npm ls @opencode/plugin --depth=0
       - name: Python syntax
         run: python3 -m compileall -q scripts tests
       - name: Shell syntax
