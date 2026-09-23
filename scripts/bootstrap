@@ -51,53 +51,56 @@ if [[ ! -f "$ROOT/.env" ]]; then
 fi
 
 # Migrate the short-lived create-ai-memory configuration introduced in #86.
-# Preserve every unrelated setting and let .env.local continue to override it.
-if grep -q '^OAT_AI_MEMORY_' "$ROOT/.env" 2>/dev/null; then
-  python3 - "$ROOT/.env" <<'PY'
+# Preserve unrelated settings in both .env and .env.local.
+python3 - "$ROOT/.env" "$ROOT/.env.local" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-path = Path(sys.argv[1])
-lines = path.read_text().splitlines()
-values = {}
-for line in lines:
-    match = re.match(r"^\s*([A-Z0-9_]+)=(.*)$", line)
-    if match:
-        values[match.group(1)] = match.group(2).strip()
-
-enabled_raw = values.get("OAT_AI_MEMORY_ENABLED", "1")
-enabled = "0" if enabled_raw.lower() in {"0", "false", "no", "off"} else "1"
-repo = values.get("OAT_AI_MEMORY_REPO", "https://github.com/ylascaux/opencode-memory.git")
-root = values.get("OAT_AI_MEMORY_ROOT", "$HOME/opencode-memory")
-
-drop = {
-    "OAT_MEMORY_ENABLED",
-    "OAT_MEMORY_CAPTURE_ENABLED",
-    "OAT_MEMORY_REPO",
-    "OAT_MEMORY_DIR",
-}
-output = []
-for line in lines:
-    match = re.match(r"^\s*([A-Z0-9_]+)=", line)
-    key = match.group(1) if match else ""
-    if key.startswith("OAT_AI_MEMORY_") or key in drop:
+for raw_path in sys.argv[1:]:
+    path = Path(raw_path)
+    if not path.is_file():
         continue
-    output.append(line)
+    lines = path.read_text().splitlines()
+    values = {}
+    for line in lines:
+        match = re.match(r"^\s*([A-Z0-9_]+)=(.*)$", line)
+        if match:
+            values[match.group(1)] = match.group(2).strip()
+    if not any(key.startswith("OAT_AI_MEMORY_") for key in values):
+        continue
 
-while output and not output[-1].strip():
-    output.pop()
-output.extend([
-    "",
-    "# Persistent memory: native opencode-memory-plugin + private Markdown/Git vault.",
-    f"OAT_MEMORY_ENABLED={enabled}",
-    f"OAT_MEMORY_CAPTURE_ENABLED={enabled}",
-    f"OAT_MEMORY_REPO={repo}",
-    f"OAT_MEMORY_DIR={root}",
-])
-path.write_text("\n".join(output).rstrip() + "\n")
+    enabled_raw = values.get("OAT_AI_MEMORY_ENABLED", "1")
+    enabled = "0" if enabled_raw.lower() in {"0", "false", "no", "off"} else "1"
+    repo = values.get("OAT_AI_MEMORY_REPO", "https://github.com/ylascaux/opencode-memory.git")
+    root = values.get("OAT_AI_MEMORY_ROOT", "$HOME/opencode-memory")
+
+    drop = {
+        "OAT_MEMORY_ENABLED",
+        "OAT_MEMORY_CAPTURE_ENABLED",
+        "OAT_MEMORY_REPO",
+        "OAT_MEMORY_DIR",
+    }
+    output = []
+    for line in lines:
+        match = re.match(r"^\s*([A-Z0-9_]+)=", line)
+        key = match.group(1) if match else ""
+        if key.startswith("OAT_AI_MEMORY_") or key in drop:
+            continue
+        output.append(line)
+
+    while output and not output[-1].strip():
+        output.pop()
+    output.extend([
+        "",
+        "# Persistent memory: native opencode-memory-plugin + private Markdown/Git vault.",
+        f"OAT_MEMORY_ENABLED={enabled}",
+        f"OAT_MEMORY_CAPTURE_ENABLED={enabled}",
+        f"OAT_MEMORY_REPO={repo}",
+        f"OAT_MEMORY_DIR={root}",
+    ])
+    path.write_text("\n".join(output).rstrip() + "\n")
 PY
-fi
 
 set -a
 source "$ROOT/.env"
