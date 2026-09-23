@@ -83,7 +83,7 @@ def render_context(plugin: Path, context_file: Path) -> bool:
     env["OPENCODE_MEMORY_STRICT"] = "0"
     try:
         result = subprocess.run(
-            [node, str(cli), "render", "--agent", "orchestrator", "--cwd", os.getcwd()],
+            [node, str(cli), "render", "--cwd", os.getcwd()],
             env=env,
             text=True,
             stdout=subprocess.PIPE,
