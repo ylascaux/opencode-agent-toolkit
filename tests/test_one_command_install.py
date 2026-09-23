@@ -34,7 +34,8 @@ class OneCommandInstallTests(unittest.TestCase):
         self.assertIn('"create-ai-memory@$memory_version"', text)
         self.assertIn('OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory', text)
         self.assertIn('https://github.com/ylascaux/opencode-memory.git', text)
-        self.assertIn('scripts/ai-memory-adapter" setup', text)\n        self.assertIn('gh auth login && gh auth setup-git', text)
+        self.assertIn('scripts/ai-memory-adapter" setup', text)
+        self.assertIn('gh auth login && gh auth setup-git', text)
 
     def test_bootstrap_remains_valid_bash(self):
         result = subprocess.run(["bash", "-n", str(ROOT / "scripts/bootstrap")], capture_output=True, text=True)
