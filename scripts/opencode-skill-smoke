@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Probe the stable OpenCode 2 skill HTTP surface for an isolated project."""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parents[1]
+TOOLKIT_SKILLS = ("terraform-review", "security-review", "test-review")
+USERNAME = "opencode"
+PASSWORD = "oat-acceptance-only"
+LOCATION = "/workspace"
+
+
+def fail(message: str) -> None:
+    print(f"OpenCode skill smoke failed: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def run(command: list[str], *, cwd: Path):
+    return subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+
+
+def stage_real_skills(project: Path) -> None:
+    destination = project / ".agents" / "skills"
+    for name in TOOLKIT_SKILLS:
+        shutil.copytree(ROOT / "skills" / name, destination / name)
+    skill = destination / "project-skill" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: project-skill\ndescription: Project acceptance skill\n---\n\nfixture\n")
+
+
+def main() -> int:
+    if not shutil.which("docker"):
+        fail("docker is unavailable")
+    image = os.environ.get("OAT_RUNTIME_IMAGE", "opencode-agent-toolkit:local")
+    with tempfile.TemporaryDirectory(prefix="oat-skill-smoke-") as directory:
+        project = Path(directory) / "project"
+        project.mkdir(parents=True)
+        stage_real_skills(project)
+        (project / "README.md").write_text("# fixture\n")
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True, capture_output=True)
+
+        container_name = f"oat-skill-smoke-{os.getpid()}"
+        shell = (
+            "cd /opt/oat && "
+            "python3 -B scripts/configure-local >/dev/null && "
+            "export OPENCODE_CONFIG=/opt/oat/opencode.jsonc && "
+            "export OPENCODE_CONFIG_CONTENT=\"$(python3 -B scripts/opencode-skill-source /opt/oat/.opencode/skills)\" && "
+            "cd /workspace && exec opencode serve --hostname 127.0.0.1 --port 4096"
+        )
+        started = run([
+            "docker", "run", "-d", "--rm", "--name", container_name,
+            "--entrypoint", "bash",
+            "-v", f"{project}:/workspace", "-w", "/workspace",
+            "-e", "OPENCODE_DISABLE_MODELS_FETCH=1",
+            "-e", "OAT_INSTALL_PLUGINS=0",
+            "-e", "OAT_MEMORY_ENABLED=0",
+            "-e", f"OPENCODE_SERVER_USERNAME={USERNAME}",
+            "-e", f"OPENCODE_SERVER_PASSWORD={PASSWORD}",
+            image, "-lc", shell,
+        ], cwd=project)
+        if started.returncode != 0:
+            fail(f"could not start runtime image: {started.stderr}")
+        try:
+            payload = None
+            last_error = "server did not answer"
+            for _ in range(30):
+                probe = run([
+                    "docker", "exec", container_name,
+                    "curl", "-fsS", "-u", f"{USERNAME}:{PASSWORD}",
+                    "-H", f"x-opencode-directory: {LOCATION}",
+                    "http://127.0.0.1:4096/api/skill",
+                ], cwd=project)
+                if probe.returncode == 0:
+                    try:
+                        candidate = json.loads(probe.stdout)
+                        if isinstance(candidate, dict) and isinstance(candidate.get("data"), list):
+                            payload = candidate
+                            break
+                        last_error = f"unexpected response shape: {type(candidate).__name__}"
+                    except json.JSONDecodeError as exc:
+                        last_error = str(exc)
+                else:
+                    last_error = probe.stderr.strip() or probe.stdout.strip() or last_error
+                time.sleep(1)
+            if payload is None:
+                logs = run(["docker", "logs", container_name], cwd=project)
+                fail(f"skill API unavailable ({last_error})\n{logs.stdout}\n{logs.stderr}")
+
+            if payload.get("location", {}).get("directory") != LOCATION:
+                fail(f"skill API resolved unexpected location {payload.get('location')!r}")
+            print(f"PASS stable OpenCode skill API at {LOCATION}: {len(payload['data'])} entries")
+            return 0
+        finally:
+            subprocess.run(["docker", "rm", "-f", container_name], cwd=project, text=True, capture_output=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
