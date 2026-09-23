@@ -71,6 +71,36 @@ def main() -> int:
         context_text = str(context)
         config["instructions"] = [*instructions, *([] if context_text in instructions else [context_text])]
 
+    context7_enabled = os.environ.get("OAT_CONTEXT7_ENABLED", "1").strip().lower() not in {
+        "0", "false", "no", "off"
+    }
+    if context7_enabled:
+        mcp = config.get("mcp", {})
+        if mcp is None:
+            mcp = {}
+        if not isinstance(mcp, dict):
+            print("OPENCODE_CONFIG_CONTENT.mcp must be an object", file=sys.stderr)
+            return 2
+        servers = mcp.get("servers", {})
+        if servers is None:
+            servers = {}
+        if not isinstance(servers, dict):
+            print("OPENCODE_CONFIG_CONTENT.mcp.servers must be an object", file=sys.stderr)
+            return 2
+        if "context7" not in servers:
+            context7 = {
+                "type": "remote",
+                "url": "https://mcp.context7.com/mcp",
+            }
+            if os.environ.get("CONTEXT7_API_KEY", "").strip():
+                context7["oauth"] = False
+                context7["headers"] = {
+                    "Authorization": "Bearer {env:CONTEXT7_API_KEY}",
+                }
+            servers["context7"] = context7
+        mcp["servers"] = servers
+        config["mcp"] = mcp
+
     if adapter and memory_home and memory_root and memory_project:
         mcp = config.get("mcp", {})
         if mcp is None:
