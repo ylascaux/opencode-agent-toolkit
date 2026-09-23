@@ -50,6 +50,40 @@ Les invocations interactives et `run` utilisent `--standalone` par défaut afin
 qu'un ancien service OpenCode en arrière-plan ne conserve pas une configuration
 obsolète. Les commandes serveur/service et un `--server` explicite sont respectés.
 
+## Documentation actuelle : Context7
+
+Context7 est activé par défaut comme MCP distant natif OpenCode 2 :
+
+```text
+https://mcp.context7.com/mcp
+```
+
+Aucun package Context7 n'est installé localement et aucune version du plugin
+OpenCode n'est à maintenir. Le toolkit ajoute également le skill
+`context7-docs`, qui demande aux agents d'utiliser Context7 automatiquement
+quand une tâche dépend d'une API, bibliothèque ou framework susceptible d'avoir
+évolué.
+
+Une clé API est facultative. Pour des limites plus élevées :
+
+```bash
+# .env.local
+CONTEXT7_API_KEY="..."
+```
+
+La clé n'est jamais copiée dans la configuration générée : OpenCode reçoit
+uniquement `{env:CONTEXT7_API_KEY}`.
+
+Pour désactiver Context7 :
+
+```bash
+OAT_CONTEXT7_ENABLED=0
+```
+
+Une définition `context7` déjà fournie par l'utilisateur dans
+`OPENCODE_CONFIG_CONTENT.mcp.servers` reste prioritaire et n'est jamais
+écrasée.
+
 ## Mémoire persistante : create-ai-memory + opencode-memory
 
 Le toolkit utilise directement le package upstream :
