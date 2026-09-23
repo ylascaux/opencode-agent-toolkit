@@ -228,6 +228,49 @@ export AI_MEM_FORCE_PROJECT="$OAT_AI_MEMORY_PROJECT"
     return result.stdout.strip()
 
 
+
+def zsh_prepare_context(home: Path, vault: Path, project: str, cwd: Path) -> str:
+    """Use upstream preparation/rendering without its optional commit-guard gate."""
+    module = home / "shell" / "ai-mem.zsh"
+    script = r"""
+set -e
+source "$OAT_AI_MEMORY_MODULE"
+export AI_MEM_ROOT="$OAT_AI_MEMORY_ROOT"
+export AI_MEM_FORCE_PROJECT="$OAT_AI_MEMORY_PROJECT"
+
+resolved="$(__ai_mem_prepare_session "$OAT_AI_MEMORY_PROJECT")" || {
+  print -u2 -- "create-ai-memory: __ai_mem_prepare_session failed"
+  exit 1
+}
+IFS='|' read -r active_project project_note previous_session_note session_note <<< "$resolved"
+__ai_mem_export_active "$active_project" "$previous_session_note" "$session_note"
+__ai_mem_context_prompt "$project_note" "$previous_session_note" "$session_note" || {
+  print -u2 -- "create-ai-memory: __ai_mem_context_prompt failed"
+  exit 1
+}
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OAT_AI_MEMORY_MODULE": str(module),
+            "OAT_AI_MEMORY_ROOT": str(vault),
+            "OAT_AI_MEMORY_PROJECT": project,
+            "AI_MEM_ROOT": str(vault),
+            "AI_MEM_FORCE_PROJECT": project,
+        }
+    )
+    result = subprocess.run(
+        ["zsh", "-c", script],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise MemoryError((result.stderr or result.stdout or "create-ai-memory context preparation failed").strip())
+    return result.stdout.strip()
+
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -246,7 +289,7 @@ def atomic_write(path: Path, text: str) -> None:
 
 def prepare(vault: Path, home: Path, cwd: Path, context_file: Path) -> tuple[str, str]:
     project = ensure_layout(vault, home, cwd)
-    context = zsh_call(home, vault, project, "ai-context", [project], cwd)
+    context = zsh_prepare_context(home, vault, project, cwd)
     context += (
         "\n\n## OpenCode toolkit memory integration\n"
         "Use the `oat-memory` MCP tools for persistent-memory operations in this session. "
