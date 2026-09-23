@@ -2,21 +2,31 @@
 set -euo pipefail
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 case "${1:-}" in
-  ""|--refresh) ;; # The previous refresh spelling now just regenerates local files.
+  ""|--refresh) ;;
   *) echo "Usage: $0 [--refresh]" >&2; exit 2 ;;
 esac
+
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 127; }
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || {
   echo "Python 3.11 or newer is required" >&2; exit 2;
 }
+command -v npm >/dev/null 2>&1 || { echo "npm is required to install/update OpenCode 2" >&2; exit 127; }
+
+# OpenCode 2 stable owns the 'opencode' command. Remove the legacy V1 package
+# if npm still has it, then update the released CLI package in place.
+npm uninstall -g opencode-ai --no-audit --no-fund >/dev/null 2>&1 || true
+npm install -g @opencode/cli@latest --no-audit --no-fund
+command -v opencode >/dev/null 2>&1 || { echo "OpenCode 2 installation failed: opencode not found" >&2; exit 127; }
+
 if [[ ! -f "$ROOT/.env" ]]; then
   (umask 077; cp "$ROOT/.env.example" "$ROOT/.env")
 fi
+
 python3 -B "$ROOT/scripts/configure-local"
 bash "$ROOT/scripts/user-link" install oc
-bash "$ROOT/scripts/user-link" install oc2
-printf '\nInstalled native oc and oc2. Run either from your project directory.\n'
-printf 'No Docker, npm install, pip install, background server or auth migration was run.\n'
-for binary in opencode opencode2; do
-  command -v "$binary" >/dev/null 2>&1 || printf 'Missing optional runtime: %s (install it before using its launcher).\n' "$binary"
-done
+# Remove the toolkit-owned beta launcher if upgrading from an older checkout.
+bash "$ROOT/scripts/user-link" uninstall oc2 || true
+
+printf '\nInstalled OpenCode 2 stable and toolkit launcher: oc\n'
+printf 'Memory plugin: opencode-mem@2.26.0 (loaded from generated OpenCode config).\n'
+printf 'Run: oc --version && oc plugin list\n'
