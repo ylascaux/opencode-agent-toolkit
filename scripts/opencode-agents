@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SOURCE="${BASH_SOURCE[0]}"
-INVOKED_AS="$(basename "$0")"
-REQUESTED_MAJOR="${OPENCODE_MAJOR:-}"
 REQUESTED_BIN="${OPENCODE_BIN:-}"
 while [[ -L "$SOURCE" ]]; do
   SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
@@ -11,7 +9,6 @@ while [[ -L "$SOURCE" ]]; do
 done
 ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
 
-# These local operations do not need a provider, a .env, or OpenCode installed.
 case "${1:-}" in
   sync|codex)
     command_name="$1"; shift
@@ -22,12 +19,7 @@ case "${1:-}" in
     shift; exec bash "$ROOT/scripts/doctor" "$@"
     ;;
 esac
-if [[ "${1:-}" == memory && "${2:-}" == mcp ]]; then
-  shift 2; exec python3 -B "$ROOT/scripts/memory-mcp" "$@"
-fi
 
-# Existing profiles remain usable; obsolete Docker/sandbox knobs cannot change
-# the execution mode. HOME, cwd and the native authentication stores stay native.
 set -a
 if [[ -f "$ROOT/.env" ]]; then
   source "$ROOT/.env"
@@ -36,91 +28,29 @@ elif [[ -f "$ROOT/.env.example" ]]; then
 fi
 [[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
-export OAT_RUNTIME=host OAT_SANDBOX_ENABLED=0 PLAN_APPROVAL_MODE=off
-case "$INVOKED_AS" in
-  oc2) major=2 ;;
-  oc) major=1 ;;
-  *) major="${REQUESTED_MAJOR:-${OPENCODE_MAJOR:-1}}" ;;
-esac
-case "$major" in
-  auto) if command -v opencode2 >/dev/null 2>&1; then major=2; else major=1; fi ;;
-  1|2) ;;
-  *) echo "OPENCODE_MAJOR must be 1, 2, or auto (got: $major)" >&2; exit 2 ;;
-esac
-export OPENCODE_MAJOR="$major"
 
-if [[ "${1:-}" == memory ]]; then
-  shift
-  [[ $# -gt 0 ]] || set -- --help
-  exec python3 -B "$ROOT/scripts/memory" "$@"
-fi
-if [[ "$major" == 2 ]]; then
-  bin="${REQUESTED_BIN:-${OPENCODE_BIN:-opencode2}}"
-  config="$ROOT/opencode.v2.jsonc"
-else
-  bin="${REQUESTED_BIN:-${OPENCODE_BIN:-opencode}}"
-  config="$ROOT/opencode.jsonc"
-fi
+export OAT_RUNTIME=host OAT_SANDBOX_ENABLED=0 PLAN_APPROVAL_MODE=off
+bin="${REQUESTED_BIN:-${OPENCODE_BIN:-opencode}}"
+config="$ROOT/opencode.jsonc"
+
 if ! command -v "$bin" >/dev/null 2>&1; then
-  echo "Native OpenCode binary not found: $bin. Install it or set OPENCODE_BIN." >&2
+  echo "OpenCode 2 binary not found: $bin. Run 'just install' or set OPENCODE_BIN." >&2
   exit 127
 fi
 
-# Authentication/help must work even when profiles or optional memory are broken.
 case "${1:-}" in
-  auth|--help|-h|--version|-v|version)
+  auth|--help|-h|--version|-v|version|upgrade|update|uninstall)
     exec "$bin" "$@"
     ;;
 esac
+
 python3 -B "$ROOT/scripts/configure-local" >/dev/null
 resolved_models="$(python3 -B "$ROOT/scripts/resolve-models")"
 eval "$resolved_models"
 
-# The old private memory bridge is retained only for V1 compatibility.
-# OC2 uses the maintained third-party opencode-mem package instead.
-export OAT_MEMORY_AUTO_SYNC=0 OPENCODE_MEMORY_AUTO_SYNC=0
-export OAT_MEMORY_STRICT=0 OPENCODE_MEMORY_STRICT=0
-memory_plugin=""
-if [[ "$major" == 1 ]]; then
-  if ! memory_plugin="$(python3 -B "$ROOT/scripts/native_memory.py" --major 1)"; then
-    printf '%s\n' 'OpenCode V1 memory integration failed; continuing without memory.' >&2
-    memory_plugin=""
-  fi
-fi
-if [[ -n "$memory_plugin" ]]; then
-  export OAT_NATIVE_MEMORY_PLUGIN="$memory_plugin"
-else
-  unset OAT_NATIVE_MEMORY_PLUGIN || true
-fi
-
-# OpenCode V2 installs npm plugins itself. Pin the package so toolkit upgrades
-# are deliberate, and keep the integration opt-out/fail-open.
-if [[ "$major" == 2 ]]; then
-  case "${OAT_OC2_MEMORY_ENABLED:-1}" in
-    0|false|FALSE|no|NO|off|OFF)
-      unset OAT_NATIVE_V2_MEMORY_PLUGIN || true
-      ;;
-    *)
-      export OAT_NATIVE_V2_MEMORY_PLUGIN="${OAT_OC2_MEMORY_PLUGIN:-opencode-mem@2.26.0}"
-      if ! python3 -B "$ROOT/scripts/configure-v2-memory" >/dev/null; then
-        printf '%s\n' 'OC2 memory configuration failed; continuing with plugin defaults.' >&2
-      fi
-      ;;
-  esac
-else
-  unset OAT_NATIVE_V2_MEMORY_PLUGIN || true
-fi
-
-# OC2 currently persists real token counters with cost=0. Load a read-only,
-# fail-open observer that estimates cost from the provider's own model pricing
-# metadata and surfaces it in the TUI. V1 keeps its native cost calculation.
-usage_plugin="$ROOT/runtime/plugins/usage-pricing-v2.js"
-if [[ "$major" == 2 && -f "$usage_plugin" ]]; then
-  export OAT_NATIVE_USAGE_PLUGIN="$usage_plugin"
-else
-  unset OAT_NATIVE_USAGE_PLUGIN || true
-  if [[ "$major" == 2 ]]; then
-    printf '%s\n' 'OC2 usage pricing plugin missing; continuing without estimated cost.' >&2
+if [[ "${OAT_MEMORY_ENABLED:-1}" != "0" ]]; then
+  if ! python3 -B "$ROOT/scripts/configure-memory" >/dev/null; then
+    printf '%s\n' 'OpenCode memory configuration failed; continuing with plugin defaults.' >&2
   fi
 fi
 
@@ -128,17 +58,4 @@ export OPENCODE_CONFIG="$config"
 inline_config="$(python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills")"
 export OPENCODE_CONFIG_CONTENT="$inline_config"
 
-# V2 uses a fresh native server for interactive/run invocations by default. This
-# avoids reconnecting to an old Docker server with stale agents/configuration.
-# Explicit --server/--standalone selections and server-management commands pass through.
-if [[ "$major" == 2 ]]; then
-  standalone=1
-  case "${1:-}" in
-    serve|server|attach|models|mcp|plugin|session|debug|upgrade|uninstall) standalone=0 ;;
-  esac
-  for arg in "$@"; do
-    case "$arg" in --server|--server=*|--standalone) standalone=0 ;; esac
-  done
-  [[ "$standalone" == 0 ]] || set -- --standalone "$@"
-fi
 exec "$bin" "$@"
