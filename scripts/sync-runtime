@@ -50,7 +50,7 @@ def main() -> int:
                 print("WARNING: fine-grained permissions, lead child allowlists and step budgets are not enforced natively; inspect --verbose capability details.")
                 print("Staged local bundle only; see .generated/codex/AGENTS.md for opt-in installation and runtime.json for capability limitations.")
             if name == "opencode":
-                print("Raw OpenCode artifacts only (generate-config stage). Use just config to apply memory/reliability integration.")
+                print("Stable OpenCode 2 artifacts generated; use just config for the native launcher configuration.")
         if args.dry_run:
             print("No files written (--dry-run).")
         if args.check:
