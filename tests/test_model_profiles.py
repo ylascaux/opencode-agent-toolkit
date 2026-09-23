@@ -25,7 +25,7 @@ class ModelProfileTests(unittest.TestCase):
         self.assertEqual(result["MODEL_ENTITY_RESOLVER"], "test/terra")
         self.assertEqual(result["MODEL_DOCS"], "test/terra")
         self.assertEqual(result["MODEL_PROJECT_SCANNER"], "test/terra")
-        self.assertEqual(result["MODEL_EVIDENCE_AUDITOR"], "test/terra")
+        self.assertEqual(result["MODEL_EVIDENCE_AUDITOR"], "test/sol")
         self.assertEqual(result["MODEL_BUILDER"], "test/terra")
         self.assertEqual(result["MODEL_PLATFORM_ARCHITECT"], "test/sol")
         self.assertEqual(result["MODEL_APPSEC"], "test/sol")
