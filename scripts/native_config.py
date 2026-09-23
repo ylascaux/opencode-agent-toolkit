@@ -107,7 +107,7 @@ def render_config(specs: Mapping[str, Any]) -> dict:
             name: {"description": description, "template": template, "agent": primary}
             for name, (description, template) in COMMANDS.items()
         },
-        "plugins": ["-rehydra", "-rehydra.*", "oc2-memory@0.1.1"],
+        "plugins": ["-rehydra", "-rehydra.*"],
     }
     config["experimental"] = {"subagent_depth": 2}
     config["compaction"] = {"auto": True, "keep": {"tokens": 15000}, "buffer": 20000}
