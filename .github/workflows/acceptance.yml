@@ -17,8 +17,6 @@ jobs:
         with:
           python-version: "3.12"
       - name: Offline external-project acceptance
-        env:
-          OAT_ACCEPTANCE_SKIP_MEMORY: "1"
         run: python3 -B scripts/runtime-acceptance
 
   docker:
@@ -32,8 +30,6 @@ jobs:
       - name: Build stable OpenCode runtime image
         run: docker build -t opencode-agent-toolkit:acceptance -f runtime/Dockerfile .
       - name: Core acceptance against isolated project
-        env:
-          OAT_ACCEPTANCE_SKIP_MEMORY: "1"
         run: python3 -B scripts/runtime-acceptance
       - name: Real stable OpenCode skill API smoke
         env:
