@@ -28,6 +28,14 @@ class OneCommandInstallTests(unittest.TestCase):
         self.assertIn("npm install -g @opencode/cli@latest", text)
         self.assertIn("OpenCode is not installed and npm is unavailable", text)
 
+    def test_create_ai_memory_is_pinned_and_vault_is_reused(self):
+        text = (ROOT / "scripts/bootstrap").read_text()
+        self.assertIn('OAT_AI_MEMORY_VERSION:-0.15.4', text)
+        self.assertIn('"create-ai-memory@$memory_version"', text)
+        self.assertIn('OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory', text)
+        self.assertIn('git@github.com:ylascaux/opencode-memory.git', text)
+        self.assertIn('scripts/ai-memory-adapter" setup', text)
+
     def test_bootstrap_remains_valid_bash(self):
         result = subprocess.run(["bash", "-n", str(ROOT / "scripts/bootstrap")], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
