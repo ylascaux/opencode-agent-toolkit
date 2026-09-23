@@ -12,8 +12,7 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || {
   exit 2
 }
 
-# Never replace or update an existing OpenCode installation. This intentionally
-# preserves Homebrew, npm, manual and future installer-managed binaries.
+# Never replace or update an existing OpenCode installation.
 if command -v opencode >/dev/null 2>&1; then
   printf 'OpenCode already installed: %s\n' "$(command -v opencode)"
   printf 'Keeping existing OpenCode version: %s\n' "$(opencode --version 2>/dev/null || echo unknown)"
@@ -30,19 +29,65 @@ else
   }
 fi
 
-# Rehydra is intentionally not part of this toolkit. Remove its global package
-# entry when present; ignore "not installed" and old-version errors.
+# Rehydra is intentionally not part of this toolkit.
 opencode plugin remove @rehydra/opencode >/dev/null 2>&1 || true
 
 if [[ ! -f "$ROOT/.env" ]]; then
   (umask 077; cp "$ROOT/.env.example" "$ROOT/.env")
 fi
+set -a
+source "$ROOT/.env"
+[[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
+set +a
+
+case "${OAT_AI_MEMORY_ENABLED:-1}" in
+  0|false|FALSE|no|NO|off|OFF)
+    printf 'Persistent AI memory disabled by OAT_AI_MEMORY_ENABLED.\n'
+    ;;
+  *)
+    command -v zsh >/dev/null 2>&1 || {
+      echo "zsh is required by create-ai-memory." >&2
+      exit 127
+    }
+    memory_version="${OAT_AI_MEMORY_VERSION:-0.15.4}"
+    memory_vendor="${OAT_AI_MEMORY_VENDOR_DIR:-$HOME/.local/share/opencode-agent-toolkit/vendor/ai-memory}"
+    memory_home="${OAT_AI_MEMORY_HOME:-$memory_vendor/node_modules/create-ai-memory}"
+    memory_root="${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}"
+    memory_repo="${OAT_AI_MEMORY_REPO:-git@github.com:ylascaux/opencode-memory.git}"
+
+    installed_version=""
+    if [[ -f "$memory_home/package.json" ]]; then
+      installed_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$memory_home/package.json" 2>/dev/null || true)"
+    fi
+    if [[ "$installed_version" != "$memory_version" ]]; then
+      command -v npm >/dev/null 2>&1 || {
+        echo "npm is required to install create-ai-memory@$memory_version." >&2
+        exit 127
+      }
+      mkdir -p "$memory_vendor"
+      npm install --prefix "$memory_vendor" --no-save --no-package-lock --no-audit --no-fund "create-ai-memory@$memory_version"
+      memory_home="$memory_vendor/node_modules/create-ai-memory"
+    else
+      printf 'Keeping create-ai-memory version: %s\n' "$installed_version"
+    fi
+
+    if [[ ! -d "$memory_root" ]]; then
+      command -v git >/dev/null 2>&1 || { echo "git is required to clone the memory vault." >&2; exit 127; }
+      [[ -n "$memory_repo" ]] || { echo "OAT_AI_MEMORY_ROOT does not exist and OAT_AI_MEMORY_REPO is empty." >&2; exit 2; }
+      git clone "$memory_repo" "$memory_root"
+    fi
+
+    python3 -B "$ROOT/scripts/ai-memory-adapter" setup --home "$memory_home" --root "$memory_root" --cwd "$ROOT" >/dev/null
+    ;;
+esac
 
 python3 -B "$ROOT/scripts/configure-local"
 bash "$ROOT/scripts/user-link" install oc
-# Remove only the toolkit-owned beta launcher if upgrading from an older checkout.
 bash "$ROOT/scripts/user-link" uninstall oc2 || true
 
 printf '\nToolkit launcher installed: oc\n'
-printf 'Memory plugin: oc2-memory@0.1.1 (plain Markdown, Obsidian/Git friendly).\n'
-printf 'Run: oc --version && oc plugin list\n'
+case "${OAT_AI_MEMORY_ENABLED:-1}" in
+  0|false|FALSE|no|NO|off|OFF) ;;
+  *) printf 'Memory: create-ai-memory@%s + %s\n' "${OAT_AI_MEMORY_VERSION:-0.15.4}" "${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}" ;;
+esac
+printf 'Run: oc --version && oc mcp list\n'
