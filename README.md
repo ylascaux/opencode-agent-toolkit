@@ -82,11 +82,10 @@ Par défaut le toolkit utilise :
 
 ```bash
 OAT_AI_MEMORY_ROOT=$HOME/opencode-memory
-OAT_AI_MEMORY_REPO=git@github.com:ylascaux/opencode-memory.git
+OAT_AI_MEMORY_REPO=https://github.com/ylascaux/opencode-memory.git
 ```
 
-Si le clone n'existe pas encore, `just install` le clone. Un clone existant
-n'est ni remplacé ni automatiquement pullé.
+Si le clone n'existe pas encore, `just install` le clone. Pour un repo privé GitHub, Git doit être authentifié (par exemple avec `gh auth login` puis `gh auth setup-git`). Un clone existant n'est ni remplacé ni automatiquement pullé.
 
 ### Compatibilité avec create-ai-memory
 
