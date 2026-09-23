@@ -1,24 +1,11 @@
 #!/usr/bin/env python3
-"""Merge toolkit runtime additions into highest-precedence inline config safely."""
-
+"""Merge toolkit skill sources into highest-precedence OpenCode config."""
 from __future__ import annotations
 
 import json
 import os
 import sys
 from pathlib import Path
-
-
-def append_unique(config: dict, key: str, value: str) -> None:
-    current = config.get(key, [])
-    if current is None:
-        current = []
-    if not isinstance(current, list):
-        print(f"OPENCODE_CONFIG_CONTENT.{key} must be an array", file=sys.stderr)
-        raise SystemExit(2)
-    if value not in current:
-        current.append(value)
-    config[key] = current
 
 
 def main() -> int:
@@ -50,20 +37,6 @@ def main() -> int:
 
     rendered = str(source)
     config["skills"] = [*current, *([] if rendered in current else [rendered])]
-    major = os.environ.get("OPENCODE_MAJOR", "1").strip()
-
-    memory_plugin = os.environ.get("OAT_NATIVE_MEMORY_PLUGIN", "").strip()
-    if memory_plugin and major == "1":
-        append_unique(config, "plugin", memory_plugin)
-
-    v2_memory_plugin = os.environ.get("OAT_NATIVE_V2_MEMORY_PLUGIN", "").strip()
-    if v2_memory_plugin and major == "2":
-        append_unique(config, "plugins", v2_memory_plugin)
-
-    usage_plugin = os.environ.get("OAT_NATIVE_USAGE_PLUGIN", "").strip()
-    if usage_plugin and major == "2":
-        append_unique(config, "plugins", usage_plugin)
-
     print(json.dumps(config, separators=(",", ":"), sort_keys=True))
     return 0
 
