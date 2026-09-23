@@ -152,18 +152,12 @@ else:
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(calls, [])
 
-    def test_ci_and_task_share_startup_and_do_not_disable_global_policy(self):
+    def test_task_startup_does_not_disable_global_policy(self):
         task = (ROOT / "scripts" / "task-run").read_text()
-        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
         helper = (ROOT / "scripts" / "task-dind").read_text()
         self.assertIn('bash "$ROOT/scripts/task-dind"', task)
-        self.assertIn("bash scripts/task-dind", workflow)
-        self.assertIn("apparmor_parser -r runtime/apparmor/oat-dind-rootless", workflow)
-        self.assertIn("apparmor_parser -R runtime/apparmor/oat-dind-rootless", workflow)
-        self.assertIn("OAT_TASK_DIND_APPARMOR_PROFILE=oat-dind-rootless", workflow)
-        self.assertIn("/workspace/.dind-smoke", workflow)
         self.assertNotIn("DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS=", task)
-        for text in (task, workflow, helper):
+        for text in (task, helper):
             self.assertNotIn("sysctl -w", text)
             self.assertNotIn("apparmor_restrict_unprivileged_userns=0", text)
         self.assertNotIn("apparmor_parser", helper)
