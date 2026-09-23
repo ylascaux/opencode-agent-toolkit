@@ -8,9 +8,12 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ### Changed
 
-- OpenCode V2 now uses the maintained third-party `opencode-mem@2.26.0` package for persistent memory instead of the toolkit's private V2 memory bridge.
-- OC2 creates a minimal `opencode-mem` configuration only when the user has none, inferring the provider from the active model profile and using the session model via `inherit`.
-- The private memory bridge remains available only for V1/Codex compatibility and is no longer injected into OC2.
+- The toolkit now targets released OpenCode 2 only: `oc` launches the official `opencode` binary and the beta `oc2` / `opencode2` path is removed.
+- `just install` removes the legacy `opencode-ai` npm package when present and installs/updates `@opencode/cli@latest`.
+- Native configuration is generated only as `opencode.jsonc` using the OpenCode 2 schema.
+- `opencode-mem@2.26.0` is the sole runtime plugin configured by the toolkit.
+- The obsolete beta usage-pricing plugin and beta-specific CI/tests are removed.
+- The Docker runtime now contains one released OpenCode 2 server instead of separate V1/V2 services.
 
 ## [0.1.2] - 2026-09-13
 
