@@ -52,7 +52,7 @@ case "${OAT_AI_MEMORY_ENABLED:-1}" in
     memory_version="${OAT_AI_MEMORY_VERSION:-0.15.4}"
     memory_vendor="${OAT_AI_MEMORY_VENDOR_DIR:-$HOME/.local/share/opencode-agent-toolkit/vendor/ai-memory}"
     memory_root="${OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory}"
-    memory_repo="${OAT_AI_MEMORY_REPO:-git@github.com:ylascaux/opencode-memory.git}"
+    memory_repo="${OAT_AI_MEMORY_REPO:-https://github.com/ylascaux/opencode-memory.git}"
 
     if [[ -n "${OAT_AI_MEMORY_HOME:-}" ]]; then
       memory_home="$OAT_AI_MEMORY_HOME"
@@ -83,7 +83,11 @@ case "${OAT_AI_MEMORY_ENABLED:-1}" in
     if [[ ! -d "$memory_root" ]]; then
       command -v git >/dev/null 2>&1 || { echo "git is required to clone the memory vault." >&2; exit 127; }
       [[ -n "$memory_repo" ]] || { echo "OAT_AI_MEMORY_ROOT does not exist and OAT_AI_MEMORY_REPO is empty." >&2; exit 2; }
-      git clone "$memory_repo" "$memory_root"
+      if ! git clone "$memory_repo" "$memory_root"; then
+        printf '%s\n' "Unable to clone private memory repository: $memory_repo" >&2
+        printf '%s\n' "Authenticate Git for GitHub (for example: gh auth login && gh auth setup-git), or point OAT_AI_MEMORY_ROOT at an existing local clone." >&2
+        exit 1
+      fi
     fi
 
     python3 -B "$ROOT/scripts/ai-memory-adapter" setup --home "$memory_home" --root "$memory_root" --cwd "$ROOT" >/dev/null
