@@ -38,9 +38,6 @@ RUN npm install -g "@opencode/cli@${OPENCODE_VERSION}" \
 
 WORKDIR /opt/oat
 
-COPY package.json ./
-RUN npm install --ignore-scripts --no-audit --no-fund
-
 COPY requirements.txt ./
 RUN python3 -m venv /opt/oat/.venv \
     && /opt/oat/.venv/bin/pip install --disable-pip-version-check --no-cache-dir -r requirements.txt
