@@ -68,9 +68,10 @@ class PlanApprovalTests(unittest.TestCase):
         orchestrator = (GENERATED_PROMPTS / "orchestrator.md").read_text().lower()
         router = (GENERATED_PROMPTS / "meta-router.md").read_text().lower()
         self.assertIn("do not create an artificial approval round-trip", orchestrator)
-        self.assertIn("effective runtime approval mode", router)
-        self.assertNotIn("planner.md", orchestrator)
-        self.assertNotIn("planner.md", router)
+        for text in [router, orchestrator]:
+            self.assertIn("effective `plan_approval_mode`: `off`", text)
+            self.assertIn("do not pause solely for plan_approval_required", text)
+            self.assertNotIn("planner.md", text)
 
     def test_runtime_gate_remains_available_when_explicitly_enabled(self):
         core = (ROOT / "runtime" / "plugins" / "plan-approval-core.js").read_text()
