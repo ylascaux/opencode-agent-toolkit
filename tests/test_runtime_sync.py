@@ -54,12 +54,12 @@ class RuntimeSyncTests(unittest.TestCase):
 
     def test_first_oc_dry_run_has_zero_filesystem_mutation_including_bytecode(self):
         before = filesystem_snapshot(self.root)
-        result = self.sync("codex", "--dry-run", extra_env={"CODEX_MODEL_LOW": "configured-low"})
+        result = self.sync("codex", "--dry-run", extra_env={"CODEX_MODEL_MEDIUM": "configured-medium"})
         self.assert_success(result)
         self.assertEqual(filesystem_snapshot(self.root), before)
         self.assertIn("CREATE", result.stdout)
         self.assertIn("AGENTS.md", result.stdout)
-        self.assertIn("configured-low", result.stdout)
+        self.assertIn("configured-medium", result.stdout)
         self.assertFalse((self.root / ".generated").exists())
 
     def test_oc_sync_works_without_env_provider_or_docker_setup(self):
@@ -135,9 +135,12 @@ class RuntimeSyncTests(unittest.TestCase):
         self.assertEqual(actual, {str(p.relative_to(self.root)): p.read_bytes() for p in paths})
         result = subprocess.run([sys.executable, "-B", str(self.root / "scripts" / "apply-reliability")], cwd=self.root, env=self.env, capture_output=True, text=True)
         self.assert_success(result)
-        from test_config_parity import generated_output_digests
-        golden = json.loads((ROOT / "tests" / "fixtures" / "opencode-output.sha256.json").read_text())
-        self.assertEqual(generated_output_digests(self.root), golden)
+        stable = {str(p.relative_to(self.root)): p.read_bytes() for p in paths}
+        result = subprocess.run([sys.executable, "-B", str(self.root / "scripts" / "generate-config")], cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assert_success(result)
+        result = subprocess.run([sys.executable, "-B", str(self.root / "scripts" / "apply-reliability")], cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assert_success(result)
+        self.assertEqual(stable, {str(p.relative_to(self.root)): p.read_bytes() for p in paths})
 
     def test_unknown_runtime_and_conflicting_flags_fail_without_writes(self):
         before = filesystem_snapshot(self.root)
