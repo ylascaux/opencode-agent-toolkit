@@ -2,7 +2,7 @@
   "description": "Use to turn a non-trivial requirement into an executable implementation plan. Do not edit files.",
   "mode": "subagent",
   "model_env": "MODEL_PLANNER",
-  "tier": "medium",
+  "tier": "high",
   "model_profile": "general",
   "steps": 16,
   "parents": [
