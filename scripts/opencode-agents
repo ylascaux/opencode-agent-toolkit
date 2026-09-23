@@ -26,8 +26,7 @@ if [[ "${1:-}" == memory && "${2:-}" == mcp ]]; then
   shift 2; exec python3 -B "$ROOT/scripts/memory-mcp" "$@"
 fi
 
-# Existing profiles remain usable; obsolete Docker/sandbox knobs cannot change
-# the execution mode. HOME, cwd and the native authentication stores stay native.
+# Existing profiles remain usable. OpenCode 2 stable is the only runtime.
 set -a
 if [[ -f "$ROOT/.env" ]]; then
   source "$ROOT/.env"
@@ -37,39 +36,47 @@ fi
 [[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
 export OAT_RUNTIME=host OAT_SANDBOX_ENABLED=0 PLAN_APPROVAL_MODE=off
-case "$INVOKED_AS" in
-  oc2) major=2 ;;
-  oc) major=1 ;;
-  *) major="${REQUESTED_MAJOR:-${OPENCODE_MAJOR:-1}}" ;;
-esac
-case "$major" in
-  auto) if command -v opencode2 >/dev/null 2>&1; then major=2; else major=1; fi ;;
-  1|2) ;;
-  *) echo "OPENCODE_MAJOR must be 1, 2, or auto (got: $major)" >&2; exit 2 ;;
-esac
-export OPENCODE_MAJOR="$major"
 
 if [[ "${1:-}" == memory ]]; then
   shift
   [[ $# -gt 0 ]] || set -- --help
   exec python3 -B "$ROOT/scripts/memory" "$@"
 fi
-if [[ "$major" == 2 ]]; then
-  bin="${REQUESTED_BIN:-${OPENCODE_BIN:-opencode2}}"
-  config="$ROOT/opencode.v2.jsonc"
-else
-  bin="${REQUESTED_BIN:-${OPENCODE_BIN:-opencode}}"
-  config="$ROOT/opencode.jsonc"
-fi
+
+bin="${REQUESTED_BIN:-${OPENCODE_BIN:-opencode}}"
+config="$ROOT/opencode.jsonc"
 if ! command -v "$bin" >/dev/null 2>&1; then
-  echo "Native OpenCode binary not found: $bin. Install it or set OPENCODE_BIN." >&2
+  echo "OpenCode 2 binary not found: $bin. Run 'just install' or install @opencode/cli." >&2
   exit 127
 fi
 
-# Authentication/help must work even when profiles or optional memory are broken.
 case "${1:-}" in
   auth|--help|-h|--version|-v|version)
     exec "$bin" "$@"
+    ;;
+esac
+
+python3 -B "$ROOT/scripts/configure-local" >/dev/null
+resolved_models="$(python3 -B "$ROOT/scripts/resolve-models")"
+eval "$resolved_models"
+
+if ! python3 -B "$ROOT/scripts/configure-memory" >/dev/null; then
+  printf '%s\n' 'Memory configuration failed; continuing with opencode-mem defaults.' >&2
+fi
+
+export OPENCODE_CONFIG="$config"
+inline_config="$(python3 -B "$ROOT/scripts/opencode-skill-source" "$ROOT/.opencode/skills")"
+export OPENCODE_CONFIG_CONTENT="$inline_config"
+
+standalone=1
+case "${1:-}" in
+  serve|service|server|attach|models|mcp|plugin|session|debug|upgrade|uninstall|api|acp) standalone=0 ;;
+esac
+for arg in "$@"; do
+  case "$arg" in --server|--server=*|--standalone) standalone=0 ;; esac
+done
+[[ "$standalone" == 0 ]] || set -- --standalone "$@"
+exec "$bin" "$@"
     ;;
 esac
 python3 -B "$ROOT/scripts/configure-local" >/dev/null
