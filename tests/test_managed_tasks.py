@@ -28,21 +28,19 @@ class ManagedTaskIsolationTests(unittest.TestCase):
         self.assertNotIn("OAT_DOCKER_SOCKET", compose)
         self.assertNotIn("OAT_DOCKER_SOCKET", runtime)
 
-    def test_docker_runtime_preserves_explicit_major_across_env_loading(self):
+    def test_docker_runtime_is_single_stable_runtime(self):
         runtime = (ROOT / "scripts" / "docker-runtime").read_text()
-        requested = runtime.index('REQUESTED_MAJOR="${OPENCODE_MAJOR:-}"')
-        source_env = runtime.index('source "$ROOT/.env"')
-        restore = runtime.index('OPENCODE_MAJOR="$REQUESTED_MAJOR"')
-        major_select = runtime.index('major="${OPENCODE_MAJOR:-1}"')
-        self.assertLess(requested, source_env)
-        self.assertLess(source_env, restore)
-        self.assertLess(restore, major_select)
-        self.assertIn("export OPENCODE_MAJOR", runtime[restore:major_select])
-
-    def test_oc2_browser_oauth_callback_is_not_exposed(self):
         compose = (ROOT / "compose.yaml").read_text()
-        self.assertIn('127.0.0.1:${OAT_OC2_PORT:-4096}:4096', compose)
-        self.assertNotIn("OAT_OC2_OAUTH_PORT", compose)
+        self.assertNotIn("OPENCODE_MAJOR", runtime)
+        self.assertNotIn("opencode2", runtime)
+        self.assertNotIn("oc2-server", compose)
+        self.assertIn("service=oc-server", runtime)
+        self.assertIn('host_port="${OAT_OC_PORT:-4096}"', runtime)
+
+    def test_stable_server_is_bound_to_host_loopback(self):
+        compose = (ROOT / "compose.yaml").read_text()
+        self.assertIn('127.0.0.1:${OAT_OC_PORT:-4096}:4096', compose)
+        self.assertNotIn("OAT_OC2_", compose)
         self.assertNotIn(":1455", compose)
 
     def test_managed_task_requires_explicit_approval_and_rootless_dind(self):
