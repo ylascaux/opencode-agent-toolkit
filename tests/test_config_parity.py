@@ -220,9 +220,9 @@ class ConfigPolicyTests(unittest.TestCase):
         for variable in ["MODEL_PROFILE", "MODEL_LOW", "MODEL_MEDIUM", "MODEL_HIGH"]:
             self.assertRegex(env_text, rf"(?m)^{variable}=.+$")
         self.assertIn("MODEL_PROFILE=copilot", env_text)
-        self.assertIn("github-copilot/gpt-5.6-luna", env_text)
-        self.assertIn("github-copilot/gpt-5.6-terra", env_text)
-        self.assertIn("github-copilot/gpt-5.6-sol", env_text)
+        self.assertIn("github-copilot/gpt-6-luna", env_text)
+        self.assertIn("MODEL_MEDIUM=github-copilot/gpt-6-luna", env_text)
+        self.assertIn("github-copilot/gpt-6-sol", env_text)
 
     def test_leaf_agents_cannot_delegate_unattended(self):
         for name, agent in self.v1["agent"].items():

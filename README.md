@@ -156,6 +156,25 @@ globale quand elle existe, et la configuration générée désactive aussi
 
 ## Profils de modèles
 
+Politique de tiers par défaut :
+
+```text
+Copilot
+LOW    = github-copilot/gpt-6-luna
+MEDIUM = github-copilot/gpt-6-luna
+HIGH   = github-copilot/gpt-6-sol
+
+Codex
+LOW    = openai/gpt-6-luna
+MEDIUM = openai/gpt-6-luna
+HIGH   = openai/gpt-6-sol
+```
+
+Le niveau HIGH est réservé aux rôles où une erreur coûte cher : orchestration,
+planification, review indépendante/API/evidence/supply-chain, sécurité,
+architecture et raisonnement profond. Les rôles d'implémentation courants restent
+en MEDIUM et utilisent donc Luna 6 par défaut.
+
 ```bash
 just profile copilot
 just profile codex

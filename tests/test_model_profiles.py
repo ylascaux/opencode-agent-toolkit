@@ -25,7 +25,7 @@ class ModelProfileTests(unittest.TestCase):
         self.assertEqual(result["MODEL_ENTITY_RESOLVER"], "test/terra")
         self.assertEqual(result["MODEL_DOCS"], "test/terra")
         self.assertEqual(result["MODEL_PROJECT_SCANNER"], "test/terra")
-        self.assertEqual(result["MODEL_EVIDENCE_AUDITOR"], "test/terra")
+        self.assertEqual(result["MODEL_EVIDENCE_AUDITOR"], "test/sol")
         self.assertEqual(result["MODEL_BUILDER"], "test/terra")
         self.assertEqual(result["MODEL_PLATFORM_ARCHITECT"], "test/sol")
         self.assertEqual(result["MODEL_APPSEC"], "test/sol")
@@ -47,6 +47,29 @@ class ModelProfileTests(unittest.TestCase):
         ]:
             self.assertIn(tiers[variable], {"medium", "high"}, variable)
 
+    def test_critical_control_roles_stay_high(self):
+        tiers = RESOLVER["load_tiers"]()
+        critical = [
+            "MODEL_ORCHESTRATOR",
+            "MODEL_PLANNER",
+            "MODEL_REVIEWER",
+            "MODEL_REVIEW_LEAD",
+            "MODEL_API_CONTRACT",
+            "MODEL_EVIDENCE_AUDITOR",
+            "MODEL_SUPPLY_CHAIN",
+            "MODEL_APPSEC",
+            "MODEL_IAC_SECURITY",
+            "MODEL_SECURITY_LEAD",
+            "MODEL_PENTEST",
+            "MODEL_THREAT_MODEL",
+            "MODEL_ARCHITECTURE",
+            "MODEL_PLATFORM_ARCHITECT",
+            "MODEL_ARBITER",
+            "MODEL_DEEP_REASONER",
+        ]
+        for variable in critical:
+            self.assertEqual(tiers[variable], "high", variable)
+
     def test_per_agent_override_wins_over_tier(self):
         resolve = RESOLVER["resolve"]
         result = resolve({
@@ -58,18 +81,25 @@ class ModelProfileTests(unittest.TestCase):
         self.assertEqual(result["MODEL_BUILDER"], "personal/codex")
         self.assertEqual(result["MODEL_TESTER"], "test/terra")
 
-    def test_default_copilot_profile_is_luna_terra_sol(self):
+    def test_default_copilot_profile_is_gpt6_luna_luna_sol(self):
         values = PROFILE["load_profile"]("copilot")
-        self.assertEqual(values["MODEL_LOW"], "github-copilot/gpt-5.6-luna")
-        self.assertEqual(values["MODEL_MEDIUM"], "github-copilot/gpt-5.6-terra")
-        self.assertEqual(values["MODEL_HIGH"], "github-copilot/gpt-5.6-sol")
+        self.assertEqual(values["MODEL_LOW"], "github-copilot/gpt-6-luna")
+        self.assertEqual(values["MODEL_MEDIUM"], "github-copilot/gpt-6-luna")
+        self.assertEqual(values["MODEL_HIGH"], "github-copilot/gpt-6-sol")
 
-    def test_codex_profile_is_luna_terra_sol(self):
+    def test_codex_profile_is_gpt6_luna_luna_sol(self):
         values = PROFILE["load_profile"]("codex")
         self.assertEqual(values["MODEL_PROFILE"], "codex")
-        self.assertEqual(values["MODEL_LOW"], "openai/gpt-5.6-luna")
-        self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-5.6-terra")
-        self.assertEqual(values["MODEL_HIGH"], "openai/gpt-5.6-sol")
+        self.assertEqual(values["MODEL_LOW"], "openai/gpt-6-luna")
+        self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-6-luna")
+        self.assertEqual(values["MODEL_HIGH"], "openai/gpt-6-sol")
+
+    def test_codex_astra_uses_luna6_below_high(self):
+        values = PROFILE["load_profile"]("codex_astra")
+        self.assertEqual(values["MODEL_PROFILE"], "codex_astra")
+        self.assertEqual(values["MODEL_LOW"], "openai/gpt-6-luna")
+        self.assertEqual(values["MODEL_MEDIUM"], "openai/gpt-6-luna")
+        self.assertEqual(values["MODEL_HIGH"], "openai/gpt-6-astra")
 
     def test_profile_switch_backs_up_and_removes_generated_agent_mappings(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -98,7 +128,7 @@ class ModelProfileTests(unittest.TestCase):
 
             text = env_file.read_text()
             self.assertIn("MODEL_PROFILE=copilot", text)
-            self.assertIn("MODEL_LOW=github-copilot/gpt-5.6-luna", text)
+            self.assertIn("MODEL_LOW=github-copilot/gpt-6-luna", text)
             self.assertNotIn("MODEL_BUILDER=", text)
             self.assertIn("PROJECTS_ROOT=$HOME/Projects", text)
             self.assertTrue(backup_file.exists())

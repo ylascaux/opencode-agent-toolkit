@@ -8,6 +8,11 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ### Changed
 
+- Move Copilot and Codex default tiers to GPT-6: Luna 6 for LOW/MEDIUM and Sol 6 for HIGH.
+- Promote orchestrator, planner and all review-profile agents to HIGH so orchestration, planning, review and security use the strongest default tier.
+
+### Changed
+
 - Replace the temporary `oc2-memory` integration with upstream `create-ai-memory@0.15.4`, installed outside the repository in toolkit-owned user data.
 - Keep `ylascaux/opencode-memory` as the Git/Obsidian source of truth and map create-ai-memory's expected compatibility paths onto `projects/`, `sessions/`, `lessons/` and `workstyle/` without changing the tracked layout.
 - Resolve the current memory project from the active Git repository and `projects/index.json`.
