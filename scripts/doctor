@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 command -v python3 >/dev/null 2>&1 || { echo "Missing Python 3.11+" >&2; exit 127; }
 python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || {
   echo "Python 3.11 or newer is required" >&2; exit 2;
 }
-available=0
-for binary in opencode opencode2; do
-  if command -v "$binary" >/dev/null 2>&1; then
-    printf '%s: %s\n' "$binary" "$(command -v "$binary")"
-    available=1
-  else
-    printf '%s: not installed (only needed for its launcher)\n' "$binary"
-  fi
-done
-if [[ -n "${OPENCODE_BIN:-}" ]] && command -v "$OPENCODE_BIN" >/dev/null 2>&1; then
-  printf 'OPENCODE_BIN: %s\n' "$OPENCODE_BIN"
-  available=1
-fi
-python3 -B "$ROOT/scripts/configure-local" --check || {
-  echo "Native configuration needs regeneration: just config" >&2; exit 1;
+
+bin="${OPENCODE_BIN:-opencode}"
+command -v "$bin" >/dev/null 2>&1 || {
+  echo "OpenCode 2 is not installed. Run: just install" >&2
+  exit 1
 }
-[[ "$available" == 1 ]] || { echo "Install a native OpenCode runtime before using oc/oc2." >&2; exit 1; }
-echo "Native configuration is up to date. No provider, memory service or Docker was contacted."
+version="$("$bin" --version 2>/dev/null | head -n 1 || true)"
+printf 'opencode: %s (%s)\n' "$(command -v "$bin")" "${version:-unknown}"
+[[ "$version" =~ ^2\. ]] || {
+  echo "OpenCode 2 is required; remove opencode-ai and install @opencode/cli." >&2
+  exit 1
+}
+
+python3 -B "$ROOT/scripts/configure-local" --check || {
+  echo "OpenCode configuration needs regeneration: just config" >&2
+  exit 1
+}
+
+echo "Plugins:"
+"$bin" plugin list || true
+echo "Stable OpenCode 2 configuration is up to date."
