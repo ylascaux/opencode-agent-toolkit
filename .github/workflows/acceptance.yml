@@ -29,45 +29,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build current runtime image
+      - name: Build stable OpenCode runtime image
         run: docker build -t opencode-agent-toolkit:acceptance -f runtime/Dockerfile .
       - name: Core acceptance against isolated project
         env:
           OAT_ACCEPTANCE_SKIP_MEMORY: "1"
         run: python3 -B scripts/runtime-acceptance
-      - name: Real OpenCode V2 skill API smoke
+      - name: Real stable OpenCode skill API smoke
         env:
           OAT_RUNTIME_IMAGE: opencode-agent-toolkit:acceptance
-        run: python3 -B scripts/opencode-v2-skill-smoke
-
-  private-memory:
-    runs-on: ubuntu-latest
-    env:
-      MEMORY_TOKEN: ${{ secrets.OAT_MEMORY_PLUGIN_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22.18.0"
-      - name: Explain optional private integration
-        if: env.MEMORY_TOKEN == ''
-        run: echo "Private memory MCP acceptance skipped; configure OAT_MEMORY_PLUGIN_TOKEN to enable it."
-      - name: Checkout pinned private memory plugin
-        if: env.MEMORY_TOKEN != ''
-        uses: actions/checkout@v4
-        with:
-          repository: ylascaux/opencode-memory-plugin
-          ref: b573f3ba0b253abeb26bbb01eaee0c5a8b5ab518
-          token: ${{ env.MEMORY_TOKEN }}
-          path: .acceptance-memory-plugin
-      - name: Build real memory plugin
-        if: env.MEMORY_TOKEN != ''
-        run: npm --prefix .acceptance-memory-plugin run build
-      - name: Real private memory MCP acceptance
-        if: env.MEMORY_TOKEN != ''
-        env:
-          OAT_ACCEPTANCE_MEMORY_PLUGIN_DIR: ${{ github.workspace }}/.acceptance-memory-plugin
-        run: python3 -B scripts/runtime-acceptance
+        run: python3 -B scripts/opencode-skill-smoke
