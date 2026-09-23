@@ -36,7 +36,7 @@ class NativeConfigTests(unittest.TestCase):
         config = native.render_config(self.agents)
         self.assertEqual(config["default_agent"], "meta-router")
         self.assertEqual(config["agents"]["builder"]["model"], "{env:MODEL_BUILDER}")
-        self.assertEqual(config["plugins"], ["opencode-mem@2.26.0"])
+        self.assertEqual(config["plugins"], ["-rehydra", "-rehydra.*", "oc2-memory@0.1.1"])
         self.assertIn(
             {"action": "subagent", "resource": "orchestrator", "effect": "allow"},
             config["agents"]["meta-router"]["permissions"],
