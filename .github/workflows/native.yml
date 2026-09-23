@@ -14,7 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        major: ['1', '2']
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
@@ -30,16 +29,9 @@ jobs:
       - uses: extractions/setup-just@v3
       - name: Parse the daily command surface
         run: just --list
-      - name: Install upstream native CLI in the disposable runner
-        env:
-          MAJOR: ${{ matrix.major }}
+      - name: Install released OpenCode 2
         run: |
-          if [ "$MAJOR" = 2 ]; then
-            npm install -g @opencode/cli@0.0.0-beta-19507 --no-audit --no-fund
-            opencode2 --version
-          else
-            npm install -g opencode-ai@latest --no-audit --no-fund
-            opencode --version
-          fi
+          npm install -g @opencode/cli@latest --no-audit --no-fund
+          opencode --version
       - name: Native launch, configuration and project-context smoke
-        run: python3 -B scripts/native-smoke '${{ matrix.major }}'
+        run: python3 -B scripts/native-smoke
