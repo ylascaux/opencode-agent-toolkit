@@ -1,10 +1,11 @@
 # Installation
 
-`just` is the primary command surface.
+The toolkit targets **stable OpenCode 2 only**. The user-facing command is
+`oc`, which launches the official `opencode` binary.
 
 ## macOS quick start
 
-Prerequisites: Bash, Python 3.11+, `just`, and the native runtime you plan to use: `opencode` for V1 or `opencode2` for V2. Install the runtime with its official procedure; the toolkit does not install it or migrate authentication.
+Prerequisites: Bash, Python 3.11+, `just`, and npm.
 
 ```bash
 brew install just
@@ -14,13 +15,33 @@ just install
 just doctor
 ```
 
-`just install` creates `.env` only when absent, generates both native OpenCode configurations, and installs the `oc` and `oc2` launchers in `~/.local/bin`. Add that directory to `PATH` yourself if needed.
+`just install` updates OpenCode through `@opencode/cli@latest`, removes the
+legacy `opencode-ai` package, generates the stable config, and installs
+`opencode-mem@2.26.0` through `opencode plugin add`.
 
-It does **not** install packages, use `sudo`, edit shell startup files, modify `~/.config`, contact a provider, or start a background server.
+It installs only this toolkit launcher:
+
+```text
+~/.local/bin/oc -> <toolkit>/scripts/opencode-agents
+```
+
+Any obsolete toolkit-managed `oc2` link is removed automatically.
+
+## Manage OpenCode separately
+
+If OpenCode is installed through Homebrew or another mechanism:
+
+```bash
+OAT_INSTALL_OPENCODE=0 just install
+```
+
+To skip plugin installation/update:
+
+```bash
+OAT_INSTALL_PLUGINS=0 just install
+```
 
 ## Default model profile
-
-The default work profile is GitHub Copilot:
 
 ```text
 LOW    -> github-copilot/gpt-5.6-luna
@@ -28,72 +49,34 @@ MEDIUM -> github-copilot/gpt-5.6-terra
 HIGH   -> github-copilot/gpt-5.6-sol
 ```
 
-Check the models exposed to your account with:
-
-```bash
-opencode models github-copilot
-```
-
-If your account exposes different IDs, edit `profiles/copilot.env.example` and reapply it:
-
-```bash
-just profile copilot
-```
-
-## Switch providers / personal profile
+Switch profiles with:
 
 ```bash
 just profile copilot
 just profile codex
 ```
 
-Profile switching updates `MODEL_PROFILE`, `MODEL_LOW`, `MODEL_MEDIUM` and `MODEL_HIGH` in `.env`. It also removes legacy per-agent `MODEL_*` mappings from `.env` and saves them in `.env.model-overrides.backup`.
-
-Persistent per-agent overrides belong in `.env.local`, which profile switching never modifies:
-
-```bash
-MODEL_BUILDER=openai/gpt-5.3-codex
-MODEL_REVIEWER=github-copilot/gpt-5.6-sol
-```
+Persistent per-agent overrides belong in `.env.local`.
 
 ## Run from anywhere
-
-`just install` installs these toolkit-owned links:
-
-```text
-~/.local/bin/oc -> <toolkit>/scripts/opencode-agents
-~/.local/bin/oc2 -> <toolkit>/scripts/opencode-agents
-```
-
-The launcher preserves the current directory:
 
 ```bash
 cd ~/Projects/my-api
 oc
+oc run "Run the tests"
+oc plugin list
 ```
 
-OpenCode uses `~/Projects/my-api` as the workspace while loading the toolkit configuration and model mappings from the toolkit repository.
+The current directory remains the OpenCode workspace.
 
-Remove the toolkit-owned links safely:
-
-```bash
-just uninstall
-```
-
-The installer never overwrites unrelated files or symlinks and never edits your shell. `just uninstall` removes only the `oc` and `oc2` links owned by this toolkit.
-
-## Runtime selection
-
-Use `oc` for OpenCode V1 and `oc2` for OpenCode V2. Both preserve the current directory as the workspace. Set `OPENCODE_BIN` to use an explicit runtime binary path.
-
-
-## Daily recipes
+## Diagnostics
 
 ```bash
-just install
-just profile copilot
-just config
 just doctor
-just test
-just uninstall
+opencode --version
+opencode plugin list
+opencode plugin check
 ```
+
+`just uninstall` removes only toolkit-managed launcher links. It does not
+remove OpenCode, authentication state, or plugins.
