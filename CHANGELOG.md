@@ -6,6 +6,11 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ## Unreleased
 
+### Added
+
+- Add Context7 as a native OpenCode 2 remote MCP with an automatic documentation skill, without installing the legacy Context7 OpenCode plugin package.
+- Support optional `CONTEXT7_API_KEY` authentication without writing the secret into generated configuration.
+
 ### Changed
 
 - Move Copilot and Codex default tiers to GPT-6: Luna 6 for LOW/MEDIUM and Sol 6 for HIGH.
