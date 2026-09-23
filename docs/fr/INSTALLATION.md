@@ -1,10 +1,11 @@
 # Installation
 
-`just` est l’interface principale.
+Le toolkit cible uniquement **OpenCode 2 stable**. La commande utilisateur est
+`oc`, qui lance le binaire officiel `opencode`.
 
 ## Installation rapide macOS
 
-Prérequis : Bash, Python 3.11+, `just` et le runtime natif à utiliser : `opencode` pour V1 ou `opencode2` pour V2. Installe le runtime avec sa procédure officielle ; le toolkit ne l’installe pas et ne migre pas l’authentification.
+Prérequis : Bash, Python 3.11+, `just` et npm.
 
 ```bash
 brew install just
@@ -14,13 +15,33 @@ just install
 just doctor
 ```
 
-`just install` crée `.env` seulement s’il n’existe pas, génère les deux configurations OpenCode natives et installe les lanceurs `oc` et `oc2` dans `~/.local/bin`. Ajoute toi-même ce répertoire à `PATH` si nécessaire.
+`just install` met à jour OpenCode avec `@opencode/cli@latest`, retire
+l'ancien paquet `opencode-ai`, génère la configuration stable et installe
+`opencode-mem@2.26.0` avec `opencode plugin add`.
 
-Il n’installe **aucun paquet**, n’utilise pas `sudo`, ne modifie pas les fichiers de démarrage du shell, ne touche pas à `~/.config`, ne contacte pas de provider et ne démarre pas de serveur en arrière-plan.
+Il installe uniquement :
+
+```text
+~/.local/bin/oc -> <toolkit>/scripts/opencode-agents
+```
+
+Un ancien lien toolkit `oc2` est supprimé automatiquement.
+
+## Gérer OpenCode ailleurs
+
+Si OpenCode est installé par Homebrew ou une autre méthode :
+
+```bash
+OAT_INSTALL_OPENCODE=0 just install
+```
+
+Pour ne pas installer/mettre à jour les plugins :
+
+```bash
+OAT_INSTALL_PLUGINS=0 just install
+```
 
 ## Profil de modèles par défaut
-
-Le profil de travail par défaut est GitHub Copilot :
 
 ```text
 LOW    -> github-copilot/gpt-5.6-luna
@@ -28,72 +49,34 @@ MEDIUM -> github-copilot/gpt-5.6-terra
 HIGH   -> github-copilot/gpt-5.6-sol
 ```
 
-Vérifie les modèles réellement exposés à ton compte :
-
-```bash
-opencode models github-copilot
-```
-
-Si les IDs diffèrent, édite `profiles/copilot.env.example` puis réapplique le profil :
-
-```bash
-just profile copilot
-```
-
-## Changer de provider / profil perso
+Changer de profil :
 
 ```bash
 just profile copilot
 just profile codex
 ```
 
-Le changement de profil met à jour `MODEL_PROFILE`, `MODEL_LOW`, `MODEL_MEDIUM` et `MODEL_HIGH` dans `.env`. Il retire aussi les mappings `MODEL_*` historiques par agent de `.env` et les sauvegarde dans `.env.model-overrides.backup`.
+Les overrides persistants par agent appartiennent à `.env.local`.
 
-Les overrides persistants par agent doivent être placés dans `.env.local`, qui n’est jamais modifié par un changement de profil :
-
-```bash
-MODEL_BUILDER=openai/gpt-5.3-codex
-MODEL_REVIEWER=github-copilot/gpt-5.6-sol
-```
-
-## Lancer depuis n’importe où
-
-`just install` installe les liens gérés par le toolkit :
-
-```text
-~/.local/bin/oc -> <toolkit>/scripts/opencode-agents
-~/.local/bin/oc2 -> <toolkit>/scripts/opencode-agents
-```
-
-Le launcher conserve le répertoire courant :
+## Utilisation
 
 ```bash
 cd ~/Projects/my-api
 oc
+oc run "Lance les tests"
+oc plugin list
 ```
 
-OpenCode utilise `~/Projects/my-api` comme workspace tout en chargeant la configuration et les modèles depuis le toolkit.
+Le répertoire courant reste le workspace OpenCode.
 
-Supprimer proprement les liens gérés par le toolkit :
-
-```bash
-just uninstall
-```
-
-L’installateur n’écrase jamais un fichier ou symlink appartenant à autre chose et ne modifie jamais ton shell. `just uninstall` ne retire que les liens `oc` et `oc2` appartenant à ce toolkit.
-
-## Choix du runtime
-
-Utilise `oc` pour OpenCode V1 et `oc2` pour OpenCode V2. Les deux conservent le répertoire courant comme workspace. Définis `OPENCODE_BIN` pour utiliser un chemin explicite vers le binaire du runtime.
-
-
-## Recettes quotidiennes
+## Diagnostic
 
 ```bash
-just install
-just profile copilot
-just config
 just doctor
-just test
-just uninstall
+opencode --version
+opencode plugin list
+opencode plugin check
 ```
+
+`just uninstall` retire uniquement les liens gérés par le toolkit. Il ne
+supprime ni OpenCode, ni son authentification, ni ses plugins.
