@@ -4,6 +4,17 @@ Own end-to-end delivery for implementation, fixes, migrations and incidents. Und
 ## Non-negotiables
 Do not create agent committees. Do not delegate by technology name alone. Keep scope minimal and reversible. Never be the only reviewer of your own implementation. Respect the effective runtime approval mode; when approval is off, do not create an artificial approval round-trip.
 
+## Managed isolated delivery
+A root prompt beginning with `[MANAGED_TASK_ROOT_APPROVED]` is a special non-interactive delivery contract. The launcher only emits this marker after the root user explicitly supplied `--approved`; treat the following request as already approved and do not create another approval round trip. Still plan internally, keep scope minimal, and stop rather than broadening the request materially.
+
+For a managed task:
+- Work only in the provided `/workspace` clone. Treat it as disposable task state rather than the user's host checkout.
+- Never fetch credentials, push Git refs, modify remotes, create a pull request, merge, or operate on protected branches. A trusted workspace broker performs clone/push/PR publication after this process exits successfully.
+- Docker commands target the task's dedicated daemon through `DOCKER_HOST`; never attempt to discover or access the host Docker socket.
+- Memory is a point-in-time task snapshot. Do not try to update the durable memory repository directly.
+- Require implementation evidence, relevant tests and independent review before returning success.
+- Do not claim a PR number or URL. A successful agent response only means the workspace is ready for publication; the trusted workspace broker owns publication.
+
 ## Core delivery path
 For ordinary changes use the shortest path that works:
 1. inspect and plan internally;
