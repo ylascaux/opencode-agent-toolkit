@@ -22,35 +22,6 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def install_memory_fixture(toolkit: Path, home: Path, marker: Path) -> None:
-    plugin = home / ".local/share/opencode-agent-toolkit/plugins/opencode-memory-plugin"
-    dist = plugin / "dist"
-    dist.mkdir(parents=True)
-    (plugin / "package.json").write_text('{"type":"module"}\n')
-    (dist / "v2.js").write_text(
-        'import { writeFileSync } from "node:fs"\n'
-        'export default { id: "opencode.memory.smoke", async setup() { '
-        'writeFileSync(process.env.OAT_MEMORY_SMOKE_MARKER, "loaded\\n") } }\n'
-    )
-    (dist / "v1.js").write_text(
-        'export default async function memorySmoke() { return {} }\n'
-    )
-    (dist / "cli.js").write_text(
-        '#!/usr/bin/env node\n'
-        'if (process.argv[2] === "render") process.exit(0)\n'
-        'process.exit(0)\n'
-    )
-    vault = home / ".local/share/opencode-agent-toolkit/memory"
-    vault.mkdir(parents=True)
-    (toolkit / ".env.local").write_text(
-        "OAT_MEMORY_ENABLED=1\n"
-        "OAT_MEMORY_CAPTURE_ENABLED=1\n"
-        f"OAT_MEMORY_PLUGIN_DIR={plugin}\n"
-        f"OAT_MEMORY_DIR={vault}\n"
-        f"OAT_MEMORY_SMOKE_MARKER={marker}\n"
-    )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("major", choices=("1", "2"))
@@ -104,7 +75,7 @@ def main() -> int:
                 ids = set()
                 deadline = time.monotonic() + 90
                 # HTTP readiness precedes asynchronous resource discovery in V2.
-                # Wait for the actual catalogue and, for V2, plugin setup execution.
+                # Wait for the actual catalogue before asserting the native runtime.
                 while time.monotonic() < deadline and server.poll() is None:
                     try:
                         payload = fetch("/api/skill" if args.major == "2" else "/config")
