@@ -48,31 +48,54 @@ Les invocations interactives et `run` utilisent `--standalone` par défaut afin
 qu'un ancien service OpenCode en arrière-plan ne conserve pas une configuration
 obsolète. Les commandes serveur/service et un `--server` explicite sont respectés.
 
-## Plugin mémoire
+## Mémoire Markdown : Obsidian + Git
 
-La configuration générée charge uniquement le plugin mémoire tiers :
+Le toolkit utilise désormais :
 
 ```text
-opencode-mem@2.26.0
+oc2-memory@0.1.1
 ```
 
-OpenCode 2 installe automatiquement le package configuré et ses dépendances.
-Le plugin fournit mémoire locale par projet, recherche vectorielle, auto-capture
-et réinjection de souvenirs.
+Le nom du package est historique : il cible bien **OpenCode 2** et utilise l'API
+native `@opencode/plugin` 2.x.
 
-Au premier lancement, si
-`~/.config/opencode/opencode-mem.jsonc` n'existe pas, le toolkit crée une
-configuration minimale. Le provider est déduit du profil `MODEL_*` actif et
-`opencodeModel` vaut `inherit`. Une configuration existante n'est jamais écrasée.
+La mémoire est stockée en fichiers Markdown simples :
 
-Pour forcer le provider utilisé par l'auto-capture :
+```text
+MEMORY.md
+SCRATCHPAD.md
+daily/YYYY-MM-DD.md
+recovery/*.json
+```
+
+Il n'y a pas de base vectorielle obligatoire. La recherche fonctionne en mode
+keyword sans dépendance supplémentaire. `qmd` peut être installé séparément si
+vous voulez ajouter recherche sémantique/hybride.
+
+Pour choisir l'emplacement de la mémoire :
 
 ```bash
 # .env.local
-OAT_MEMORY_PROVIDER=github-copilot
+OAT_MARKDOWN_MEMORY_DIR="/chemin/vers/MonVault/OpenCodeMemory"
 ```
 
-Le premier usage des embeddings locaux peut télécharger le modèle nécessaire.
+Le même dossier peut être :
+
+- un sous-dossier d'un vault **Obsidian** ;
+- un **repo Git** ;
+- ou les deux à la fois, ce qui est le mode conseillé si vous voulez une mémoire
+  lisible dans Obsidian et synchronisée/versionnée par Git.
+
+Si aucune variable n'est configurée, le plugin utilise son stockage local par
+défaut.
+
+### Rehydra
+
+`@rehydra/opencode` n'est plus utilisé par le toolkit. `just install` demande
+aussi à OpenCode de retirer son entrée globale si elle existe, et la configuration
+du toolkit désactive les IDs `rehydra` / `rehydra.*` provenant d'une
+configuration de priorité inférieure.
+
 
 ## Profils de modèles
 
