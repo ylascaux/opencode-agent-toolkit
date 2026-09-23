@@ -50,6 +50,26 @@ Les invocations interactives et `run` utilisent `--standalone` par défaut afin
 qu'un ancien service OpenCode en arrière-plan ne conserve pas une configuration
 obsolète. Les commandes serveur/service et un `--server` explicite sont respectés.
 
+## Catalogue d'agents minimal
+
+Le runtime charge volontairement **9 agents actifs** au lieu d'exposer les 41 profils historiques :
+
+| Agent | Rôle | Tier |
+| --- | --- | --- |
+| `meta-router` | classification et routage minimal | MEDIUM |
+| `orchestrator` | livraison multi-étapes et coordination | HIGH |
+| `builder` | implémentation générale | MEDIUM |
+| `debugger` | diagnostic et root cause | MEDIUM |
+| `tester` | tests comportementaux/régression | MEDIUM |
+| `reviewer` | review indépendante | HIGH |
+| `platform-architect` | architecture plateforme/cloud | HIGH |
+| `security-lead` | sécurité transverse | HIGH |
+| `research-runner` | docs actuelles / Context7 / recherche | MEDIUM |
+
+Les spécialisations Go, Python, Terraform, Kubernetes, AWS, CI/CD, AppSec, IAM, observabilité, FinOps, etc. sont traitées comme des **compétences** des agents principaux plutôt que comme des identités d'agents permanentes.
+
+La communication reste structurée : un agent enfant renvoie un handoff à son parent et peut demander un agent suivant. Le parent décide de la délégation et transmet un état de mission compact (décisions, artefacts, preuves, questions ouvertes, risques). Il n'y a pas de conversation libre agent-à-agent ni de chaîne de délégation non bornée.
+
 ## Documentation actuelle : Context7
 
 Context7 est activé par défaut comme MCP distant natif OpenCode 2 :
