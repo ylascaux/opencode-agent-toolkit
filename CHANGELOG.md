@@ -7,15 +7,13 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 ## Unreleased
 
 ### Changed
-- Replace `opencode-mem` with `oc2-memory@0.1.1`, a native OpenCode 2 plugin backed by plain Markdown that can live in an Obsidian vault and/or Git checkout.
-- Remove the global `@rehydra/opencode` package configuration during toolkit install when present, and disable `rehydra` plugin IDs in the generated config.
 
-- The toolkit now targets released OpenCode 2 only: `oc` launches the official `opencode` binary and the beta `oc2` / `opencode2` path is removed.
-- `just install` removes the legacy `opencode-ai` npm package when present and installs/updates `@opencode/cli@latest`.
-- Native configuration is generated only as `opencode.jsonc` using the OpenCode 2 schema.
-- `opencode-mem@2.26.0` is the sole runtime plugin configured by the toolkit.
-- The obsolete beta usage-pricing plugin and beta-specific CI/tests are removed.
-- The Docker runtime now contains one released OpenCode 2 server instead of separate V1/V2 services.
+- Replace the temporary `oc2-memory` integration with upstream `create-ai-memory@0.15.4`, installed outside the repository in toolkit-owned user data.
+- Keep `ylascaux/opencode-memory` as the Git/Obsidian source of truth and map create-ai-memory's expected compatibility paths onto `projects/`, `sessions/`, `lessons/` and `workstyle/` without changing the tracked layout.
+- Resolve the current memory project from the active Git repository and `projects/index.json`.
+- Inject project/global/previous-session context into OpenCode instructions and expose project-aware `oat-memory` MCP tools for search, notes, lessons and status.
+- Remove the global `@rehydra/opencode` package configuration when present and disable `rehydra` plugin IDs in generated OpenCode configuration.
+- OpenCode 2 stable remains the only runtime: `oc` launches the official `opencode` binary and existing OpenCode installations are never overwritten by `just install`.
 
 ## [0.1.2] - 2026-09-13
 

@@ -50,8 +50,55 @@ def main() -> int:
 
     rendered = str(source)
     config["skills"] = [*current, *([] if rendered in current else [rendered])]
-    # Package plugins are declared in the generated OpenCode 2 config.
-    # This inline layer only adds toolkit skill sources and preserves user config.
+
+    context_file = os.environ.get("OAT_AI_MEMORY_CONTEXT_FILE", "").strip()
+    adapter = os.environ.get("OAT_AI_MEMORY_ADAPTER", "").strip()
+    memory_home = os.environ.get("OAT_AI_MEMORY_HOME", "").strip()
+    memory_root = os.environ.get("OAT_AI_MEMORY_ROOT", "").strip()
+    memory_project = os.environ.get("OAT_AI_MEMORY_PROJECT", "").strip()
+
+    if context_file:
+        context = Path(context_file).expanduser().absolute()
+        if context.is_symlink() or not context.is_file():
+            print("AI memory context file is missing or unsafe", file=sys.stderr)
+            return 2
+        instructions = config.get("instructions", [])
+        if instructions is None:
+            instructions = []
+        if not isinstance(instructions, list) or not all(isinstance(item, str) and item for item in instructions):
+            print("OPENCODE_CONFIG_CONTENT.instructions must be an array of non-empty strings", file=sys.stderr)
+            return 2
+        context_text = str(context)
+        config["instructions"] = [*instructions, *([] if context_text in instructions else [context_text])]
+
+    if adapter and memory_home and memory_root and memory_project:
+        mcp = config.get("mcp", {})
+        if mcp is None:
+            mcp = {}
+        if not isinstance(mcp, dict):
+            print("OPENCODE_CONFIG_CONTENT.mcp must be an object", file=sys.stderr)
+            return 2
+        servers = mcp.get("servers", {})
+        if servers is None:
+            servers = {}
+        if not isinstance(servers, dict):
+            print("OPENCODE_CONFIG_CONTENT.mcp.servers must be an object", file=sys.stderr)
+            return 2
+        if "oat-memory" not in servers:
+            servers["oat-memory"] = {
+                "type": "local",
+                "command": ["python3", adapter, "mcp"],
+                "protocol": "legacy",
+                "codemode": False,
+                "environment": {
+                    "OAT_AI_MEMORY_HOME": memory_home,
+                    "OAT_AI_MEMORY_ROOT": memory_root,
+                    "OAT_AI_MEMORY_PROJECT": memory_project,
+                    "OAT_AI_MEMORY_CONTEXT_FILE": context_file,
+                },
+            }
+        mcp["servers"] = servers
+        config["mcp"] = mcp
 
     print(json.dumps(config, separators=(",", ":"), sort_keys=True))
     return 0

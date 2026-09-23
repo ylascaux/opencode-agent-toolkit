@@ -1,0 +1,546 @@
+#!/usr/bin/env python3
+"""Thin adapter between OpenCode and upstream create-ai-memory."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+PACKAGE = "create-ai-memory"
+PACKAGE_VERSION = "0.15.4"
+COMPAT_EXCLUDES = (
+    "_Global_Profile.md",
+    "_Standards.md",
+    "_projects/",
+    "_session_logs",
+    "_lessons",
+)
+
+
+class MemoryError(RuntimeError):
+    pass
+
+
+def run_git(cwd: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def normalize_remote(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if value.startswith("git@github.com:"):
+        value = value.split(":", 1)[1]
+    elif "github.com/" in value:
+        value = value.split("github.com/", 1)[1]
+    value = value.removesuffix(".git").strip("/")
+    return value
+
+
+def resolve_project(vault: Path, cwd: Path) -> str:
+    root = run_git(cwd, "rev-parse", "--show-toplevel")
+    project_name = Path(root).name if root else cwd.name
+    remote = normalize_remote(run_git(cwd, "remote", "get-url", "origin"))
+
+    index = vault / "projects" / "index.json"
+    if index.is_file():
+        try:
+            payload = json.loads(index.read_text())
+            for item in payload.get("projects", []):
+                match = item.get("match", {})
+                names = {str(x) for x in match.get("names", [])}
+                remotes = {normalize_remote(str(x)) for x in match.get("remotes", [])}
+                if project_name in names or (remote and remote in remotes):
+                    project_id = str(item.get("id", "")).strip()
+                    if project_id:
+                        return project_id
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+
+    return project_name or "unknown-project"
+
+
+def package_home(explicit: str | None = None) -> Path:
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    configured = os.environ.get("OAT_AI_MEMORY_HOME", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (
+        Path.home()
+        / ".local"
+        / "share"
+        / "opencode-agent-toolkit"
+        / "vendor"
+        / "ai-memory"
+        / "node_modules"
+        / PACKAGE
+    )
+
+
+def vault_root(explicit: str | None = None) -> Path:
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    configured = os.environ.get("OAT_AI_MEMORY_ROOT", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / "opencode-memory").resolve()
+
+
+def assert_upstream(home: Path) -> None:
+    required = (
+        home / "shell" / "ai-mem.zsh",
+        home / "vault-template" / "_Global_Profile.md",
+        home / "vault-template" / "_Standards.md",
+        home / "vault-template" / "_projects" / "_project_template.md",
+        home / "vault-template" / "_session_logs" / "_session_template.md",
+        home / "vault-template" / "_lessons" / "_lesson_template.md",
+    )
+    missing = [str(path) for path in required if not path.is_file()]
+    if missing:
+        raise MemoryError("create-ai-memory installation incomplete: " + ", ".join(missing))
+
+
+def safe_symlink(link: Path, target: Path) -> None:
+    link.parent.mkdir(parents=True, exist_ok=True)
+    relative = os.path.relpath(target, start=link.parent)
+
+    if link.is_symlink():
+        if os.readlink(link) == relative:
+            return
+        raise MemoryError(f"refusing to replace existing symlink: {link} -> {os.readlink(link)}")
+    if link.exists():
+        raise MemoryError(f"refusing to replace existing path: {link}")
+
+    link.symlink_to(relative)
+
+
+def seed_if_missing(source: Path, destination: Path, replacements: dict[str, str] | None = None) -> None:
+    if destination.exists():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    text = source.read_text()
+    for old, new in (replacements or {}).items():
+        text = text.replace(old, new)
+    destination.write_text(text)
+
+
+def ensure_git_excludes(vault: Path) -> None:
+    git_dir = run_git(vault, "rev-parse", "--git-dir")
+    if not git_dir:
+        return
+    git_path = Path(git_dir)
+    if not git_path.is_absolute():
+        git_path = vault / git_path
+    exclude = git_path / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    existing = exclude.read_text() if exclude.exists() else ""
+    lines = set(existing.splitlines())
+    additions = [entry for entry in COMPAT_EXCLUDES if entry not in lines]
+    if additions:
+        with exclude.open("a") as stream:
+            if existing and not existing.endswith("\n"):
+                stream.write("\n")
+            stream.write("\n# opencode-agent-toolkit create-ai-memory compatibility\n")
+            for entry in additions:
+                stream.write(entry + "\n")
+
+
+def ensure_layout(vault: Path, home: Path, cwd: Path) -> str:
+    assert_upstream(home)
+    if not vault.is_dir():
+        raise MemoryError(f"memory vault does not exist: {vault}")
+
+    for name in ("projects", "sessions", "lessons", "workstyle", "hats", "inbox", "templates"):
+        (vault / name).mkdir(parents=True, exist_ok=True)
+
+    seed_if_missing(home / "vault-template" / "_Global_Profile.md", vault / "workstyle" / "preferences.md")
+    seed_if_missing(home / "vault-template" / "_Standards.md", vault / "workstyle" / "engineering.md")
+    seed_if_missing(
+        home / "vault-template" / "_session_logs" / "_session_template.md",
+        vault / "sessions" / "_session_template.md",
+    )
+    seed_if_missing(
+        home / "vault-template" / "_lessons" / "_lesson_template.md",
+        vault / "lessons" / "_lesson_template.md",
+    )
+
+    safe_symlink(vault / "_Global_Profile.md", vault / "workstyle" / "preferences.md")
+    safe_symlink(vault / "_Standards.md", vault / "workstyle" / "engineering.md")
+    safe_symlink(vault / "_session_logs", vault / "sessions")
+    safe_symlink(vault / "_lessons", vault / "lessons")
+
+    project = resolve_project(vault, cwd)
+    context = vault / "projects" / project / "context.md"
+    seed_if_missing(
+        home / "vault-template" / "_projects" / "_project_template.md",
+        context,
+        {"[Insert Project Name]": project},
+    )
+    safe_symlink(vault / "_projects" / f"{project}.md", context)
+    ensure_git_excludes(vault)
+    return project
+
+
+def zsh_call(home: Path, vault: Path, project: str, function: str, args: list[str], cwd: Path) -> str:
+    module = home / "shell" / "ai-mem.zsh"
+    script = r"""
+source "$OAT_AI_MEMORY_MODULE" || {
+  print -u2 -- "create-ai-memory: failed to source upstream module"
+  exit 1
+}
+set -e
+export AI_MEM_ROOT="$OAT_AI_MEMORY_ROOT"
+export AI_MEM_FORCE_PROJECT="$OAT_AI_MEMORY_PROJECT"
+"$OAT_AI_MEMORY_FUNCTION" "$@"
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OAT_AI_MEMORY_MODULE": str(module),
+            "OAT_AI_MEMORY_ROOT": str(vault),
+            "OAT_AI_MEMORY_PROJECT": project,
+            "OAT_AI_MEMORY_FUNCTION": function,
+            "AI_MEM_ROOT": str(vault),
+            "AI_MEM_FORCE_PROJECT": project,
+        }
+    )
+    result = subprocess.run(
+        ["zsh", "-c", script, "--", *args],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise MemoryError((result.stderr or result.stdout or f"{function} failed").strip())
+    return result.stdout.strip()
+
+
+
+def zsh_prepare_context(home: Path, vault: Path, project: str, cwd: Path) -> str:
+    """Use upstream preparation/rendering without its optional commit-guard gate."""
+    module = home / "shell" / "ai-mem.zsh"
+    script = r"""
+source "$OAT_AI_MEMORY_MODULE" || {
+  print -u2 -- "create-ai-memory: failed to source upstream module"
+  exit 1
+}
+set -e
+export AI_MEM_ROOT="$OAT_AI_MEMORY_ROOT"
+export AI_MEM_FORCE_PROJECT="$OAT_AI_MEMORY_PROJECT"
+
+resolved="$(__ai_mem_prepare_session "$OAT_AI_MEMORY_PROJECT")" || {
+  print -u2 -- "create-ai-memory: __ai_mem_prepare_session failed"
+  exit 1
+}
+IFS='|' read -r active_project project_note previous_session_note session_note <<< "$resolved"
+__ai_mem_export_active "$active_project" "$previous_session_note" "$session_note"
+__ai_mem_context_prompt "$project_note" "$previous_session_note" "$session_note" || {
+  print -u2 -- "create-ai-memory: __ai_mem_context_prompt failed"
+  exit 1
+}
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OAT_AI_MEMORY_MODULE": str(module),
+            "OAT_AI_MEMORY_ROOT": str(vault),
+            "OAT_AI_MEMORY_PROJECT": project,
+            "AI_MEM_ROOT": str(vault),
+            "AI_MEM_FORCE_PROJECT": project,
+        }
+    )
+    result = subprocess.run(
+        ["zsh", "-c", script],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise MemoryError((result.stderr or result.stdout or "create-ai-memory context preparation failed").strip())
+    return result.stdout.strip()
+
+def atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(text)
+            if not text.endswith("\n"):
+                stream.write("\n")
+            stream.flush()
+            os.fchmod(stream.fileno(), 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def prepare(vault: Path, home: Path, cwd: Path, context_file: Path) -> tuple[str, str]:
+    project = ensure_layout(vault, home, cwd)
+    context = zsh_prepare_context(home, vault, project, cwd)
+    context += (
+        "\n\n## OpenCode toolkit memory integration\n"
+        "Use the `oat-memory` MCP tools for persistent-memory operations in this session. "
+        "Use `search_memory` instead of the shell-only `ai-mem-search`, "
+        "`add_note` for durable session notes, and `add_lesson` for reusable cross-project lessons."
+    )
+    atomic_write(context_file, context)
+    return project, context
+
+
+def inside_vault(vault: Path, value: str) -> Path:
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = vault / candidate
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(vault.resolve())
+    except (OSError, ValueError):
+        raise MemoryError(f"refused path outside memory vault: {value}")
+    return resolved
+
+
+def mcp_server(vault: Path, home: Path, cwd: Path, project: str, context_file: Path | None) -> int:
+    tools = [
+        {
+            "name": "search_memory",
+            "description": "Search persistent memory across projects, sessions, lessons, workstyle and hats.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "term": {"type": "string"},
+                    "project": {"type": "string"},
+                },
+                "required": ["term"],
+            },
+        },
+        {
+            "name": "get_context",
+            "description": "Read the already prepared memory context for the current project.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "read_note",
+            "description": "Read one Markdown note inside the memory vault.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+        {
+            "name": "add_note",
+            "description": "Append a durable note to the current project's active session log.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        },
+        {
+            "name": "add_lesson",
+            "description": "Store a reusable cross-project problem/solution lesson.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "problem": {"type": "string"},
+                    "solution": {"type": "string"},
+                },
+                "required": ["topic", "problem", "solution"],
+            },
+        },
+        {
+            "name": "memory_status",
+            "description": "Show the active memory project, vault and upstream package.",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+    ]
+
+    def send(payload: dict[str, Any]) -> None:
+        sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
+
+    for raw in sys.stdin:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            request = json.loads(raw)
+        except json.JSONDecodeError:
+            send({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
+            continue
+
+        request_id = request.get("id")
+        if request_id is None:
+            continue
+        method = request.get("method")
+
+        try:
+            if method == "initialize":
+                instructions = (
+                    "Persistent memory is available through the oat-memory tools. "
+                    "Use the prepared project context already injected by the toolkit. "
+                    "Search memory before repeating a failed approach; record durable decisions, blockers and lessons."
+                )
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": {
+                            "protocolVersion": request.get("params", {}).get("protocolVersion", "2025-11-25"),
+                            "capabilities": {"tools": {}},
+                            "serverInfo": {"name": "oat-memory", "version": PACKAGE_VERSION},
+                            "instructions": instructions,
+                        },
+                    }
+                )
+                continue
+
+            if method == "tools/list":
+                send({"jsonrpc": "2.0", "id": request_id, "result": {"tools": tools}})
+                continue
+
+            if method != "tools/call":
+                send(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32601, "message": f"method not found: {method}"},
+                    }
+                )
+                continue
+
+            params = request.get("params", {})
+            name = params.get("name")
+            args = params.get("arguments") or {}
+            text = ""
+            is_error = False
+
+            if name == "search_memory":
+                term = str(args.get("term", "")).strip()
+                if not term:
+                    raise MemoryError("term is required")
+                call_args = [term]
+                scoped = str(args.get("project", "")).strip()
+                if scoped:
+                    call_args.append(scoped)
+                text = zsh_call(home, vault, project, "ai-mem-search", call_args, cwd)
+            elif name == "get_context":
+                if context_file and context_file.is_file():
+                    text = context_file.read_text().strip()
+                else:
+                    text = zsh_prepare_context(home, vault, project, cwd)
+            elif name == "read_note":
+                path = inside_vault(vault, str(args.get("path", "")))
+                text = path.read_text()
+            elif name == "add_note":
+                value = str(args.get("text", "")).strip()
+                if not value:
+                    raise MemoryError("text is required")
+                text = zsh_call(home, vault, project, "ai-note", [value], cwd)
+            elif name == "add_lesson":
+                values = [str(args.get(key, "")).strip() for key in ("topic", "problem", "solution")]
+                if not all(values):
+                    raise MemoryError("topic, problem and solution are required")
+                text = zsh_call(home, vault, project, "ai-lesson", values, cwd)
+            elif name == "memory_status":
+                text = "\n".join(
+                    (
+                        f"project={project}",
+                        f"vault={vault}",
+                        f"create-ai-memory={PACKAGE_VERSION}",
+                        f"context={context_file or 'none'}",
+                    )
+                )
+            else:
+                raise MemoryError(f"unknown tool: {name}")
+
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"content": [{"type": "text", "text": text}], "isError": is_error},
+                }
+            )
+        except Exception as error:
+            send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "content": [{"type": "text", "text": str(error)}],
+                        "isError": True,
+                    },
+                }
+            )
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("setup", "prepare", "mcp", "doctor"))
+    parser.add_argument("--root")
+    parser.add_argument("--home")
+    parser.add_argument("--cwd", default=os.getcwd())
+    parser.add_argument("--context-file")
+    parser.add_argument("--project")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    vault = vault_root(args.root)
+    home = package_home(args.home)
+    cwd = Path(args.cwd).expanduser().resolve()
+
+    try:
+        if args.command == "setup":
+            project = ensure_layout(vault, home, cwd)
+            print(project)
+            return 0
+
+        if args.command == "prepare":
+            if not args.context_file:
+                raise MemoryError("--context-file is required")
+            project, _ = prepare(vault, home, cwd, Path(args.context_file).expanduser().resolve())
+            print(project)
+            return 0
+
+        project = args.project or ensure_layout(vault, home, cwd)
+
+        if args.command == "doctor":
+            assert_upstream(home)
+            print(f"create-ai-memory={PACKAGE_VERSION}")
+            print(f"home={home}")
+            print(f"vault={vault}")
+            print(f"project={project}")
+            return 0
+
+        context_file = Path(args.context_file).expanduser().resolve() if args.context_file else None
+        return mcp_server(vault, home, cwd, project, context_file)
+    except MemoryError as error:
+        print(f"ai-memory: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

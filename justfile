@@ -4,11 +4,11 @@ set positional-arguments
 default:
     @just --list
 
-# Install/update OpenCode 2 stable, generate config and install ~/.local/bin/oc.
+# Install the toolkit, preserving an existing OpenCode binary and preparing persistent memory.
 install:
     bash ./scripts/bootstrap
 
-# Remove only the toolkit-owned launcher. Keep OpenCode, auth and memory data.
+# Remove only toolkit launchers. Keep OpenCode, auth, upstream memory package and vault data.
 uninstall:
     bash ./scripts/user-link uninstall oc
     bash ./scripts/user-link uninstall oc2 || true
