@@ -442,7 +442,7 @@ def mcp_server(vault: Path, home: Path, cwd: Path, project: str, context_file: P
                 if context_file and context_file.is_file():
                     text = context_file.read_text().strip()
                 else:
-                    text = zsh_call(home, vault, project, "ai-context", [project], cwd)
+                    text = zsh_prepare_context(home, vault, project, cwd)
             elif name == "read_note":
                 path = inside_vault(vault, str(args.get("path", "")))
                 text = path.read_text()
