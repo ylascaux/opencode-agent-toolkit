@@ -29,13 +29,13 @@ class OneCommandInstallTests(unittest.TestCase):
         self.assertIn("npm install -g @opencode/cli@latest", text)
         self.assertIn("OpenCode is not installed and npm is unavailable", text)
 
-    def test_create_ai_memory_is_pinned_and_vault_is_reused(self):
+    def test_native_memory_plugin_is_installed_and_vault_is_reused(self):
         text = (ROOT / "scripts/bootstrap").read_text()
-        self.assertIn('OAT_AI_MEMORY_VERSION:-0.15.4', text)
-        self.assertIn('"create-ai-memory@$memory_version"', text)
-        self.assertIn('OAT_AI_MEMORY_ROOT:-$HOME/opencode-memory', text)
+        self.assertIn('OAT_MEMORY_DIR:-$HOME/opencode-memory', text)
         self.assertIn('https://github.com/ylascaux/opencode-memory.git', text)
-        self.assertIn('scripts/ai-memory-adapter" setup', text)
+        self.assertIn('scripts/memory_plugin.py', text)
+        self.assertIn('OAT_MEMORY_CAPTURE_ENABLED', text)
+        self.assertIn('OAT_AI_MEMORY_', text, "bootstrap must migrate the short-lived legacy variables")
         self.assertIn('gh auth login && gh auth setup-git', text)
 
     def test_bootstrap_remains_valid_bash(self):
