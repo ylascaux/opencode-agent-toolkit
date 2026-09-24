@@ -100,7 +100,7 @@ class MemoryV2Config:
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "MemoryV2Config":
         env = os.environ if environ is None else environ
-        backend = env.get("OAT_MEMORY_BACKEND", "legacy").strip().lower() or "legacy"
+        backend = env.get("OAT_MEMORY_BACKEND", "local").strip().lower() or "legacy"
         if backend not in _BACKENDS:
             raise ValueError(f"OAT_MEMORY_BACKEND must be one of: {', '.join(sorted(_BACKENDS))}")
         prefix = env.get("OAT_MEMORY_NAMESPACE_PREFIX", "oat").strip() or "oat"
