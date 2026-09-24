@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import sys
+import time
 import tempfile
 import textwrap
 import unittest
@@ -17,7 +19,7 @@ import json
 import os
 import sys
 
-session_id = "sess_fake"
+session_id = f"sess_{os.getpid()}"
 
 def send(payload):
     sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
@@ -94,7 +96,8 @@ class AcpSessionTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.agent = self.root / "fake_acp.py"
-        self.agent.write_text(textwrap.dedent(FAKE_AGENT))
+        self.agent.write_text(textwrap.dedent(FAKE_AGENT).lstrip())
+        self.agent.chmod(0o755)
         self.runner = AcpRunner(
             id="fake",
             command=sys.executable,
@@ -139,6 +142,45 @@ class AcpSessionTests(unittest.TestCase):
         self.assertEqual(session.state, "closed")
         self.assertIsNone(session.process)
         self.assertGreater(pid, 0)
+
+    def test_runner_service_enqueues_prompt_and_reports_result_via_status(self) -> None:
+        namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "acp-mcp"))
+        RunnerService = namespace["RunnerService"]
+
+        previous_bin = os.environ.get("OPENCODE_BIN")
+        previous_parallel = os.environ.get("OAT_ACP_MAX_PARALLEL")
+        os.environ["OPENCODE_BIN"] = str(self.agent)
+        os.environ["OAT_ACP_MAX_PARALLEL"] = "1"
+        service = RunnerService(self.root)
+        try:
+            started = service.call(
+                "acp_runner",
+                {"action": "start", "runner": "opencode", "message": "hello"},
+            )
+            self.assertEqual(started["status"], "running")
+            session_id = started["session_id"]
+
+            deadline = time.monotonic() + 5
+            status = {}
+            while time.monotonic() < deadline:
+                status = service.call("acp_runner", {"action": "status", "session_id": session_id})
+                if status.get("job", {}).get("status") == "completed":
+                    break
+                time.sleep(0.02)
+
+            self.assertEqual(status["job"]["status"], "completed")
+            self.assertEqual(status["job"]["text"], "reply: hello")
+            service.call("acp_runner", {"action": "close", "session_id": session_id})
+        finally:
+            service.close_all()
+            if previous_bin is None:
+                os.environ.pop("OPENCODE_BIN", None)
+            else:
+                os.environ["OPENCODE_BIN"] = previous_bin
+            if previous_parallel is None:
+                os.environ.pop("OAT_ACP_MAX_PARALLEL", None)
+            else:
+                os.environ["OAT_ACP_MAX_PARALLEL"] = previous_parallel
 
 
 if __name__ == "__main__":
