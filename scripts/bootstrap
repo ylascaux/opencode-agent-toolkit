@@ -109,7 +109,7 @@ source "$ROOT/.env"
 [[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
 
-memory_backend="${OAT_MEMORY_BACKEND:-legacy}"
+memory_backend="${OAT_MEMORY_BACKEND:-local}"
 case "$memory_backend" in
   legacy|local|postgres) ;;
   *) echo "Unsupported OAT_MEMORY_BACKEND: $memory_backend" >&2; exit 2 ;;
