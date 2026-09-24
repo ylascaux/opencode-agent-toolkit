@@ -141,7 +141,11 @@ class MemoryV2Config:
         if not parsed.scheme:
             return "<configured>"
         host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
+        try:
+            parsed_port = parsed.port
+        except ValueError:
+            return "<configured>"
+        port = f":{parsed_port}" if parsed_port else ""
         user = parsed.username or ""
         auth = f"{user}:***@" if user else ""
         path = parsed.path or ""
