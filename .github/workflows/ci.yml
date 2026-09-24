@@ -40,6 +40,35 @@ jobs:
       - name: Generate configs and run tests
         run: just check
 
+
+  postgres-memory:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: oat
+          POSTGRES_PASSWORD: oat-ci-password
+          POSTGRES_DB: oat_memory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oat -d oat_memory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      OAT_TEST_POSTGRES_DSN: postgresql://oat:oat-ci-password@127.0.0.1:5432/oat_memory
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install V2 memory dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements-v2.txt
+      - name: Shared PostgreSQL multi-client qualification
+        run: python3 -m unittest tests.test_harness_memory_postgres -v
+
   runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 15
