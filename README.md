@@ -34,9 +34,9 @@ just doctor
 
 1. si `opencode` existe déjà dans le PATH, **ne touche pas à cette installation** ;
 2. sinon, installe `@opencode/cli@latest` avec npm ;
-3. clone/réutilise le vault privé `~/opencode-memory` ;
-4. installe et construit la version pinée de `opencode-memory-plugin` dans les données utilisateur du toolkit ;
-5. migre automatiquement l'ancien bloc `OAT_AI_MEMORY_*` s'il provient de l'intégration temporaire `create-ai-memory` ;
+3. installe et construit la version pinée de `opencode-memory-plugin` (extracteur automatique) ;
+4. prépare le runtime Python V2 isolé avec `harness-memory` ;
+5. initialise la mémoire V2 locale par défaut (SQLite, vide, sans migration V1) ;
 6. génère `opencode.jsonc` au format natif OpenCode 2 ;
 7. installe uniquement `~/.local/bin/oc` et retire l'ancien lien `oc2`.
 
@@ -112,113 +112,75 @@ Une définition `context7` déjà fournie par l'utilisateur dans
 `OPENCODE_CONFIG_CONTENT.mcp.servers` reste prioritaire et n'est jamais
 écrasée.
 
-## Mémoire persistante : opencode-memory-plugin + opencode-memory
+## Mémoire V2 : locale ou partagée
 
-Le runtime mémoire quotidien est désormais unique :
+La V2 utilise `harness-memory` comme source de vérité. Une installation neuve démarre avec un SQLite local :
 
 ```text
 oc
- ├── opencode-memory-plugin
- │    ├── contexte projet/workstyle/hats
- │    ├── capture automatique sur session.idle
- │    └── extraction de candidats mémoire
- ├── oat-memory MCP
- └── ~/opencode-memory (Git/Markdown/Obsidian)
+ ├── opencode-memory-plugin       # extraction automatique session idle
+ ├── oat-memory MCP              # recherche/rendu/proposition
+ └── harness-memory
+       ├── local SQLite (défaut)
+       └── PostgreSQL (multi-PC)
 ```
 
-Le plugin est versionné séparément et installé dans :
+Aucune donnée de la V1 n'est migrée. L'ancien backend Git reste disponible uniquement avec `OAT_MEMORY_BACKEND=legacy` ou via la branche `v1`.
 
-```text
-~/.local/share/opencode-agent-toolkit/plugins/opencode-memory-plugin/
-```
-
-Le vault reste lisible et indépendant du runtime :
-
-```text
-~/opencode-memory/
-├── projects/
-├── workstyle/
-├── hats/
-├── inbox/
-├── sessions/      # ancien contenu conservé, non requis par le nouveau runtime
-├── lessons/
-└── templates/
-```
-
-Configuration par défaut :
+Pour partager la même mémoire entre deux PC, exécute sur chacun :
 
 ```bash
-OAT_MEMORY_ENABLED=1
-OAT_MEMORY_CAPTURE_ENABLED=1
-OAT_MEMORY_AUTO_PROMOTE=1
-OAT_MEMORY_AUTO_PUSH=1
-OAT_MEMORY_REPO=https://github.com/ylascaux/opencode-memory.git
-OAT_MEMORY_DIR=$HOME/opencode-memory
+git pull
+just install
+oc memory configure-postgres 'postgresql://USER:PASSWORD@HOST:5432/DB'
+oc memory status
 ```
 
-Au lancement de `oc`, aucun clone, pull ou build n'est effectué. Le launcher
-utilise uniquement le plugin déjà installé par `just install`, rend le contexte
-mémoire local et charge le plugin OpenCode 2 natif. Le même plugin expose aussi
-le MCP `oat-memory`.
+L'identité du projet est dérivée du remote Git canonique, donc deux clones de `owner/repo` utilisent le même namespace :
 
-À chaque passage de session à l'état `idle`, le plugin lit uniquement les
-messages utilisateur/assistant et extrait les informations réellement durables.
+```text
+oat:project:owner/repo
+oat:user:default
+```
 
-Le fonctionnement quotidien est **automatique** :
+La capture reste automatique. Les faits projet, architecture, décisions et conventions vont dans le namespace projet ; les préférences de travail vont dans le namespace utilisateur partagé.
 
-> OpenCode 2 stable envoie les événements de session via `event.data`. Le plugin mémoire suit cette enveloppe stable et associe d'abord chaque session au projet via `ctx.session.hook("prompt")`, car le flux d'événements est global.
-
-- chaque session de travail substantielle met à jour
-  `projects/<repo>/current.md`. Les analyses de dépôt peuvent en plus enrichir automatiquement `projects/<repo>/architecture.md` avec les composants, flux, dépendances, limites opérationnelles et risques architecturaux durables avec un handoff court (résumé, décisions,
-  blocages, prochaine étape), même s'il n'y a aucun nouveau fait durable ;
-- une mémoire `HIGH` est écrite directement dans `projects/<repo>/` ou
-  `workstyle/`, commitée puis poussée vers le vault Git ;
-- une information `MEDIUM` ou sans cible sûre reste en quarantaine locale ;
-- si le fichier mémoire cible contient déjà des modifications locales, le plugin
-  ne l'écrase pas et conserve l'élément en quarantaine ;
-- des fichiers non suivis ailleurs dans le vault ne bloquent pas la capture ;
-- si OpenCode est interrompu pendant l'extraction, la capture en attente est
-  enregistrée localement avec le repo d'origine et reprise au prochain `oc`.
-
-Tu n'as donc normalement **aucune commande mémoire à lancer**. Les commandes
-ci-dessous restent disponibles uniquement pour le diagnostic ou les cas
-ambigus :
+Commandes utiles :
 
 ```bash
 oc memory status
-oc memory trace
-oc memory candidates
-oc memory candidate <id>
-oc memory reject <id>
+oc memory namespace
+oc memory show
+oc memory add decision "Titre" "Information durable"
+oc memory configure-local
+oc memory configure-postgres 'postgresql://...'
 ```
 
-Pour un nouveau dépôt qui n'a pas encore de dossier `projects/<repo>/`, la
-capture utilise directement un identifiant stable dérivé du nom du repo et crée
-le fichier durable uniquement lorsqu'une vraie mémoire HIGH est détectée.
+Le DSN PostgreSQL reste dans l'environnement local et n'est jamais sérialisé dans la configuration OpenCode générée.
 
-Les fichiers `sessions/*` créés par l'intégration temporaire
-`create-ai-memory` peuvent rester dans le repo : ils sont simplement ignorés
-par le nouveau moteur. Il n'est pas nécessaire de les remplir ni de les
-supprimer pour que la capture fonctionne.
+Documentation détaillée : [docs/v2/shared-memory.md](docs/v2/shared-memory.md).
 
-Pour désactiver toute la mémoire :
+## ACP et jobs parallèles
+
+OpenCode reste le runtime principal. La V2 ajoute un manager ACP via le MCP `oat-acp`.
+
+Les agents leads peuvent utiliser `acp_runner` pour un travail indépendant/long ou un runtime ACP alternatif :
+
+```text
+start → status → [permission_required → respond] → completed → close
+```
+
+Les jobs sont exécutés dans un pool borné (`OAT_ACP_MAX_PARALLEL=4` par défaut). Chaque child utilise son propre processus `opencode acp`, reste dans le workspace parent et ne reçoit ni le DSN mémoire ni les MCP `oat-memory` / `oat-acp`.
+
+Inspection humaine :
 
 ```bash
-OAT_MEMORY_ENABLED=0
+oc runner list
+oc runner doctor
+oc runner command opencode
 ```
 
-Pour garder la lecture/contexte mais couper uniquement la capture automatique :
-
-```bash
-OAT_MEMORY_CAPTURE_ENABLED=0
-```
-
-Pour revenir au mode de validation manuelle historique :
-
-```bash
-OAT_MEMORY_AUTO_PROMOTE=0
-OAT_MEMORY_AUTO_PUSH=0
-```
+Documentation détaillée : [docs/v2/acp-runners.md](docs/v2/acp-runners.md).
 
 ### Rehydra
 
