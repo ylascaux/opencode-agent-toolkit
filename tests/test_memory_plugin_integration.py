@@ -61,11 +61,20 @@ class MemoryPluginIntegrationTests(unittest.TestCase):
         self.assertNotIn(token, helper)
         self.assertIn("OAT_GIT_ASKPASS_TOKEN", helper)
 
-    def test_without_pat_git_stays_noninteractive_ssh(self) -> None:
-        env = memory_plugin._git_env({"HOME": "/tmp/home"})
+    def test_without_pat_or_gh_token_git_stays_noninteractive_ssh(self) -> None:
+        with mock.patch.object(memory_plugin, "_github_cli_token", return_value=""):
+            env = memory_plugin._git_env({"HOME": "/tmp/home"})
         self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
         self.assertEqual(env["GIT_SSH_COMMAND"], "ssh -o BatchMode=yes")
         self.assertNotIn("GIT_ASKPASS", env)
+
+    def test_gh_auth_token_is_used_when_environment_has_no_github_token(self) -> None:
+        with mock.patch.object(memory_plugin, "_github_cli_token", return_value="gho_test_token"):
+            env = memory_plugin._git_env({"HOME": "/tmp/home"})
+        self.assertEqual(env["GIT_ASKPASS_REQUIRE"], "force")
+        self.assertEqual(env["OAT_GIT_ASKPASS_TOKEN"], "gho_test_token")
+        self.assertEqual(env["GIT_CONFIG_VALUE_0"], "git@github.com:")
+        self.assertNotIn("GIT_SSH_COMMAND", env)
 
     def test_existing_unmanaged_checkout_builds_and_returns_dist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
