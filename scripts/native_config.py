@@ -73,6 +73,14 @@ def render_config(specs: Mapping[str, Any]) -> dict:
                 f"- {child}: {specs[child].description}" for child in delegated
             ))
             parts.append("Give each child a concrete goal and context; consume its result before starting dependent work. Parallelize only independent tasks.")
+            parts.append(
+                "Prefer native subagent delegation for short specialist handoffs. "
+                "Use the acp_runner tool for an independent long-running coding job, background work, "
+                "or an explicitly requested alternate ACP runtime. start/message/respond enqueue work; "
+                "poll status until completed or permission_required. Never guess a permission option: "
+                "respond only with an option explicitly authorized by the user or current parent policy, "
+                "and close finished ACP sessions."
+            )
         elif spec.prompt.strip():
             parts.append(spec.prompt.strip())
         parts.append(POLICY)
