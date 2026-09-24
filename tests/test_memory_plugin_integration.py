@@ -51,6 +51,7 @@ class MemoryPluginIntegrationTests(unittest.TestCase):
         self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
         self.assertEqual(env["GIT_ASKPASS_REQUIRE"], "force")
         self.assertEqual(env["OAT_GIT_ASKPASS_TOKEN"], token)
+        self.assertEqual(env["GIT_CONFIG_GLOBAL"], os.devnull)
         self.assertEqual(env["GIT_CONFIG_COUNT"], "2")
         self.assertEqual(env["GIT_CONFIG_KEY_0"], "url.https://github.com/.insteadOf")
         self.assertEqual(env["GIT_CONFIG_VALUE_0"], "git@github.com:")
@@ -73,6 +74,7 @@ class MemoryPluginIntegrationTests(unittest.TestCase):
             env = memory_plugin._git_env({"HOME": "/tmp/home"})
         self.assertEqual(env["GIT_ASKPASS_REQUIRE"], "force")
         self.assertEqual(env["OAT_GIT_ASKPASS_TOKEN"], "gho_test_token")
+        self.assertEqual(env["GIT_CONFIG_GLOBAL"], os.devnull)
         self.assertEqual(env["GIT_CONFIG_VALUE_0"], "git@github.com:")
         self.assertNotIn("GIT_SSH_COMMAND", env)
 
