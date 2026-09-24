@@ -41,6 +41,7 @@ class HarnessMemoryService:
     def _backend(self) -> tuple[str, dict[str, Any]]:
         if self.config.backend == "postgres":
             return "postgres", {"dsn": self.config.postgres_dsn}
+        self.config.local_path.parent.mkdir(parents=True, exist_ok=True)
         return "sqlite", {"db_path": str(self.config.local_path)}
 
     def _open(self, namespace: str) -> tuple[Any, Any]:
