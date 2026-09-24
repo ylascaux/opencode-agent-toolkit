@@ -39,6 +39,12 @@ set +a
 
 export OAT_RUNTIME=host OAT_SANDBOX_ENABLED=0 PLAN_APPROVAL_MODE=off
 
+if [[ "${1:-}" == runner ]]; then
+  shift
+  [[ $# -gt 0 ]] || set -- list
+  exec python3 -B "$ROOT/scripts/acp-runner" "$@"
+fi
+
 if [[ "${1:-}" == memory ]]; then
   shift
   [[ $# -gt 0 ]] || set -- --help
