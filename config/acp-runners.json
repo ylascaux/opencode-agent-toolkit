@@ -1,0 +1,10 @@
+{
+  "runners": {
+    "opencode": {
+      "command": "opencode",
+      "args": ["acp"],
+      "enabled": true,
+      "trusted": true
+    }
+  }
+}
