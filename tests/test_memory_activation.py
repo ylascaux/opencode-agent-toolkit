@@ -31,6 +31,7 @@ class MemoryActivationTests(unittest.TestCase):
                 "OAT_RUNTIME": "container",
                 "OAT_RUNTIME_ENV_FILE": str(settings),
                 "OAT_MEMORY_REPO": "git@github.com:example/opencode-memory.git",
+                "OAT_MEMORY_BACKEND": "legacy",
                 "OAT_MEMORY_ENABLED": "0",
                 "OAT_MEMORY_CAPTURE_ENABLED": "0",
             }
@@ -53,6 +54,7 @@ class MemoryActivationTests(unittest.TestCase):
             env = {
                 "OAT_RUNTIME": "container",
                 "OAT_RUNTIME_ENV_FILE": str(settings),
+                "OAT_MEMORY_BACKEND": "legacy",
                 "OAT_MEMORY_ENABLED": "0",
                 "OAT_MEMORY_CAPTURE_ENABLED": "0",
             }
@@ -69,6 +71,7 @@ class MemoryActivationTests(unittest.TestCase):
     def test_status_exposes_requested_and_effective_capture_state(self) -> None:
         fake_settings = SimpleNamespace(repo="plugin-repo", ref="v1", directory=Path("/plugin"))
         env = {
+            "OAT_MEMORY_BACKEND": "legacy",
             "OAT_MEMORY_ENABLED": "0",
             "OAT_MEMORY_CAPTURE_ENABLED": "1",
             "OAT_MEMORY_REPO": "git@github.com:example/opencode-memory.git",
