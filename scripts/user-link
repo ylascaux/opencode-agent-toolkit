@@ -54,7 +54,25 @@ case "$ACTION" in
         show_path_warning
         exit 0
       fi
-      echo "Refusing to replace existing symlink: $LINK -> $current" >&2
+
+      current_path="$current"
+      [[ "$current_path" == /* ]] || current_path="$(dirname "$LINK")/$current_path"
+      old_root=""
+      if [[ "$(basename "$current_path")" == "opencode-agents" && "$(basename "$(dirname "$current_path")")" == "scripts" ]]; then
+        old_root="$(cd -P "$(dirname "$current_path")/.." 2>/dev/null && pwd || true)"
+      fi
+
+      if [[ -n "$old_root" && -f "$old_root/scripts/opencode-agents" && -f "$old_root/justfile" ]] \
+        && grep -q 'OAT_RUNTIME=host' "$old_root/scripts/opencode-agents" \
+        && grep -q 'bash ./scripts/bootstrap' "$old_root/justfile"; then
+        rm "$LINK"
+        ln -s "$TARGET" "$LINK"
+        echo "Retargeted stale toolkit launcher: $LINK -> $TARGET"
+        show_path_warning
+        exit 0
+      fi
+
+      echo "Refusing to replace existing symlink not recognized as this toolkit: $LINK -> $current" >&2
       exit 1
     fi
 
