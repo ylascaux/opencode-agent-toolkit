@@ -78,7 +78,7 @@ def _v2_python() -> str:
     return result.stdout.strip()
 
 
-def _v2_request(payload: dict) -> dict:
+def _v2_request(payload: dict, *, env: dict[str, str] | None = None) -> dict:
     result = subprocess.run(
         [_v2_python(), str(ROOT / "scripts" / "memory-v2-rpc"), "--cwd", str(Path.cwd())],
         input=json.dumps(payload),
@@ -87,7 +87,7 @@ def _v2_request(payload: dict) -> dict:
         stderr=subprocess.PIPE,
         timeout=15,
         check=False,
-        env=os.environ.copy(),
+        env=env or os.environ.copy(),
     )
     try:
         response = json.loads(result.stdout)
@@ -140,7 +140,7 @@ def _print_v2_identity() -> None:
     print(f"v2_project_source={identity.source}")
     print(f"v2_namespace={config.namespace_for(identity)}")
     print(f"v2_shared={'yes' if config.shared else 'no'}")
-    print("v2_runtime=legacy" if config.backend == "legacy" else "v2_runtime=foundation-only")
+    print("v2_runtime=legacy" if config.backend == "legacy" else "v2_runtime=active")
     if config.postgres_dsn:
         print(f"v2_postgres_dsn={config.masked_dsn()}")
 
@@ -206,6 +206,20 @@ def cmd_show(args: argparse.Namespace) -> int:
     return _run_plugin(*values)
 
 
+def _ensure_v2_python() -> None:
+    subprocess.run(
+        [sys.executable, "-B", str(ROOT / "scripts" / "v2-python"), "ensure"],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+
+
+def _validate_v2_updates(updates: dict[str, str]) -> None:
+    env = os.environ.copy()
+    env.update(updates)
+    _v2_request({"action": "status"}, env=env)
+
+
 def cmd_configure_postgres(args: argparse.Namespace) -> int:
     dsn = args.dsn.strip()
     if not dsn.startswith(("postgresql://", "postgres://")):
@@ -216,12 +230,12 @@ def cmd_configure_postgres(args: argparse.Namespace) -> int:
         "OAT_MEMORY_BACKEND": "postgres",
         "OAT_MEMORY_POSTGRES_DSN": dsn,
     }
+    _ensure_v2_python()
+    try:
+        _validate_v2_updates(updates)
+    except RuntimeError as exc:
+        raise SystemExit(f"PostgreSQL memory validation failed: {exc}") from exc
     _apply_updates(updates)
-    subprocess.run(
-        [sys.executable, "-B", str(ROOT / "scripts" / "v2-python"), "ensure"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
     print("memory_backend=postgres")
     print("memory_configured=yes")
     return 0
@@ -233,12 +247,12 @@ def cmd_configure_local(_args: argparse.Namespace) -> int:
         "OAT_MEMORY_CAPTURE_ENABLED": "1",
         "OAT_MEMORY_BACKEND": "local",
     }
+    _ensure_v2_python()
+    try:
+        _validate_v2_updates(updates)
+    except RuntimeError as exc:
+        raise SystemExit(f"Local V2 memory validation failed: {exc}") from exc
     _apply_updates(updates)
-    subprocess.run(
-        [sys.executable, "-B", str(ROOT / "scripts" / "v2-python"), "ensure"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
     print("memory_backend=local")
     print("memory_configured=yes")
     return 0
@@ -248,21 +262,18 @@ def cmd_capture_on(_args: argparse.Namespace) -> int:
     updates = {"OAT_MEMORY_CAPTURE_ENABLED": "1"}
     auto_enabled = False
     if not _enabled("OAT_MEMORY_ENABLED"):
-        repo = os.getenv("OAT_MEMORY_REPO", "").strip()
-        if not repo:
-            print(
-                "Cannot enable memory capture while memory is disabled and OAT_MEMORY_REPO is not configured.",
-                file=os.sys.stderr,
-            )
-            print(
-                "Run: oc2 memory enable git@github.com:USER/opencode-memory.git",
-                file=os.sys.stderr,
-            )
-            return 2
+        if _v2_config().backend == "legacy":
+            repo = os.getenv("OAT_MEMORY_REPO", "").strip()
+            if not repo:
+                print(
+                    "Cannot enable legacy memory capture while OAT_MEMORY_REPO is not configured.",
+                    file=os.sys.stderr,
+                )
+                return 2
         updates["OAT_MEMORY_ENABLED"] = "1"
         auto_enabled = True
     _apply_updates(updates)
-    if auto_enabled:
+    if auto_enabled and _v2_config().backend == "legacy":
         ensure_plugin(force_sync=True)
         print("memory=on (auto-enabled for capture)")
     print("memory_capture=on")
@@ -277,7 +288,16 @@ def cmd_capture_off(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _legacy_only(operation: str) -> bool:
+    if _v2_config().backend == "legacy":
+        return True
+    print(f"{operation}=not-applicable (V2 harness-memory has no Git candidate queue)")
+    return False
+
+
 def cmd_candidates(args: argparse.Namespace) -> int:
+    if not _legacy_only("candidates"):
+        return 0
     values = ["candidates"]
     if args.all:
         values.append("--all")
@@ -289,14 +309,20 @@ def cmd_candidates(args: argparse.Namespace) -> int:
 
 
 def cmd_candidate(args: argparse.Namespace) -> int:
+    if not _legacy_only("candidate"):
+        return 0
     return _run_plugin("show", args.id)
 
 
 def cmd_reject(args: argparse.Namespace) -> int:
+    if not _legacy_only("reject"):
+        return 0
     return _run_plugin("reject", args.id)
 
 
 def cmd_accept(args: argparse.Namespace) -> int:
+    if not _legacy_only("accept"):
+        return 0
     values = ["accept"]
     if args.all:
         if args.id:
@@ -312,6 +338,8 @@ def cmd_accept(args: argparse.Namespace) -> int:
 
 
 def cmd_promote(args: argparse.Namespace) -> int:
+    if not _legacy_only("promote"):
+        return 0
     values = ["promote"]
     if args.all:
         if args.id:
@@ -331,6 +359,8 @@ def cmd_promote(args: argparse.Namespace) -> int:
 
 
 def cmd_approve_all(_args: argparse.Namespace) -> int:
+    if not _legacy_only("approve-all"):
+        return 0
     return _run_plugin("approve-all")
 
 
@@ -344,10 +374,27 @@ def cmd_trace(args: argparse.Namespace) -> int:
 
 
 def cmd_push(_args: argparse.Namespace) -> int:
+    if not _legacy_only("push"):
+        return 0
     return _run_plugin("push")
 
 
 def cmd_add(args: argparse.Namespace) -> int:
+    if _v2_config().backend != "legacy":
+        result = _v2_request(
+            {
+                "action": "remember",
+                "candidate": {
+                    "kind": args.kind,
+                    "title": args.title,
+                    "statement": args.statement,
+                    "confidence": args.confidence,
+                },
+            }
+        )
+        print(f"memory={result.get('status', 'stored')}")
+        print(f"namespace={result.get('namespace', '-')}")
+        return 0
     values = ["add", args.kind, args.title, args.statement]
     if args.target:
         values.extend(["--target", args.target])
