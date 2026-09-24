@@ -92,7 +92,7 @@ def main() -> int:
             context_text = str(context)
             config["instructions"] = [*instructions, *([] if context_text in instructions else [context_text])]
 
-        backend = os.environ.get("OAT_MEMORY_BACKEND", "legacy").strip().lower() or "legacy"
+        backend = os.environ.get("OAT_MEMORY_BACKEND", "local").strip().lower() or "legacy"
         servers = mcp_servers(config)
         if "oat-memory" not in servers:
             inherited = {}
