@@ -54,6 +54,7 @@ class OpenCodeSkillSourceTests(unittest.TestCase):
                     "OAT_MEMORY_CONTEXT_FILE": str(context),
                     "OAT_MEMORY_PLUGIN_DIR": str(plugin),
                     "OAT_MEMORY_ENABLED": "1",
+                    "OAT_MEMORY_BACKEND": "legacy",
                     "OAT_MEMORY_CAPTURE_ENABLED": "1",
                     "OAT_MEMORY_AUTO_PROMOTE": "1",
                     "OAT_MEMORY_AUTO_PUSH": "1",
@@ -146,7 +147,8 @@ class OpenCodeSkillSourceTests(unittest.TestCase):
             self.assertNotIn("super-secret", result.stdout)
             config = json.loads(result.stdout)
             memory = config["mcp"]["servers"]["oat-memory"]
-            self.assertEqual(memory["command"], [str(python), str(mcp), "--cwd", str(base)])
+            self.assertEqual(memory["command"][:3], [str(python), str(mcp), "--cwd"])
+            self.assertEqual(Path(memory["command"][3]).resolve(), base.resolve())
             self.assertEqual(memory["environment"]["OAT_MEMORY_BACKEND"], "postgres")
             self.assertNotIn("OAT_MEMORY_POSTGRES_DSN", memory.get("environment", {}))
 
