@@ -2,7 +2,7 @@
   "plugins": {
     "opencode-memory-plugin": {
       "repository": "git@github.com:ylascaux/opencode-memory-plugin.git",
-      "ref": "0559560e4e2c36fd772eb842515a222e40a58318"
+      "ref": "d55f3896bc3e1dc6c8006ff18d39f2548e7d1810"
     }
   }
 }
