@@ -109,24 +109,38 @@ source "$ROOT/.env"
 [[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
 
+memory_backend="${OAT_MEMORY_BACKEND:-legacy}"
+case "$memory_backend" in
+  legacy|local|postgres) ;;
+  *) echo "Unsupported OAT_MEMORY_BACKEND: $memory_backend" >&2; exit 2 ;;
+esac
+
 case "${OAT_MEMORY_ENABLED:-1}" in
   0|false|FALSE|no|NO|off|OFF)
     printf 'Persistent memory disabled by OAT_MEMORY_ENABLED.\n'
     ;;
   *)
-    command -v git >/dev/null 2>&1 || { echo "git is required for persistent memory." >&2; exit 127; }
+    command -v git >/dev/null 2>&1 || { echo "git is required to install the OpenCode memory plugin." >&2; exit 127; }
     command -v node >/dev/null 2>&1 || { echo "node is required for the OpenCode memory plugin." >&2; exit 127; }
-    memory_repo="${OAT_MEMORY_REPO:-https://github.com/ylascaux/opencode-memory.git}"
-    memory_dir="${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
-    [[ -n "$memory_repo" ]] || { echo "OAT_MEMORY_REPO cannot be empty while memory is enabled." >&2; exit 2; }
-    if [[ ! -d "$memory_dir" ]]; then
-      if ! git clone "$memory_repo" "$memory_dir"; then
-        printf '%s\n' "Unable to clone private memory repository: $memory_repo" >&2
-        printf '%s\n' "Authenticate Git for GitHub (for example: gh auth login && gh auth setup-git), or point OAT_MEMORY_DIR at an existing local clone." >&2
-        exit 1
-      fi
-    fi
     python3 -B "$ROOT/scripts/memory_plugin.py" >/dev/null
+
+    case "$memory_backend" in
+      legacy)
+        memory_repo="${OAT_MEMORY_REPO:-https://github.com/ylascaux/opencode-memory.git}"
+        memory_dir="${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
+        [[ -n "$memory_repo" ]] || { echo "OAT_MEMORY_REPO cannot be empty while legacy memory is enabled." >&2; exit 2; }
+        if [[ ! -d "$memory_dir" ]]; then
+          if ! git clone "$memory_repo" "$memory_dir"; then
+            printf '%s\n' "Unable to clone private memory repository: $memory_repo" >&2
+            printf '%s\n' "Authenticate Git for GitHub, or point OAT_MEMORY_DIR at an existing local clone." >&2
+            exit 1
+          fi
+        fi
+        ;;
+      local|postgres)
+        python3 -B "$ROOT/scripts/v2-python" ensure >/dev/null
+        ;;
+    esac
     ;;
 esac
 
@@ -137,6 +151,12 @@ bash "$ROOT/scripts/user-link" uninstall oc2 || true
 printf '\nToolkit launcher installed: oc\n'
 case "${OAT_MEMORY_ENABLED:-1}" in
   0|false|FALSE|no|NO|off|OFF) ;;
-  *) printf 'Memory: native automatic capture + %s\n' "${OAT_MEMORY_DIR:-$HOME/opencode-memory}" ;;
+  *)
+    if [[ "$memory_backend" == legacy ]]; then
+      printf 'Memory: legacy Git/Markdown + %s\n' "${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
+    else
+      printf 'Memory: V2 %s harness-memory backend\n' "$memory_backend"
+    fi
+    ;;
 esac
 printf 'Run: oc --version && oc memory status\n'
