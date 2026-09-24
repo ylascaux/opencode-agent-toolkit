@@ -6,6 +6,19 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ## Unreleased
 
+### V2 runtime
+
+- Replace the active Git/Markdown memory path with `harness-memory`: local SQLite by default, shared PostgreSQL when configured.
+- Keep V1 memory data unmigrated and avoid Git/PostgreSQL dual writes; `legacy` remains an explicit compatibility backend only.
+- Preserve automatic session extraction while persisting handoffs and durable memories directly to the V2 backend.
+- Add stable project and global user namespaces, bounded context rendering, search, direct proposals and backend-aware diagnostics.
+- Add a managed isolated Python runtime for native `harness-memory` and PostgreSQL dependencies.
+- Add ACP v1 child sessions for OpenCode with initialization, prompt streaming, cancellation, close and explicit permission resume.
+- Add the `oat-acp` MCP with a bounded parallel job pool and trusted runner registry.
+- Isolate ACP children from recursive ACP delegation, shared-memory MCP access, PostgreSQL credentials and automatic memory capture.
+- Qualify real `harness-memory` SQLite and shared PostgreSQL multi-client/concurrent-writer behavior in CI.
+
+
 ### Added
 
 - Add Context7 as a native OpenCode 2 remote MCP with an automatic documentation skill, without installing the legacy Context7 OpenCode plugin package.
