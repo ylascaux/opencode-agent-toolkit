@@ -39,6 +39,17 @@ set +a
 
 export OAT_RUNTIME=host OAT_SANDBOX_ENABLED=0 PLAN_APPROVAL_MODE=off
 
+memory_backend="${OAT_MEMORY_BACKEND:-legacy}"
+if [[ "$memory_backend" == local || "$memory_backend" == postgres ]]; then
+  if v2_python="$(python3 -B "$ROOT/scripts/v2-python" path 2>/dev/null)"; then
+    export OAT_V2_PYTHON="$v2_python"
+    export OAT_MEMORY_V2_RPC="$ROOT/scripts/memory-v2-rpc"
+    export OAT_MEMORY_V2_MCP="$ROOT/scripts/memory-v2-mcp"
+  else
+    printf '%s\n' "V2 memory Python runtime is unavailable; run 'just install'." >&2
+  fi
+fi
+
 if [[ "${1:-}" == runner ]]; then
   shift
   [[ $# -gt 0 ]] || set -- list
