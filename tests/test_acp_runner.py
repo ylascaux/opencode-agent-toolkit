@@ -28,6 +28,10 @@ class AcpRunnerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             default_runner(runners, {"OAT_ACP_DEFAULT_RUNNER": "missing"})
 
+    def test_untrusted_runner_metadata_remains_explicit(self):
+        runner = AcpRunner("external", "external-agent", ("acp",), trusted=False)
+        self.assertFalse(runner.trusted)
+
     def test_runner_cli_command_is_machine_readable(self):
         result = subprocess.run(
             ["python3", str(ROOT / "scripts" / "acp-runner"), "command", "opencode", "--json"],
