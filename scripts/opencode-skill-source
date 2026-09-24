@@ -108,7 +108,6 @@ def main() -> int:
                 "OAT_MEMORY_PROJECT",
                 "OAT_MEMORY_MAX_CHARS",
                 "OAT_MEMORY_EXTRA_HATS",
-                "OAT_MEMORY_POSTGRES_DSN",
                 "OAT_MEMORY_NAMESPACE_PREFIX",
                 "OAT_MEMORY_LOCAL_PATH",
                 "OAT_MEMORY_V2_RPC",
