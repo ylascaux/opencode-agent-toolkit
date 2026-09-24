@@ -25,7 +25,7 @@ class AcpRunner:
     trusted: bool = True
 
     def argv(self, environ: Mapping[str, str] | None = None) -> list[str]:
-        env = environ or os.environ
+        env = os.environ if environ is None else environ
         command = self.command
         if self.id == "opencode":
             command = env.get("OPENCODE_BIN", "").strip() or command
@@ -36,7 +36,8 @@ class AcpRunner:
         candidate = Path(command).expanduser()
         if candidate.is_absolute() or "/" in command:
             return candidate.is_file() and os.access(candidate, os.X_OK)
-        path = (environ or os.environ).get("PATH")
+        env = os.environ if environ is None else environ
+        path = env.get("PATH", "")
         return shutil.which(command, path=path) is not None
 
 
@@ -74,7 +75,7 @@ def default_runner(
     runners: Mapping[str, AcpRunner],
     environ: Mapping[str, str] | None = None,
 ) -> AcpRunner:
-    env = environ or os.environ
+    env = os.environ if environ is None else environ
     requested = env.get("OAT_ACP_DEFAULT_RUNNER", "opencode").strip() or "opencode"
     try:
         runner = runners[requested]
