@@ -92,38 +92,58 @@ def main() -> int:
             context_text = str(context)
             config["instructions"] = [*instructions, *([] if context_text in instructions else [context_text])]
 
-        data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
-        plugin = Path(
-            os.environ.get("OAT_MEMORY_PLUGIN_DIR")
-            or data_home / "opencode-agent-toolkit" / "plugins" / "opencode-memory-plugin"
-        ).expanduser().absolute()
-        cli = plugin / "dist" / "cli.js"
-        if cli.is_file():
-            servers = mcp_servers(config)
-            if "oat-memory" not in servers:
-                inherited = {}
-                for name in (
-                    "OAT_MEMORY_ENABLED",
-                    "OAT_MEMORY_CAPTURE_ENABLED",
-                    "OAT_MEMORY_AUTO_PROMOTE",
-                    "OAT_MEMORY_AUTO_PUSH",
-                    "OAT_MEMORY_REPO",
-                    "OAT_MEMORY_DIR",
-                    "OAT_MEMORY_CANDIDATE_DIR",
-                    "OAT_MEMORY_PROJECT",
-                    "OAT_MEMORY_MAX_CHARS",
-                    "OAT_MEMORY_EXTRA_HATS",
-                ):
-                    value = os.environ.get(name, "").strip()
-                    if value:
-                        inherited[name] = value
-                server = {
-                    "type": "local",
-                    "command": ["node", str(cli), "mcp", "--cwd", os.getcwd()],
-                }
-                if inherited:
-                    server["environment"] = inherited
-                servers["oat-memory"] = server
+        backend = os.environ.get("OAT_MEMORY_BACKEND", "legacy").strip().lower() or "legacy"
+        servers = mcp_servers(config)
+        if "oat-memory" not in servers:
+            inherited = {}
+            for name in (
+                "OAT_MEMORY_ENABLED",
+                "OAT_MEMORY_CAPTURE_ENABLED",
+                "OAT_MEMORY_AUTO_PROMOTE",
+                "OAT_MEMORY_AUTO_PUSH",
+                "OAT_MEMORY_BACKEND",
+                "OAT_MEMORY_REPO",
+                "OAT_MEMORY_DIR",
+                "OAT_MEMORY_CANDIDATE_DIR",
+                "OAT_MEMORY_PROJECT",
+                "OAT_MEMORY_MAX_CHARS",
+                "OAT_MEMORY_EXTRA_HATS",
+                "OAT_MEMORY_POSTGRES_DSN",
+                "OAT_MEMORY_NAMESPACE_PREFIX",
+                "OAT_MEMORY_LOCAL_PATH",
+                "OAT_MEMORY_V2_RPC",
+                "OAT_V2_PYTHON",
+            ):
+                value = os.environ.get(name, "").strip()
+                if value:
+                    inherited[name] = value
+
+            if backend == "legacy":
+                data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+                plugin = Path(
+                    os.environ.get("OAT_MEMORY_PLUGIN_DIR")
+                    or data_home / "opencode-agent-toolkit" / "plugins" / "opencode-memory-plugin"
+                ).expanduser().absolute()
+                cli = plugin / "dist" / "cli.js"
+                if cli.is_file():
+                    server = {
+                        "type": "local",
+                        "command": ["node", str(cli), "mcp", "--cwd", os.getcwd()],
+                    }
+                    if inherited:
+                        server["environment"] = inherited
+                    servers["oat-memory"] = server
+            else:
+                python = os.environ.get("OAT_V2_PYTHON", "").strip()
+                mcp = os.environ.get("OAT_MEMORY_V2_MCP", "").strip()
+                if python and mcp and Path(python).is_file() and Path(mcp).is_file():
+                    server = {
+                        "type": "local",
+                        "command": [python, mcp, "--cwd", os.getcwd()],
+                    }
+                    if inherited:
+                        server["environment"] = inherited
+                    servers["oat-memory"] = server
 
     acp_enabled = os.environ.get("OAT_ACP_ENABLED", "1").strip().lower() not in {
         "0", "false", "no", "off"
