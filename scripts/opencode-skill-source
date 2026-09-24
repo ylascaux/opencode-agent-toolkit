@@ -125,6 +125,34 @@ def main() -> int:
                     server["environment"] = inherited
                 servers["oat-memory"] = server
 
+    acp_enabled = os.environ.get("OAT_ACP_ENABLED", "1").strip().lower() not in {
+        "0", "false", "no", "off"
+    }
+    acp_child = os.environ.get("OAT_ACP_CHILD", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    if acp_enabled and not acp_child:
+        servers = mcp_servers(config)
+        if "oat-acp" not in servers:
+            root = Path(__file__).resolve().parents[1]
+            inherited = {}
+            for name in (
+                "OAT_ACP_DEFAULT_RUNNER",
+                "OAT_ACP_MAX_PARALLEL",
+                "OAT_ACP_TIMEOUT_SECONDS",
+                "OPENCODE_BIN",
+            ):
+                value = os.environ.get(name, "").strip()
+                if value:
+                    inherited[name] = value
+            server = {
+                "type": "local",
+                "command": ["python3", str(root / "scripts" / "acp-mcp"), "--cwd", os.getcwd()],
+            }
+            if inherited:
+                server["environment"] = inherited
+            servers["oat-acp"] = server
+
     context7_enabled = os.environ.get("OAT_CONTEXT7_ENABLED", "1").strip().lower() not in {
         "0", "false", "no", "off"
     }
