@@ -30,6 +30,8 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ### Fixed
 
+- Read OpenCode 2 stable session events from `event.data` instead of the legacy/test-only `event.properties` shape, and scope the global event stream to sessions admitted by the project's prompt hook.
+
 - Persist a concise `projects/<repo>/current.md` handoff for every substantive completed session, even when the durable-memory extractor returns zero candidates.
 - Queue unfinished OpenCode 2 captures before extraction and resume them on the next `oc` after an interrupt, preserving the original repository path.
 
