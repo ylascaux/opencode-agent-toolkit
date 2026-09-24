@@ -36,15 +36,32 @@ case "${OAT_MEMORY_ENABLED:-1}" in
     echo "Memory: disabled"
     ;;
   *)
-    memory_root="${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
     data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
     plugin_dir="${OAT_MEMORY_PLUGIN_DIR:-$data_home/opencode-agent-toolkit/plugins/opencode-memory-plugin}"
-    [[ -d "$memory_root" ]] || { echo "Memory vault missing: $memory_root" >&2; exit 1; }
     [[ -f "$plugin_dir/dist/v2.js" && -f "$plugin_dir/dist/cli.js" ]] || {
       echo "Memory plugin missing or incomplete: run just install" >&2
       exit 1
     }
-    OAT_MEMORY_AUTO_SYNC=0 python3 -B "$ROOT/scripts/memory" status
+    memory_backend="${OAT_MEMORY_BACKEND:-legacy}"
+    case "$memory_backend" in
+      legacy)
+        memory_root="${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
+        [[ -d "$memory_root" ]] || { echo "Memory vault missing: $memory_root" >&2; exit 1; }
+        OAT_MEMORY_AUTO_SYNC=0 python3 -B "$ROOT/scripts/memory" status
+        ;;
+      local|postgres)
+        v2_python="$(python3 -B "$ROOT/scripts/v2-python" path)" || exit 1
+        "$v2_python" -c 'import harness_memory, psycopg' || {
+          echo "V2 memory Python runtime is incomplete: run just install" >&2
+          exit 1
+        }
+        python3 -B "$ROOT/scripts/memory" status
+        ;;
+      *)
+        echo "Unsupported OAT_MEMORY_BACKEND: $memory_backend" >&2
+        exit 1
+        ;;
+    esac
     ;;
 esac
 
