@@ -70,7 +70,7 @@ def resolve_project_identity(
     *,
     environ: Mapping[str, str] | None = None,
 ) -> ProjectIdentity:
-    env = environ or os.environ
+    env = os.environ if environ is None else environ
     requested = Path(cwd).expanduser().resolve()
     top = _git(requested, "rev-parse", "--show-toplevel")
     root = Path(top).resolve() if top else requested
@@ -98,7 +98,7 @@ class MemoryV2Config:
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "MemoryV2Config":
-        env = environ or os.environ
+        env = os.environ if environ is None else environ
         backend = env.get("OAT_MEMORY_BACKEND", "legacy").strip().lower() or "legacy"
         if backend not in _BACKENDS:
             raise ValueError(f"OAT_MEMORY_BACKEND must be one of: {', '.join(sorted(_BACKENDS))}")
