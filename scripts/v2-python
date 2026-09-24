@@ -18,7 +18,20 @@ def python_path() -> Path:
     return VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+def current_has_dependencies() -> bool:
+    result = subprocess.run(
+        [sys.executable, "-c", "import harness_memory, psycopg"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def ensure() -> int:
+    if os.getenv("OAT_RUNTIME", "").strip().lower() == "container" and current_has_dependencies():
+        print(Path(sys.executable).resolve())
+        return 0
     target = python_path()
     if not target.exists():
         VENV.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +66,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.action == "ensure":
         return ensure()
+    if os.getenv("OAT_RUNTIME", "").strip().lower() == "container" and current_has_dependencies():
+        print(Path(sys.executable).resolve())
+        return 0
     target = python_path()
     if not target.is_file():
         print("V2 Python runtime is not installed; run 'just install'.", file=sys.stderr)
