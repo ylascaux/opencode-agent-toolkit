@@ -1,4 +1,7 @@
+import os
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -37,6 +40,32 @@ class OneCommandInstallTests(unittest.TestCase):
         self.assertIn('OAT_MEMORY_CAPTURE_ENABLED', text)
         self.assertIn('OAT_AI_MEMORY_', text, "bootstrap must migrate the short-lived legacy variables")
         self.assertIn('gh auth login && gh auth setup-git', text)
+
+    def test_install_retargets_stale_launcher_from_old_toolkit_clone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = root / "old" / "opencode-agent-toolkit"
+            new = root / "new" / "opencode-agent-toolkit"
+            bindir = root / "bin"
+            for toolkit in (old, new):
+                (toolkit / "scripts").mkdir(parents=True)
+                (toolkit / "scripts" / "opencode-agents").write_text("#!/usr/bin/env bash\nexport OAT_RUNTIME=host\n")
+                (toolkit / "justfile").write_text("install:\n    bash ./scripts/bootstrap\n")
+            shutil.copy2(ROOT / "scripts" / "user-link", new / "scripts" / "user-link")
+            bindir.mkdir()
+            (bindir / "oc").symlink_to(old / "scripts" / "opencode-agents")
+
+            env = os.environ.copy()
+            env["OPENCODE_TOOLKIT_BIN_DIR"] = str(bindir)
+            result = subprocess.run(
+                ["bash", str(new / "scripts" / "user-link"), "install", "oc"],
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(os.readlink(bindir / "oc"), str(new / "scripts" / "opencode-agents"))
+            self.assertIn("Retargeted stale toolkit launcher", result.stdout)
 
     def test_bootstrap_remains_valid_bash(self):
         result = subprocess.run(["bash", "-n", str(ROOT / "scripts/bootstrap")], capture_output=True, text=True)
