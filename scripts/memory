@@ -11,9 +11,6 @@ from pathlib import Path
 
 from memory_plugin import PluginSettings, cli_command, ensure_plugin
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from runtime.common.memory_v2 import MemoryV2Config, resolve_project_identity
-
 ROOT = Path(__file__).resolve().parents[1]
 TRUTHY = {"1", "true", "yes", "on"}
 
@@ -87,6 +84,9 @@ def cmd_disable(_args: argparse.Namespace) -> int:
 
 
 def _print_v2_identity() -> None:
+    sys.path.insert(0, str(ROOT))
+    from runtime.common.memory_v2 import MemoryV2Config, resolve_project_identity
+
     config = MemoryV2Config.from_env()
     identity = resolve_project_identity(Path.cwd())
     print(f"v2_backend={config.backend}")
