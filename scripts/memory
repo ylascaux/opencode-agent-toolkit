@@ -94,6 +94,7 @@ def _print_v2_identity() -> None:
     print(f"v2_project_source={identity.source}")
     print(f"v2_namespace={config.namespace_for(identity)}")
     print(f"v2_shared={'yes' if config.shared else 'no'}")
+    print("v2_runtime=legacy" if config.backend == "legacy" else "v2_runtime=foundation-only")
     if config.postgres_dsn:
         print(f"v2_postgres_dsn={config.masked_dsn()}")
 
