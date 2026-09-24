@@ -161,7 +161,7 @@ Le fonctionnement quotidien est **automatique** :
 > OpenCode 2 stable envoie les événements de session via `event.data`. Le plugin mémoire suit cette enveloppe stable et associe d'abord chaque session au projet via `ctx.session.hook("prompt")`, car le flux d'événements est global.
 
 - chaque session de travail substantielle met à jour
-  `projects/<repo>/current.md` avec un handoff court (résumé, décisions,
+  `projects/<repo>/current.md`. Les analyses de dépôt peuvent en plus enrichir automatiquement `projects/<repo>/architecture.md` avec les composants, flux, dépendances, limites opérationnelles et risques architecturaux durables avec un handoff court (résumé, décisions,
   blocages, prochaine étape), même s'il n'y a aucun nouveau fait durable ;
 - une mémoire `HIGH` est écrite directement dans `projects/<repo>/` ou
   `workstyle/`, commitée puis poussée vers le vault Git ;
