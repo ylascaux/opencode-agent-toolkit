@@ -1,8 +1,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-
 from runtime.common.memory_v2 import MemoryV2Config, normalize_remote, resolve_project_identity
 
 
