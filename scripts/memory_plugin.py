@@ -121,6 +121,7 @@ def _git_env(source: dict[str, str] | None = None) -> dict[str, str]:
         env["GIT_ASKPASS"] = str(_git_askpass_path())
         env["GIT_ASKPASS_REQUIRE"] = "force"
         env["OAT_GIT_ASKPASS_TOKEN"] = token
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
         env["GIT_CONFIG_COUNT"] = "2"
         env["GIT_CONFIG_KEY_0"] = "url.https://github.com/.insteadOf"
         env["GIT_CONFIG_VALUE_0"] = "git@github.com:"
