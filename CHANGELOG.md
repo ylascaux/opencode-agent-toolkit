@@ -13,6 +13,9 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ### Changed
 
+- Make normal `oc` memory usage fully automatic: HIGH-confidence durable memory is promoted, committed and pushed without a manual candidate/accept/promote workflow; MEDIUM-confidence items remain quarantined.
+- Recognize untouched legacy blank `context.md` templates from the short-lived create-ai-memory integration and replace them only when they are still pristine.
+
 - Reduce the active OpenCode runtime catalog from 41 agents to nine core roles, with technology specializations handled as skills/competencies instead of permanent agent identities.
 - Mediate agent-to-agent collaboration through structured parent-owned handoffs and compact mission state; free-form peer conversations are not part of the routing model.
 - Keep orchestration, architecture, independent review and security on HIGH while routine implementation, debugging, testing, routing and research use MEDIUM.
@@ -26,6 +29,9 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 - OpenCode 2 stable remains the only runtime: `oc` launches the official `opencode` binary and existing OpenCode installations are never overwritten by `just install`.
 
 ### Fixed
+
+- Reuse the authenticated GitHub CLI token when the current SSH identity cannot read the private memory plugin repository, while keeping the token transient through `GIT_ASKPASS`.
+- Ignore unrelated dirty/untracked vault files during automatic memory persistence; only the exact target is protected from overwrites.
 
 - Load the native memory plugin from the daily `oc` launcher so `session.idle` actually triggers automatic candidate extraction.
 - Inject the same plugin's rendered context and `oat-memory` MCP into OpenCode 2 instead of relying on the agent to call `add_note` voluntarily.

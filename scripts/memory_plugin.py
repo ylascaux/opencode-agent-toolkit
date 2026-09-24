@@ -93,14 +93,35 @@ def _git_askpass_path() -> Path:
     return path
 
 
+def _github_cli_token(source: dict[str, str] | None = None) -> str:
+    env = dict(source or os.environ)
+    gh = shutil.which("gh", path=env.get("PATH"))
+    if not gh:
+        return ""
+    try:
+        result = subprocess.run(
+            [gh, "auth", "token", "--hostname", "github.com"],
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def _git_env(source: dict[str, str] | None = None) -> dict[str, str]:
     env = dict(source or os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
-    token = (env.get("OAT_GITHUB_TOKEN") or env.get("GITHUB_TOKEN") or "").strip()
+    token = (env.get("OAT_GITHUB_TOKEN") or env.get("GITHUB_TOKEN") or _github_cli_token(env)).strip()
     if token:
         env["GIT_ASKPASS"] = str(_git_askpass_path())
         env["GIT_ASKPASS_REQUIRE"] = "force"
         env["OAT_GIT_ASKPASS_TOKEN"] = token
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
         env["GIT_CONFIG_COUNT"] = "2"
         env["GIT_CONFIG_KEY_0"] = "url.https://github.com/.insteadOf"
         env["GIT_CONFIG_VALUE_0"] = "git@github.com:"

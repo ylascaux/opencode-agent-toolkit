@@ -57,7 +57,9 @@ class OpenCodeLauncherTests(unittest.TestCase):
             "'config': os.environ.get('OPENCODE_CONFIG'),"
             "'model': os.environ.get('MODEL_BUILDER'),"
             "'cwd': os.getcwd(),"
-            "'inline': os.environ.get('OPENCODE_CONFIG_CONTENT')"
+            "'inline': os.environ.get('OPENCODE_CONFIG_CONTENT'),"
+            "'auto_promote': os.environ.get('OAT_MEMORY_AUTO_PROMOTE'),"
+            "'auto_push': os.environ.get('OAT_MEMORY_AUTO_PUSH')"
             "}))\n"
         )
         native.chmod(0o755)
@@ -87,6 +89,8 @@ class OpenCodeLauncherTests(unittest.TestCase):
         self.assertEqual(inline["plugins"], ["/fixture/memory-plugin"])
         self.assertEqual(len(inline["instructions"]), 1)
         self.assertTrue(Path(inline["instructions"][0]).name.startswith("oat-memory-"))
+        self.assertEqual(output["auto_promote"], "1")
+        self.assertEqual(output["auto_push"], "1")
 
     def test_server_commands_are_not_forced_standalone(self):
         for args in (("serve", "--port", "4096"), ("plugin", "list"), ("service", "status")):

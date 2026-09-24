@@ -96,6 +96,8 @@ for raw_path in sys.argv[1:]:
         "# Persistent memory: native opencode-memory-plugin + private Markdown/Git vault.",
         f"OAT_MEMORY_ENABLED={enabled}",
         f"OAT_MEMORY_CAPTURE_ENABLED={enabled}",
+        f"OAT_MEMORY_AUTO_PROMOTE={enabled}",
+        f"OAT_MEMORY_AUTO_PUSH={enabled}",
         f"OAT_MEMORY_REPO={repo}",
         f"OAT_MEMORY_DIR={root}",
     ])

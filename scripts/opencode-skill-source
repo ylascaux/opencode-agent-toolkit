@@ -105,6 +105,8 @@ def main() -> int:
                 for name in (
                     "OAT_MEMORY_ENABLED",
                     "OAT_MEMORY_CAPTURE_ENABLED",
+                    "OAT_MEMORY_AUTO_PROMOTE",
+                    "OAT_MEMORY_AUTO_PUSH",
                     "OAT_MEMORY_REPO",
                     "OAT_MEMORY_DIR",
                     "OAT_MEMORY_CANDIDATE_DIR",

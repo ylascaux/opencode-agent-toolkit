@@ -71,6 +71,8 @@ case "${OAT_MEMORY_ENABLED:-1}" in
     ;;
   *)
     export OAT_MEMORY_CAPTURE_ENABLED="${OAT_MEMORY_CAPTURE_ENABLED:-1}"
+    export OAT_MEMORY_AUTO_PROMOTE="${OAT_MEMORY_AUTO_PROMOTE:-1}"
+    export OAT_MEMORY_AUTO_PUSH="${OAT_MEMORY_AUTO_PUSH:-1}"
     memory_context="${TMPDIR:-/tmp}/oat-memory-${UID:-0}-$$.md"
     if memory_target="$(python3 -B "$ROOT/scripts/native_memory.py" --major 2 --context-file "$memory_context")"; then
       if [[ -n "$memory_target" ]]; then

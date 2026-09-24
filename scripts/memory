@@ -93,6 +93,8 @@ def cmd_status(_args: argparse.Namespace) -> int:
     print(f"settings_file={_settings_path()}")
     print(f"memory={'on' if memory_enabled else 'off'}")
     print(f"capture={'on' if capture_enabled else 'off'}")
+    print(f"auto_promote={'on' if _enabled('OAT_MEMORY_AUTO_PROMOTE') else 'off'}")
+    print(f"auto_push={'on' if _enabled('OAT_MEMORY_AUTO_PUSH') else 'off'}")
     print(f"effective_capture={'on' if memory_enabled and capture_enabled else 'off'}")
     memory_repo = os.getenv("OAT_MEMORY_REPO", "").strip()
     if memory_repo:
@@ -294,6 +296,8 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    os.environ.setdefault("OAT_MEMORY_AUTO_PROMOTE", "1")
+    os.environ.setdefault("OAT_MEMORY_AUTO_PUSH", "1")
     if sys.argv[1:2] == ["mcp"]:
         os.execv(sys.executable, [sys.executable, "-B", str(ROOT / "scripts" / "memory-mcp"), *sys.argv[2:]])
     args = parser().parse_args()
