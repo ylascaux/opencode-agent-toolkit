@@ -42,7 +42,7 @@ case "${OAT_MEMORY_ENABLED:-1}" in
       echo "Memory plugin missing or incomplete: run just install" >&2
       exit 1
     }
-    memory_backend="${OAT_MEMORY_BACKEND:-legacy}"
+    memory_backend="${OAT_MEMORY_BACKEND:-local}"
     case "$memory_backend" in
       legacy)
         memory_root="${OAT_MEMORY_DIR:-$HOME/opencode-memory}"
