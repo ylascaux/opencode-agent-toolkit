@@ -178,6 +178,7 @@ ambigus :
 
 ```bash
 oc memory status
+oc memory trace
 oc memory candidates
 oc memory candidate <id>
 oc memory reject <id>
