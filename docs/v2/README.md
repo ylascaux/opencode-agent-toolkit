@@ -9,7 +9,8 @@ La branche `main` devient la ligne de développement **V2**. La V2 doit rester f
 Les deux axes prioritaires documentés ici sont :
 
 1. une **mémoire partagée multi-machine** basée sur PostgreSQL et inspirée de `harness-memory` / Octop ;
-2. une orchestration multi-agent simple et bornée, sans réintroduire une explosion du nombre d'agents.
+2. une couche **ACP runner** légère pour découpler l'orchestrateur des runtimes de coding ;
+3. une orchestration multi-agent simple et bornée, sans réintroduire une explosion du nombre d'agents.
 
 ## Principes V2
 
@@ -25,6 +26,7 @@ Les deux axes prioritaires documentés ici sont :
 ## Documents
 
 - [Mémoire partagée V2](shared-memory.md)
+- [ACP runners V2](acp-runners.md)
 - [Plan d'implémentation](implementation-plan.md)
 
 ## Référence Octop

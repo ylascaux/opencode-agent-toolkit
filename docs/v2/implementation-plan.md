@@ -1,4 +1,4 @@
-# V2 — Plan d'implémentation de la mémoire partagée
+# V2 — Plan d'implémentation
 
 ## Phase 0 — Validation technique
 
@@ -171,3 +171,53 @@ Objectif : une seule source de vérité.
 - ajouter une UI dédiée ;
 - partager tous les états OpenCode entre machines dès la première phase ;
 - ajouter un broker ou une queue tant qu'un besoin réel n'est pas démontré.
+
+## ACP — Fondation
+
+État : **implémenté dans le premier incrément V2**.
+
+- registre de runners approuvés dans `config/acp-runners.json` ;
+- runner OpenCode natif : `opencode acp` ;
+- `oc runner list` ;
+- `oc runner doctor` ;
+- `oc runner command` ;
+- `oc runner exec` ;
+- respect de `OPENCODE_BIN`.
+
+## ACP — Session manager
+
+Prochain incrément :
+
+1. définir un objet session indépendant du runtime ;
+2. démarrer le subprocess ACP avec stdin/stdout réservés au JSON-RPC ;
+3. négocier/initialiser le protocole ;
+4. implémenter `start/message/status/close` ;
+5. remonter les demandes de permission au parent avec `respond` ;
+6. tuer proprement le processus enfant si le parent annule ;
+7. borner durée, sortie et nombre de runners simultanés.
+
+Critère de sortie : un test peut piloter un faux runner ACP de bout en bout sans dépendre d'OpenCode.
+
+## ACP — Orchestration
+
+Après qualification du session manager :
+
+- brancher le pool de jobs de l'orchestrateur sur les runners ;
+- conserver le graphe parent → enfant et les handoffs compacts ;
+- permettre le parallélisme uniquement pour les tâches indépendantes ;
+- ajouter un `max_parallel` explicite ;
+- ne jamais donner à un enfant plus de permissions que le parent.
+
+## Mémoire — Fondation déjà implémentée
+
+Le premier incrément V2 fournit aussi :
+
+- normalisation de remote Git ;
+- identité projet stable entre deux clones ;
+- override `OAT_MEMORY_PROJECT` ;
+- namespace `<prefix>:project:<id>` ;
+- configuration `legacy|local|postgres` ;
+- masquage du DSN dans les diagnostics ;
+- `oc memory namespace`.
+
+Le backend reste `legacy` par défaut tant que le chemin PostgreSQL n'est pas qualifié.

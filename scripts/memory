@@ -83,7 +83,29 @@ def cmd_disable(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_v2_identity() -> None:
+    sys.path.insert(0, str(ROOT))
+    from runtime.common.memory_v2 import MemoryV2Config, resolve_project_identity
+
+    config = MemoryV2Config.from_env()
+    identity = resolve_project_identity(Path.cwd())
+    print(f"v2_backend={config.backend}")
+    print(f"v2_project={identity.project_id}")
+    print(f"v2_project_source={identity.source}")
+    print(f"v2_namespace={config.namespace_for(identity)}")
+    print(f"v2_shared={'yes' if config.shared else 'no'}")
+    print("v2_runtime=legacy" if config.backend == "legacy" else "v2_runtime=foundation-only")
+    if config.postgres_dsn:
+        print(f"v2_postgres_dsn={config.masked_dsn()}")
+
+
+def cmd_namespace(_args: argparse.Namespace) -> int:
+    _print_v2_identity()
+    return 0
+
+
 def cmd_status(_args: argparse.Namespace) -> int:
+    _print_v2_identity()
     settings = PluginSettings.from_env()
     memory_enabled = _enabled("OAT_MEMORY_ENABLED")
     capture_enabled = _enabled("OAT_MEMORY_CAPTURE_ENABLED")
@@ -244,6 +266,8 @@ def parser() -> argparse.ArgumentParser:
     disable.set_defaults(func=cmd_disable)
     status = sub.add_parser("status", help="show toolkit/plugin memory status")
     status.set_defaults(func=cmd_status)
+    namespace = sub.add_parser("namespace", help="show the stable V2 project memory namespace")
+    namespace.set_defaults(func=cmd_namespace)
     mcp = sub.add_parser("mcp", help="start local MCP from the prebuilt plugin (exported environment only)")
     mcp.add_argument("--cwd", default=None)
     sync = sub.add_parser("sync", help="force plugin + memory-vault synchronization")

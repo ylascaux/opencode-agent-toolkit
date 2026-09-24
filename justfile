@@ -46,5 +46,9 @@ codex *args:
 memory *args:
     bash ./scripts/opencode-agents memory "$@"
 
+# Inspect/start V2 ACP runners.
+runner *args:
+    bash ./scripts/opencode-agents runner "$@"
+
 [private]
 check: config test

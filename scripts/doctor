@@ -26,6 +26,11 @@ fi
 [[ ! -f "$ROOT/.env.local" ]] || source "$ROOT/.env.local"
 set +a
 
+python3 -B "$ROOT/scripts/acp-runner" doctor "${OAT_ACP_DEFAULT_RUNNER:-opencode}" || {
+  echo "ACP runner is not ready. Check OAT_ACP_DEFAULT_RUNNER / OPENCODE_BIN." >&2
+  exit 1
+}
+
 case "${OAT_MEMORY_ENABLED:-1}" in
   0|false|FALSE|no|NO|off|OFF)
     echo "Memory: disabled"

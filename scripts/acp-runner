@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shlex
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from runtime.common.acp import default_runner, load_runners  # noqa: E402
+
+
+def runner_payload(runner):
+    argv = runner.argv(os.environ)
+    return {
+        "id": runner.id,
+        "enabled": runner.enabled,
+        "trusted": runner.trusted,
+        "available": runner.available(os.environ),
+        "command": argv[0],
+        "args": argv[1:],
+    }
+
+
+def cmd_list(args):
+    runners = load_runners()
+    rows = [runner_payload(runner) for runner in runners.values()]
+    if args.json:
+        print(json.dumps({"runners": rows}, indent=2))
+    else:
+        for row in rows:
+            state = "ready" if row["enabled"] and row["available"] else ("disabled" if not row["enabled"] else "missing")
+            print(f'{row["id"]}\t{state}\t{shlex.join([row["command"], *row["args"]])}')
+    return 0
+
+
+def select(name):
+    runners = load_runners()
+    if name:
+        if name not in runners:
+            raise SystemExit(f"Unknown ACP runner: {name}")
+        runner = runners[name]
+        if not runner.enabled:
+            raise SystemExit(f"ACP runner is disabled: {name}")
+        return runner
+    try:
+        return default_runner(runners, os.environ)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def cmd_doctor(args):
+    runner = select(args.runner)
+    payload = runner_payload(runner)
+    payload["ok"] = bool(payload["enabled"] and payload["available"])
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f'runner={payload["id"]}')
+        print(f'enabled={"yes" if payload["enabled"] else "no"}')
+        print(f'trusted={"yes" if payload["trusted"] else "no"}')
+        print(f'available={"yes" if payload["available"] else "no"}')
+        print(f'command={shlex.join([payload["command"], *payload["args"]])}')
+    return 0 if payload["ok"] else 3
+
+
+def cmd_command(args):
+    runner = select(args.runner)
+    argv = runner.argv(os.environ)
+    if args.json:
+        print(json.dumps({"runner": runner.id, "argv": argv}))
+    else:
+        print(shlex.join(argv))
+    return 0
+
+
+def cmd_exec(args):
+    runner = select(args.runner)
+    if not runner.trusted:
+        raise SystemExit(f"ACP runner is not trusted for execution: {runner.id}")
+    argv = [*runner.argv(os.environ), *args.extra]
+    command = argv[0]
+    if not runner.available(os.environ):
+        raise SystemExit(f"ACP runner executable not found: {command}")
+    os.execvpe(command, argv, os.environ.copy())
+
+
+def parser():
+    result = argparse.ArgumentParser(
+        description="Inspect or start trusted ACP runners used by the V2 orchestration layer."
+    )
+    sub = result.add_subparsers(dest="command", required=True)
+
+    listing = sub.add_parser("list", help="list configured ACP runners")
+    listing.add_argument("--json", action="store_true")
+    listing.set_defaults(func=cmd_list)
+
+    doctor = sub.add_parser("doctor", help="check whether a runner executable is available")
+    doctor.add_argument("runner", nargs="?")
+    doctor.add_argument("--json", action="store_true")
+    doctor.set_defaults(func=cmd_doctor)
+
+    command = sub.add_parser("command", help="print the exact runner command")
+    command.add_argument("runner", nargs="?")
+    command.add_argument("--json", action="store_true")
+    command.set_defaults(func=cmd_command)
+
+    execute = sub.add_parser("exec", help="replace this process with an ACP runner (stdio)")
+    execute.add_argument("runner", nargs="?")
+    execute.add_argument("extra", nargs=argparse.REMAINDER)
+    execute.set_defaults(func=cmd_exec)
+    return result
+
+
+def main():
+    args = parser().parse_args()
+    if getattr(args, "extra", None) and args.extra[0] == "--":
+        args.extra = args.extra[1:]
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -5,7 +5,7 @@
 > - `v1` : version actuelle figée du toolkit.
 > - `main` : développement **V2**.
 >
-> La conception V2 est documentée dans [`docs/v2/`](docs/v2/README.md). La première évolution structurante prévue est une mémoire partagée multi-machine via PostgreSQL, inspirée de harness-memory/Octop, sans intégrer Octop comme runtime et sans migration des données mémoire V1.
+> La conception V2 est documentée dans [`docs/v2/`](docs/v2/README.md). Les premières évolutions structurantes sont une mémoire partagée multi-machine via PostgreSQL et une couche de runners ACP, inspirées de harness-memory/Octop sans intégrer Octop comme runtime et sans migration des données mémoire V1.
 
 
 Le toolkit cible désormais uniquement **OpenCode 2 stable**.
