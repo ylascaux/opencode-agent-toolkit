@@ -38,6 +38,11 @@ class V2MemoryIdentityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             MemoryV2Config.from_env({"OAT_MEMORY_BACKEND": "postgres"})
 
+    def test_legacy_is_the_safe_default_until_cutover(self):
+        config = MemoryV2Config.from_env({})
+        self.assertEqual(config.backend, "legacy")
+        self.assertFalse(config.shared)
+
 
 if __name__ == "__main__":
     unittest.main()
