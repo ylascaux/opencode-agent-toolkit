@@ -43,6 +43,18 @@ class V2MemoryIdentityTests(unittest.TestCase):
         self.assertEqual(config.backend, "legacy")
         self.assertFalse(config.shared)
 
+        self.assertEqual(config.global_namespace(), "oat:user:default")
+
+    def test_local_backend_uses_configurable_sqlite_path(self):
+        config = MemoryV2Config.from_env(
+            {
+                "OAT_MEMORY_BACKEND": "local",
+                "OAT_MEMORY_LOCAL_PATH": "/tmp/custom-memory.sqlite",
+            }
+        )
+        self.assertEqual(config.local_path, Path("/tmp/custom-memory.sqlite"))
+        self.assertFalse(config.shared)
+
 
 if __name__ == "__main__":
     unittest.main()
