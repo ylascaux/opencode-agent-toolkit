@@ -15,6 +15,7 @@ from runtime.common.acp_session import AcpSession
 
 
 FAKE_AGENT = r'''
+#!/usr/bin/env python3
 import json
 import os
 import sys
