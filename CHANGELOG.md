@@ -30,6 +30,9 @@ The project uses semantic versioning for tagged releases. `VERSION` is the relea
 
 ### Fixed
 
+- Persist a concise `projects/<repo>/current.md` handoff for every substantive completed session, even when the durable-memory extractor returns zero candidates.
+- Queue unfinished OpenCode 2 captures before extraction and resume them on the next `oc` after an interrupt, preserving the original repository path.
+
 - Reuse the authenticated GitHub CLI token when the current SSH identity cannot read the private memory plugin repository, while keeping the token transient through `GIT_ASKPASS`.
 - Ignore unrelated dirty/untracked vault files during automatic memory persistence; only the exact target is protected from overwrites.
 

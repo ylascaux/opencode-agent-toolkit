@@ -158,12 +158,17 @@ messages utilisateur/assistant et extrait les informations réellement durables.
 
 Le fonctionnement quotidien est **automatique** :
 
+- chaque session de travail substantielle met à jour
+  `projects/<repo>/current.md` avec un handoff court (résumé, décisions,
+  blocages, prochaine étape), même s'il n'y a aucun nouveau fait durable ;
 - une mémoire `HIGH` est écrite directement dans `projects/<repo>/` ou
   `workstyle/`, commitée puis poussée vers le vault Git ;
 - une information `MEDIUM` ou sans cible sûre reste en quarantaine locale ;
 - si le fichier mémoire cible contient déjà des modifications locales, le plugin
   ne l'écrase pas et conserve l'élément en quarantaine ;
-- des fichiers non suivis ailleurs dans le vault ne bloquent pas la capture.
+- des fichiers non suivis ailleurs dans le vault ne bloquent pas la capture ;
+- si OpenCode est interrompu pendant l'extraction, la capture en attente est
+  enregistrée localement avec le repo d'origine et reprise au prochain `oc`.
 
 Tu n'as donc normalement **aucune commande mémoire à lancer**. Les commandes
 ci-dessous restent disponibles uniquement pour le diagnostic ou les cas
