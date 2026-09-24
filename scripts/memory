@@ -206,6 +206,15 @@ def cmd_approve_all(_args: argparse.Namespace) -> int:
     return _run_plugin("approve-all")
 
 
+def cmd_trace(args: argparse.Namespace) -> int:
+    values = ["trace"]
+    if args.clear:
+        values.append("--clear")
+    elif args.limit:
+        values.extend(["--limit", str(args.limit)])
+    return _run_plugin(*values)
+
+
 def cmd_push(_args: argparse.Namespace) -> int:
     return _run_plugin("push")
 
@@ -279,6 +288,11 @@ def parser() -> argparse.ArgumentParser:
 
     approve_all = sub.add_parser("approve-all", help="accept all, promote all, then push once")
     approve_all.set_defaults(func=cmd_approve_all)
+
+    trace = sub.add_parser("trace", help="show privacy-safe runtime memory diagnostics")
+    trace.add_argument("--limit", type=int, default=80)
+    trace.add_argument("--clear", action="store_true")
+    trace.set_defaults(func=cmd_trace)
 
     push = sub.add_parser("push", help="push local memory-vault commits")
     push.set_defaults(func=cmd_push)
