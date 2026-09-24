@@ -31,8 +31,8 @@ for line in sys.stdin:
     rid = request.get("id")
     if method == "initialize":
         inline = os.environ.get("OPENCODE_CONFIG_CONTENT", "")
-        if "oat-acp" in inline:
-            send({"jsonrpc":"2.0","id":rid,"error":{"code":-32000,"message":"recursive oat-acp leaked"}})
+        if "oat-acp" in inline or "oat-memory" in inline or os.environ.get("OAT_MEMORY_POSTGRES_DSN"):
+            send({"jsonrpc":"2.0","id":rid,"error":{"code":-32000,"message":"child isolation failed"}})
             continue
         send({
             "jsonrpc":"2.0","id":rid,
@@ -109,8 +109,17 @@ class AcpSessionTests(unittest.TestCase):
     def session(self) -> AcpSession:
         env = os.environ.copy()
         env["OPENCODE_CONFIG_CONTENT"] = json.dumps(
-            {"mcp": {"servers": {"oat-acp": {"type": "local"}, "context7": {"type": "remote"}}}}
+            {
+                "mcp": {
+                    "servers": {
+                        "oat-acp": {"type": "local"},
+                        "oat-memory": {"type": "local"},
+                        "context7": {"type": "remote"},
+                    }
+                }
+            }
         )
+        env["OAT_MEMORY_POSTGRES_DSN"] = "postgresql://user:secret@db/memory"
         return AcpSession(self.runner, self.root, environ=env, timeout_seconds=5).start()
 
     def test_prompt_round_trip_and_child_config_sanitization(self) -> None:
