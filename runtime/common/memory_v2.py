@@ -95,6 +95,7 @@ class MemoryV2Config:
     backend: str
     namespace_prefix: str
     postgres_dsn: str
+    local_path: Path
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "MemoryV2Config":
@@ -108,10 +109,23 @@ class MemoryV2Config:
         dsn = env.get("OAT_MEMORY_POSTGRES_DSN", "").strip()
         if backend == "postgres" and not dsn:
             raise ValueError("OAT_MEMORY_POSTGRES_DSN is required for postgres memory")
-        return cls(backend=backend, namespace_prefix=prefix, postgres_dsn=dsn)
+        data_home = Path(env.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+        local_path = Path(
+            env.get("OAT_MEMORY_LOCAL_PATH")
+            or data_home / "opencode-agent-toolkit" / "memory-v2.sqlite"
+        ).expanduser()
+        return cls(
+            backend=backend,
+            namespace_prefix=prefix,
+            postgres_dsn=dsn,
+            local_path=local_path,
+        )
 
     def namespace_for(self, identity: ProjectIdentity) -> str:
         return f"{self.namespace_prefix}:project:{identity.project_id}"
+
+    def global_namespace(self) -> str:
+        return f"{self.namespace_prefix}:user:default"
 
     @property
     def shared(self) -> bool:
