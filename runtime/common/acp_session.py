@@ -348,18 +348,19 @@ class AcpSession:
             self.state = "closed"
             return
         if process.poll() is None and self.session_id and not force:
-            session_caps = self.agent_capabilities.get("sessionCapabilities")
-            supports_close = isinstance(session_caps, dict) and "close" in session_caps
-            if supports_close:
-                try:
-                    self._request("session/close", {"sessionId": self.session_id}, allow_permission=False)
-                except Exception:
-                    pass
-            elif self.active_prompt_id is not None:
+            if self.active_prompt_id is not None:
                 try:
                     self.cancel()
                 except Exception:
                     pass
+            else:
+                session_caps = self.agent_capabilities.get("sessionCapabilities")
+                supports_close = isinstance(session_caps, dict) and "close" in session_caps
+                if supports_close:
+                    try:
+                        self._request("session/close", {"sessionId": self.session_id}, allow_permission=False)
+                    except Exception:
+                        pass
         if process.poll() is None:
             process.terminate()
             try:
