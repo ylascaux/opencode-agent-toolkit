@@ -29,6 +29,7 @@ class NativeMemoryTests(unittest.TestCase):
             env.update(
                 {
                     "OAT_MEMORY_ENABLED": "1",
+                    "OAT_MEMORY_BACKEND": "legacy",
                     "OAT_MEMORY_PLUGIN_DIR": str(plugin),
                     "OAT_MEMORY_DIR": str(vault),
                     "OAT_MEMORY_WRAPPER_DIR": str(wrapper),
