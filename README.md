@@ -142,6 +142,8 @@ Configuration par défaut :
 ```bash
 OAT_MEMORY_ENABLED=1
 OAT_MEMORY_CAPTURE_ENABLED=1
+OAT_MEMORY_AUTO_PROMOTE=1
+OAT_MEMORY_AUTO_PUSH=1
 OAT_MEMORY_REPO=https://github.com/ylascaux/opencode-memory.git
 OAT_MEMORY_DIR=$HOME/opencode-memory
 ```
@@ -152,24 +154,31 @@ mémoire local et charge le plugin OpenCode 2 natif. Le même plugin expose auss
 le MCP `oat-memory`.
 
 À chaque passage de session à l'état `idle`, le plugin lit uniquement les
-messages utilisateur/assistant, lance une extraction sans outils et crée des
-**candidats locaux**. Il ne stocke pas le transcript brut et ne commit/push
-jamais automatiquement le vault.
+messages utilisateur/assistant et extrait les informations réellement durables.
+
+Le fonctionnement quotidien est **automatique** :
+
+- une mémoire `HIGH` est écrite directement dans `projects/<repo>/` ou
+  `workstyle/`, commitée puis poussée vers le vault Git ;
+- une information `MEDIUM` ou sans cible sûre reste en quarantaine locale ;
+- si le fichier mémoire cible contient déjà des modifications locales, le plugin
+  ne l'écrase pas et conserve l'élément en quarantaine ;
+- des fichiers non suivis ailleurs dans le vault ne bloquent pas la capture.
+
+Tu n'as donc normalement **aucune commande mémoire à lancer**. Les commandes
+ci-dessous restent disponibles uniquement pour le diagnostic ou les cas
+ambigus :
 
 ```bash
 oc memory status
 oc memory candidates
 oc memory candidate <id>
 oc memory reject <id>
-oc memory accept <id>
-oc memory promote <id>
-oc memory approve-all
 ```
 
-`approve-all` accepte puis promeut les candidats et effectue un seul push.
 Pour un nouveau dépôt qui n'a pas encore de dossier `projects/<repo>/`, la
-capture utilise directement un identifiant stable dérivé du nom du repo ; elle
-n'a donc plus besoin de créer au préalable un template vide dans le vault.
+capture utilise directement un identifiant stable dérivé du nom du repo et crée
+le fichier durable uniquement lorsqu'une vraie mémoire HIGH est détectée.
 
 Les fichiers `sessions/*` créés par l'intégration temporaire
 `create-ai-memory` peuvent rester dans le repo : ils sont simplement ignorés
@@ -186,6 +195,13 @@ Pour garder la lecture/contexte mais couper uniquement la capture automatique :
 
 ```bash
 OAT_MEMORY_CAPTURE_ENABLED=0
+```
+
+Pour revenir au mode de validation manuelle historique :
+
+```bash
+OAT_MEMORY_AUTO_PROMOTE=0
+OAT_MEMORY_AUTO_PUSH=0
 ```
 
 ### Rehydra
