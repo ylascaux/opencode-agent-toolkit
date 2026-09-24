@@ -5,6 +5,8 @@ import argparse
 import atexit
 import os
 import sys
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +23,9 @@ TOOL = {
     "name": "acp_runner",
     "description": (
         "Run bounded child coding sessions through trusted ACP runners. "
-        "Use start for a new child, message to continue it, respond for an explicit "
-        "permission choice, status to inspect it, and close when finished."
+        "start/message/respond enqueue work and return immediately; poll status for completion "
+        "or permission_required. respond must use an exact option_id explicitly chosen by the user "
+        "or permitted by the parent policy; never guess a permission choice."
     ),
     "inputSchema": {
         "type": "object",
@@ -47,6 +50,10 @@ class RunnerService:
         self.sessions: dict[str, AcpSession] = {}
         self.max_parallel = max(1, min(16, int(os.getenv("OAT_ACP_MAX_PARALLEL", "4"))))
         self.timeout = max(30.0, min(3600.0, float(os.getenv("OAT_ACP_TIMEOUT_SECONDS", "600"))))
+        self.executor = ThreadPoolExecutor(max_workers=self.max_parallel, thread_name_prefix="oat-acp")
+        self.futures: dict[str, Future] = {}
+        self.latest: dict[str, dict[str, Any]] = {}
+        self.lock = threading.Lock()
 
     def close_all(self) -> None:
         for session in list(self.sessions.values()):
@@ -55,6 +62,7 @@ class RunnerService:
             except Exception:
                 pass
         self.sessions.clear()
+        self.executor.shutdown(wait=False, cancel_futures=True)
 
     def _cwd(self, requested: str | None) -> Path:
         if not requested:
@@ -77,6 +85,29 @@ class RunnerService:
                 raise AcpError(f"ACP runner is unavailable: {name}")
             return runner
         return default_runner(runners, os.environ)
+
+    def _collect(self, session_id: str) -> dict[str, Any] | None:
+        future = self.futures.get(session_id)
+        if future is None or not future.done():
+            return self.latest.get(session_id)
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = {"status": "failed", "error": str(exc)[:1000]}
+        with self.lock:
+            self.latest[session_id] = result
+            self.futures.pop(session_id, None)
+        return result
+
+    def _submit(self, session_id: str, operation) -> dict[str, Any]:
+        current = self.futures.get(session_id)
+        if current is not None and not current.done():
+            raise AcpError("ACP session already has work in progress")
+        future = self.executor.submit(operation)
+        with self.lock:
+            self.futures[session_id] = future
+            self.latest[session_id] = {"status": "running", "session_id": session_id}
+        return {"status": "running", "session_id": session_id}
 
     def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name != "acp_runner":
@@ -105,11 +136,10 @@ class RunnerService:
                 timeout_seconds=self.timeout,
             ).start()
             self.sessions[session.session_id] = session
-            result = session.status()
             message = args.get("message")
             if isinstance(message, str) and message.strip():
-                result = session.prompt(message)
-            return result
+                return self._submit(session.session_id, lambda: session.prompt(message))
+            return session.status()
 
         session_id = args.get("session_id")
         if not isinstance(session_id, str) or session_id not in self.sessions:
@@ -120,17 +150,29 @@ class RunnerService:
             message = args.get("message")
             if not isinstance(message, str):
                 raise AcpError("message is required")
-            return session.prompt(message)
+            return self._submit(session_id, lambda: session.prompt(message))
         if action == "respond":
             option_id = args.get("option_id")
             if not isinstance(option_id, str):
                 raise AcpError("option_id is required")
-            return session.respond(option_id)
+            return self._submit(session_id, lambda: session.respond(option_id))
         if action == "status":
-            return session.status()
+            completed = self._collect(session_id)
+            state = session.status()
+            if completed:
+                state["job"] = completed
+            return state
         if action == "close":
-            session.close()
+            future = self.futures.get(session_id)
+            if future is not None and not future.done():
+                try:
+                    session.cancel()
+                except Exception:
+                    pass
+            session.close(force=True)
             self.sessions.pop(session_id, None)
+            self.futures.pop(session_id, None)
+            self.latest.pop(session_id, None)
             return {"status": "closed", "session_id": session_id}
         raise AcpError(f"unsupported action: {action}")
 
