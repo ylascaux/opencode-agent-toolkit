@@ -46,6 +46,48 @@ class NativeMemoryTests(unittest.TestCase):
             self.assertIn((dist / "v2.js").resolve().as_uri(), (wrapper / "index.js").read_text())
             self.assertEqual(context.read_text(), "# Rendered memory\nProject context\n")
 
+    def test_shared_backend_renders_context_without_legacy_vault(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            plugin = base / "plugin"
+            dist = plugin / "dist"
+            dist.mkdir(parents=True)
+            (dist / "v2.js").write_text("export default { id: 'fixture', setup() {} }\n")
+            wrapper = base / "wrapper"
+            context = base / "context.md"
+            rpc = base / "memory_rpc.py"
+            rpc.write_text(
+                "import json,sys\n"
+                "json.load(sys.stdin)\n"
+                "print(json.dumps({'ok': True, 'result': {'text': '# Shared memory\\nPostgres context'}}))\n"
+            )
+
+            env = os.environ.copy()
+            for key in list(env):
+                if key.startswith(("OAT_MEMORY_", "OPENCODE_MEMORY_")):
+                    env.pop(key, None)
+            env.update(
+                {
+                    "OAT_MEMORY_ENABLED": "1",
+                    "OAT_MEMORY_BACKEND": "postgres",
+                    "OAT_MEMORY_PLUGIN_DIR": str(plugin),
+                    "OAT_MEMORY_WRAPPER_DIR": str(wrapper),
+                    "OAT_V2_PYTHON": os.sys.executable,
+                    "OAT_MEMORY_V2_RPC": str(rpc),
+                }
+            )
+            result = subprocess.run(
+                ["python3", str(NATIVE_MEMORY), "--major", "2", "--context-file", str(context)],
+                env=env,
+                text=True,
+                capture_output=True,
+                cwd=base,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(context.is_file())
+            self.assertEqual(context.read_text(), "# Shared memory\nPostgres context\n")
+            self.assertTrue((wrapper / "index.js").is_file())
+
     def test_disabled_memory_does_not_create_runtime_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
