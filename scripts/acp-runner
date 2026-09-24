@@ -80,6 +80,8 @@ def cmd_command(args):
 
 def cmd_exec(args):
     runner = select(args.runner)
+    if not runner.trusted:
+        raise SystemExit(f"ACP runner is not trusted for execution: {runner.id}")
     argv = [*runner.argv(os.environ), *args.extra]
     command = argv[0]
     if not runner.available(os.environ):
