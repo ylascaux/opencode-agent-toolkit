@@ -55,6 +55,8 @@ class OpenCodeSkillSourceTests(unittest.TestCase):
                     "OAT_MEMORY_PLUGIN_DIR": str(plugin),
                     "OAT_MEMORY_ENABLED": "1",
                     "OAT_MEMORY_CAPTURE_ENABLED": "1",
+                    "OAT_MEMORY_AUTO_PROMOTE": "1",
+                    "OAT_MEMORY_AUTO_PUSH": "1",
                     "OAT_MEMORY_DIR": str(base / "vault"),
                     "OAT_MEMORY_PROJECT": "demo",
                 }
@@ -78,6 +80,8 @@ class OpenCodeSkillSourceTests(unittest.TestCase):
             self.assertEqual(Path(memory["command"][4]).resolve(), base.resolve())
             self.assertEqual(memory["environment"]["OAT_MEMORY_PROJECT"], "demo")
             self.assertEqual(memory["environment"]["OAT_MEMORY_CAPTURE_ENABLED"], "1")
+            self.assertEqual(memory["environment"]["OAT_MEMORY_AUTO_PROMOTE"], "1")
+            self.assertEqual(memory["environment"]["OAT_MEMORY_AUTO_PUSH"], "1")
 
     def test_without_prepared_memory_context7_is_still_added(self):
         with tempfile.TemporaryDirectory() as tmp:
