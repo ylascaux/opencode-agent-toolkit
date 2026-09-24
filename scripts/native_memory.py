@@ -153,7 +153,7 @@ def main() -> int:
 
     plugin = plugin_dir()
     entry = plugin / "dist" / "v2.js"
-    backend = os.getenv("OAT_MEMORY_BACKEND", "legacy").strip().lower() or "legacy"
+    backend = os.getenv("OAT_MEMORY_BACKEND", "local").strip().lower() or "legacy"
     if not entry.is_file():
         print("OpenCode memory plugin unavailable locally; run 'just install'.", file=os.sys.stderr)
         return 0
