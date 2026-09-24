@@ -122,11 +122,18 @@ def cmd_disable(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _v2_config():
+    sys.path.insert(0, str(ROOT))
+    from runtime.common.memory_v2 import MemoryV2Config
+
+    return MemoryV2Config.from_env()
+
+
 def _print_v2_identity() -> None:
     sys.path.insert(0, str(ROOT))
-    from runtime.common.memory_v2 import MemoryV2Config, resolve_project_identity
+    from runtime.common.memory_v2 import resolve_project_identity
 
-    config = MemoryV2Config.from_env()
+    config = _v2_config()
     identity = resolve_project_identity(Path.cwd())
     print(f"v2_backend={config.backend}")
     print(f"v2_project={identity.project_id}")
@@ -145,7 +152,7 @@ def cmd_namespace(_args: argparse.Namespace) -> int:
 
 def cmd_status(_args: argparse.Namespace) -> int:
     _print_v2_identity()
-    config = MemoryV2Config.from_env()
+    config = _v2_config()
     if config.backend != "legacy":
         try:
             payload = _v2_request({"action": "status"})
@@ -178,7 +185,7 @@ def cmd_status(_args: argparse.Namespace) -> int:
 
 
 def cmd_sync(_args: argparse.Namespace) -> int:
-    if MemoryV2Config.from_env().backend != "legacy":
+    if _v2_config().backend != "legacy":
         print("sync=not-required (shared harness-memory backend)")
         return 0
     ensure_plugin(force_sync=True)
@@ -186,7 +193,7 @@ def cmd_sync(_args: argparse.Namespace) -> int:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    if MemoryV2Config.from_env().backend != "legacy":
+    if _v2_config().backend != "legacy":
         payload = _v2_request({"action": "render", "max_chars": 12000})
         if args.json:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
