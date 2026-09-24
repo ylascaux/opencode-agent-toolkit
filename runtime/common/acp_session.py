@@ -68,9 +68,14 @@ class AcpSession:
                 servers = payload.get("mcp", {}).get("servers", {})
                 if isinstance(servers, dict):
                     servers.pop("oat-acp", None)
+                    servers.pop("oat-memory", None)
                     env["OPENCODE_CONFIG_CONTENT"] = json.dumps(payload, separators=(",", ":"))
-            except (TypeError, json.JSONDecodeError):
+            except (TypeError, json.JSONDecodeError, AttributeError):
                 pass
+        env.pop("OAT_MEMORY_POSTGRES_DSN", None)
+        env.pop("OPENCODE_MEMORY_POSTGRES_DSN", None)
+        env["OAT_MEMORY_CAPTURE_ENABLED"] = "0"
+        env["OPENCODE_MEMORY_CAPTURE_ENABLED"] = "0"
         return env
 
     def start(self) -> "AcpSession":
