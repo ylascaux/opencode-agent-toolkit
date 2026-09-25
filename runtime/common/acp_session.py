@@ -264,6 +264,12 @@ class AcpSession:
                 "permission": pending.permission.view(),
                 "text": self.output_text,
             }
+        except Exception:
+            # Keep the prompt id so a failed/timed-out session cannot silently
+            # accept a second prompt while the first child turn may still exist.
+            # The parent can inspect status then close/cancel the session.
+            self.state = "failed"
+            raise
         self.active_prompt_id = None
         self.state = "idle"
         return {
