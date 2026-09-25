@@ -5,8 +5,10 @@ PostgreSQL tables/schemas remain an implementation detail of harness-memory.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+import hashlib
+from typing import Any, Iterator
 
 from runtime.common.memory_v2 import MemoryV2Config, ProjectIdentity
 
@@ -192,6 +194,38 @@ class HarnessMemoryService:
                 return True
         return False
 
+    @contextmanager
+    def _dedup_lock(self, namespace: str, assertion: str) -> Iterator[None]:
+        """Serialize identical PostgreSQL writes without coupling to harness tables.
+
+        PostgreSQL advisory locks are session scoped and keyed from the stable
+        toolkit namespace + normalized assertion. Distinct memories remain fully
+        concurrent; only identical candidate writes contend.
+        """
+        if self.config.backend != "postgres":
+            yield
+            return
+
+        try:
+            import psycopg
+        except ImportError as exc:
+            raise HarnessMemoryError("psycopg is required for shared PostgreSQL memory") from exc
+
+        stable = f"{namespace}\0{assertion.strip()}".encode("utf-8")
+        key = int.from_bytes(hashlib.sha256(stable).digest()[:8], "big", signed=True)
+        try:
+            with psycopg.connect(self.config.postgres_dsn, autocommit=True) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_lock(%s)", (key,))
+                    try:
+                        yield
+                    finally:
+                        cursor.execute("SELECT pg_advisory_unlock(%s)", (key,))
+        except HarnessMemoryError:
+            raise
+        except Exception as exc:
+            raise HarnessMemoryError("unable to coordinate shared memory write") from exc
+
     def remember(self, candidate: dict[str, Any]) -> dict[str, Any]:
         kind = str(candidate.get("kind") or "").strip()
         if kind not in KIND_MAP:
@@ -200,29 +234,30 @@ class HarnessMemoryService:
         if not assertion:
             raise HarnessMemoryError("memory assertion is empty")
         namespace = self.project_namespace if kind in PROJECT_KINDS else self.global_namespace
-        if self._exists(namespace, assertion):
-            return {"status": "duplicate", "namespace": namespace, "kind": kind}
+        with self._dedup_lock(namespace, assertion):
+            if self._exists(namespace, assertion):
+                return {"status": "duplicate", "namespace": namespace, "kind": kind}
 
-        title = str(candidate.get("title") or kind).strip()
-        confidence = str(candidate.get("confidence") or "high").strip().lower()
-        mapped_kind = KIND_MAP[kind]
-        is_global = kind in GLOBAL_KINDS
-        params = {
-            "assertion": assertion[:4000],
-            "entity_name": "User workstyle" if is_global else self.identity.project_id,
-            "entity_type": "User" if is_global else "Project",
-            "kind": mapped_kind,
-            "importance": "high" if kind in {"architecture", "decision", "workstyle"} else "medium",
-            "confidence": confidence if confidence in {"medium", "high"} else "medium",
-            "reason": f"{title[:120]} (captured by OpenCode Agent Toolkit V2)",
-        }
-        result = self._rpc(namespace, "create_atom", params)
-        return {
-            "status": "created",
-            "namespace": namespace,
-            "kind": kind,
-            "result": result if isinstance(result, dict) else {},
-        }
+            title = str(candidate.get("title") or kind).strip()
+            confidence = str(candidate.get("confidence") or "high").strip().lower()
+            mapped_kind = KIND_MAP[kind]
+            is_global = kind in GLOBAL_KINDS
+            params = {
+                "assertion": assertion[:4000],
+                "entity_name": "User workstyle" if is_global else self.identity.project_id,
+                "entity_type": "User" if is_global else "Project",
+                "kind": mapped_kind,
+                "importance": "high" if kind in {"architecture", "decision", "workstyle"} else "medium",
+                "confidence": confidence if confidence in {"medium", "high"} else "medium",
+                "reason": f"{title[:120]} (captured by OpenCode Agent Toolkit V2)",
+            }
+            result = self._rpc(namespace, "create_atom", params)
+            return {
+                "status": "created",
+                "namespace": namespace,
+                "kind": kind,
+                "result": result if isinstance(result, dict) else {},
+            }
 
     def remember_many(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         created = 0
