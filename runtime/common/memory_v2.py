@@ -95,11 +95,12 @@ class MemoryV2Config:
     backend: str
     namespace_prefix: str
     postgres_dsn: str
+    local_path: Path
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "MemoryV2Config":
         env = os.environ if environ is None else environ
-        backend = env.get("OAT_MEMORY_BACKEND", "legacy").strip().lower() or "legacy"
+        backend = env.get("OAT_MEMORY_BACKEND", "local").strip().lower() or "legacy"
         if backend not in _BACKENDS:
             raise ValueError(f"OAT_MEMORY_BACKEND must be one of: {', '.join(sorted(_BACKENDS))}")
         prefix = env.get("OAT_MEMORY_NAMESPACE_PREFIX", "oat").strip() or "oat"
@@ -108,10 +109,23 @@ class MemoryV2Config:
         dsn = env.get("OAT_MEMORY_POSTGRES_DSN", "").strip()
         if backend == "postgres" and not dsn:
             raise ValueError("OAT_MEMORY_POSTGRES_DSN is required for postgres memory")
-        return cls(backend=backend, namespace_prefix=prefix, postgres_dsn=dsn)
+        data_home = Path(env.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+        local_path = Path(
+            env.get("OAT_MEMORY_LOCAL_PATH")
+            or data_home / "opencode-agent-toolkit" / "memory-v2.sqlite"
+        ).expanduser()
+        return cls(
+            backend=backend,
+            namespace_prefix=prefix,
+            postgres_dsn=dsn,
+            local_path=local_path,
+        )
 
     def namespace_for(self, identity: ProjectIdentity) -> str:
         return f"{self.namespace_prefix}:project:{identity.project_id}"
+
+    def global_namespace(self) -> str:
+        return f"{self.namespace_prefix}:user:default"
 
     @property
     def shared(self) -> bool:
@@ -127,7 +141,11 @@ class MemoryV2Config:
         if not parsed.scheme:
             return "<configured>"
         host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
+        try:
+            parsed_port = parsed.port
+        except ValueError:
+            return "<configured>"
+        port = f":{parsed_port}" if parsed_port else ""
         user = parsed.username or ""
         auth = f"{user}:***@" if user else ""
         path = parsed.path or ""

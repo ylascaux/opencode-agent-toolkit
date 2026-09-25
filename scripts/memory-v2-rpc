@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from runtime.common.harness_memory_service import HarnessMemoryService
+from runtime.common.memory_v2 import MemoryV2Config, resolve_project_identity
+
+
+def build_service(cwd: str) -> HarnessMemoryService:
+    config = MemoryV2Config.from_env()
+    identity = resolve_project_identity(Path(cwd))
+    return HarnessMemoryService(config, identity)
+
+
+def dispatch(request: dict[str, Any], cwd: str) -> dict[str, Any]:
+    action = request.get("action")
+    memory = build_service(cwd)
+    if action == "status":
+        return memory.status()
+    if action == "render":
+        return memory.render(max_chars=int(request.get("max_chars") or 12000))
+    if action == "search":
+        return memory.search(str(request.get("query") or ""), limit=int(request.get("limit") or 5))
+    if action == "remember":
+        candidate = request.get("candidate")
+        if not isinstance(candidate, dict):
+            raise ValueError("candidate is required")
+        return memory.remember(candidate)
+    if action == "remember_many":
+        candidates = request.get("candidates")
+        if not isinstance(candidates, list):
+            raise ValueError("candidates are required")
+        return memory.remember_many([item for item in candidates if isinstance(item, dict)])
+    if action == "handoff":
+        handoff = request.get("handoff")
+        if not isinstance(handoff, dict):
+            raise ValueError("handoff is required")
+        return memory.remember_handoff(handoff)
+    raise ValueError(f"unsupported memory action: {action}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cwd", default=os.getcwd())
+    args = parser.parse_args()
+    try:
+        request = json.load(sys.stdin)
+        if not isinstance(request, dict):
+            raise ValueError("request must be a JSON object")
+        result = dispatch(request, args.cwd)
+        json.dump({"ok": True, "result": result}, sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\n")
+        return 0
+    except Exception as exc:
+        json.dump(
+            {"ok": False, "error": {"code": "memory_failed", "message": str(exc)[:1000]}},
+            sys.stdout,
+            ensure_ascii=False,
+        )
+        sys.stdout.write("\n")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

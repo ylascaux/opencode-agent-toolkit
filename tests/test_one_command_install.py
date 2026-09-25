@@ -32,14 +32,16 @@ class OneCommandInstallTests(unittest.TestCase):
         self.assertIn("npm install -g @opencode/cli@latest", text)
         self.assertIn("OpenCode is not installed and npm is unavailable", text)
 
-    def test_native_memory_plugin_is_installed_and_vault_is_reused(self):
+    def test_native_memory_plugin_is_installed_and_v2_runtime_is_prepared(self):
         text = (ROOT / "scripts/bootstrap").read_text()
         self.assertIn('OAT_MEMORY_DIR:-$HOME/opencode-memory', text)
         self.assertIn('https://github.com/ylascaux/opencode-memory.git', text)
         self.assertIn('scripts/memory_plugin.py', text)
         self.assertIn('OAT_MEMORY_CAPTURE_ENABLED', text)
         self.assertIn('OAT_AI_MEMORY_', text, "bootstrap must migrate the short-lived legacy variables")
-        self.assertIn('gh auth login && gh auth setup-git', text)
+        self.assertIn('scripts/v2-python', text)
+        self.assertIn('memory_backend="${OAT_MEMORY_BACKEND:-local}"', text)
+        self.assertIn('OAT_MEMORY_DIR:-$HOME/opencode-memory', text, "legacy backend remains explicitly available")
 
     def test_install_retargets_stale_launcher_from_old_toolkit_clone(self):
         with tempfile.TemporaryDirectory() as tmp:

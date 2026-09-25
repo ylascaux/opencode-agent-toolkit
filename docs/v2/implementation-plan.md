@@ -1,223 +1,110 @@
-# V2 — Plan d'implémentation
+# V2 — État d'implémentation
 
-## Phase 0 — Validation technique
+## Résumé
 
-Avant de modifier le runtime quotidien :
+Les deux fondations prévues pour la V2 sont maintenant implémentées :
 
-- identifier précisément l'API publique de `harness-memory` utilisée par Octop ;
-- pinner une version compatible ;
-- valider PostgreSQL sur un environnement de test ;
-- confirmer la sémantique exacte du namespace ;
-- tester les lectures et écritures concurrentes ;
-- mesurer le comportement en coupure réseau.
+| Axe | État |
+| --- | --- |
+| mémoire locale `harness-memory` | implémenté |
+| mémoire PostgreSQL partagée | implémenté |
+| identité projet stable | implémenté |
+| contexte borné + MCP mémoire | implémenté |
+| capture automatique directe | implémenté |
+| ACP v1 OpenCode | implémenté |
+| permissions ACP explicites | implémenté |
+| pool ACP parallèle borné | implémenté |
+| isolation child/parent | implémenté |
+| V1 → V2 migration | volontairement non implémentée |
 
-Critère de sortie : aucun détail de stockage interne Octop n'est nécessaire à l'intégration.
+## Mémoire
 
-## Phase 1 — Adapter mémoire minimal
-
-Créer une abstraction interne très petite :
-
-```text
-MemoryBackend
-  ├── read/retrieve
-  ├── remember/upsert
-  ├── health
-  └── namespace
-```
-
-Backends :
+Flux quotidien :
 
 ```text
-postgres   # cible V2
-local      # fallback/dev
+OpenCode session
+  → extraction automatique
+  → toolkit bridge
+  → harness-memory
+       ├── local SQLite
+       └── PostgreSQL partagé
 ```
 
-Ne pas recopier le control plane d'Octop.
+Le backend V2 par défaut est `local`. Le backend `postgres` utilise le même namespace sur deux clones ayant le même remote Git.
 
-## Phase 2 — Identité stable des projets
+La CI qualifie :
 
-Définir une fonction unique :
+- le vrai package `harness-memory` en SQLite ;
+- deux clients sur un vrai PostgreSQL ;
+- lecture croisée ;
+- écritures concurrentes distinctes.
+
+Le backend `legacy` reste uniquement pour compatibilité explicite.
+
+## ACP
+
+Flux :
 
 ```text
-resolve_project_memory_id(repo) -> stable id
+parent
+  → oat-acp MCP
+  → bounded pool
+  → ACP child process
+  → initialize
+  → session/new
+  → session/prompt
+  → session/update
+  → permission / respond
+  → close
 ```
 
-Priorité :
+`start`, `message` et `respond` sont asynchrones du point de vue MCP ; le parent poll `status`.
 
-1. remote Git canonique ;
-2. override explicite ;
-3. slug fallback.
+Les sessions et jobs restent volontairement éphémères. Aucun broker/daemon n'est ajouté.
 
-Tests obligatoires :
+## Sécurité
 
-- deux clones du même repo sur deux chemins différents obtiennent le même id ;
-- deux repos différents de même nom local n'entrent pas en collision ;
-- changement de répertoire local sans changement de remote conserve l'identité.
+- runners sur liste approuvée ;
+- `trusted=false` interdit l'exécution ;
+- child cwd limité au workspace parent ;
+- aucun `oat-acp` récursif chez le child ;
+- aucun `oat-memory` chez le child ;
+- DSN PostgreSQL retiré de l'environnement child ;
+- capture mémoire child désactivée ;
+- DSN non sérialisé dans `OPENCODE_CONFIG_CONTENT`.
 
-## Phase 3 — Lecture du contexte
+## Exploitation
 
-Au lancement ou au premier prompt :
+Validation locale :
 
-1. déterminer le namespace ;
-2. récupérer uniquement les souvenirs pertinents ;
-3. injecter un contexte borné ;
-4. tracer les ids/résultats utilisés sans exposer de secrets.
-
-Le retrieval doit être lazy et limité. Pas de dump complet de la mémoire dans le contexte.
-
-## Phase 4 — Capture
-
-Réutiliser le principe actuel :
-
-```text
-session.idle
-   ↓
-extraction
-   ↓
-classification
-   ↓
-écriture durable
+```bash
+just install
+just doctor
+oc memory status
+oc runner doctor
 ```
 
-La capture doit être :
+Partage PostgreSQL :
 
-- idempotente ;
-- bornée ;
-- tolérante aux interruptions ;
-- non bloquante pour la fermeture d'OpenCode ;
-- indépendante du chemin local de la machine.
-
-## Phase 5 — Multi-PC
-
-Scénario de qualification :
-
-```text
-PC A ouvre repo X
-PC B ouvre repo X
-PC A écrit mémoire M1
-PC B retrouve M1
-PC B écrit M2
-PC A retrouve M2
+```bash
+oc memory configure-postgres 'postgresql://USER:PASSWORD@HOST:5432/DB'
 ```
 
-Puis test de collision :
+Retour local :
 
-```text
-PC A et PC B écrivent en même temps sur repo X
+```bash
+oc memory configure-local
 ```
 
-Critère de sortie : aucune perte silencieuse ni corruption.
+## Reste optionnel, non bloquant
 
-Si le backend ne garantit pas suffisamment la concurrence logique, ajouter un verrou léger ou une sérialisation par namespace.
+Ces sujets ne sont pas nécessaires au runtime V2 actuel :
 
-## Phase 6 — Doctor
+- persistance des jobs ACP après crash ;
+- UI dédiée ;
+- partage des checkpoints/conversations entre machines ;
+- backend de queue externe ;
+- export Markdown périodique de la mémoire V2 ;
+- orchestration de runners ACP autres qu'OpenCode.
 
-Étendre `just doctor` / `oc memory status` avec :
-
-- backend actif ;
-- DSN masqué ;
-- namespace courant ;
-- connectivité ;
-- version/schema détecté ;
-- dernière lecture réussie ;
-- dernière écriture réussie ;
-- mode concurrence supporté ;
-- fallback actif ou non.
-
-Aucun secret complet dans les logs.
-
-## Phase 7 — Backup
-
-Documenter une procédure simple :
-
-- dump régulier de la base ;
-- restauration sur instance de test ;
-- rétention ;
-- alerte si le dernier backup valide est trop ancien.
-
-Ne pas créer un système de backup applicatif complexe si PostgreSQL fournit déjà les primitives nécessaires.
-
-## Phase 8 — Retrait du stockage Git actif
-
-Quand PostgreSQL est qualifié :
-
-- le vault Git n'est plus nécessaire au runtime V2 ;
-- les commandes V1 restent disponibles uniquement sur la branche `v1`;
-- aucun import automatique n'est réalisé ;
-- aucun mécanisme de double écriture Git + PostgreSQL n'est conservé.
-
-Objectif : une seule source de vérité.
-
-## Tests de validation finaux
-
-- démarrage sans PostgreSQL ;
-- démarrage avec PostgreSQL ;
-- lecture depuis deux machines ;
-- écriture depuis deux machines ;
-- namespace par repo ;
-- repo déplacé localement ;
-- remote identique sur deux clones ;
-- coupure réseau pendant lecture ;
-- coupure réseau pendant écriture ;
-- reprise après redémarrage ;
-- secrets absents des logs ;
-- `just doctor` explicite ;
-- OpenCode reste utilisable si la mémoire est indisponible.
-
-## Non-objectifs
-
-- migrer les données V1 ;
-- répliquer Octop ;
-- ajouter une UI dédiée ;
-- partager tous les états OpenCode entre machines dès la première phase ;
-- ajouter un broker ou une queue tant qu'un besoin réel n'est pas démontré.
-
-## ACP — Fondation
-
-État : **implémenté dans le premier incrément V2**.
-
-- registre de runners approuvés dans `config/acp-runners.json` ;
-- runner OpenCode natif : `opencode acp` ;
-- `oc runner list` ;
-- `oc runner doctor` ;
-- `oc runner command` ;
-- `oc runner exec` ;
-- respect de `OPENCODE_BIN`.
-
-## ACP — Session manager
-
-Prochain incrément :
-
-1. définir un objet session indépendant du runtime ;
-2. démarrer le subprocess ACP avec stdin/stdout réservés au JSON-RPC ;
-3. négocier/initialiser le protocole ;
-4. implémenter `start/message/status/close` ;
-5. remonter les demandes de permission au parent avec `respond` ;
-6. tuer proprement le processus enfant si le parent annule ;
-7. borner durée, sortie et nombre de runners simultanés.
-
-Critère de sortie : un test peut piloter un faux runner ACP de bout en bout sans dépendre d'OpenCode.
-
-## ACP — Orchestration
-
-Après qualification du session manager :
-
-- brancher le pool de jobs de l'orchestrateur sur les runners ;
-- conserver le graphe parent → enfant et les handoffs compacts ;
-- permettre le parallélisme uniquement pour les tâches indépendantes ;
-- ajouter un `max_parallel` explicite ;
-- ne jamais donner à un enfant plus de permissions que le parent.
-
-## Mémoire — Fondation déjà implémentée
-
-Le premier incrément V2 fournit aussi :
-
-- normalisation de remote Git ;
-- identité projet stable entre deux clones ;
-- override `OAT_MEMORY_PROJECT` ;
-- namespace `<prefix>:project:<id>` ;
-- configuration `legacy|local|postgres` ;
-- masquage du DSN dans les diagnostics ;
-- `oc memory namespace`.
-
-Le backend reste `legacy` par défaut tant que le chemin PostgreSQL n'est pas qualifié.
+Ils ne doivent être ajoutés qu'en réponse à un besoin réel.

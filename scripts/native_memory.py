@@ -71,6 +71,42 @@ def prepare_v2_wrapper(entry: Path) -> Path:
     return wrapper.resolve()
 
 
+def render_v2_context(context_file: Path) -> bool:
+    python = os.getenv("OAT_V2_PYTHON", "").strip()
+    rpc = os.getenv("OAT_MEMORY_V2_RPC", "").strip()
+    if not python or not rpc:
+        print("V2 memory runtime unavailable; run 'just install'.", file=os.sys.stderr)
+        return False
+    try:
+        result = subprocess.run(
+            [python, rpc, "--cwd", os.getcwd()],
+            input=json.dumps({"action": "render", "max_chars": 12000}),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            check=False,
+        )
+        payload = json.loads(result.stdout) if result.stdout.strip() else {}
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        print(f"V2 memory context unavailable: {error}", file=os.sys.stderr)
+        return False
+    if result.returncode != 0 or not payload.get("ok"):
+        detail = payload.get("error", {}).get("message") if isinstance(payload, dict) else ""
+        print(f"V2 memory context unavailable: {detail or result.stderr.strip() or 'render failed'}", file=os.sys.stderr)
+        return False
+    text = payload.get("result", {}).get("text", "")
+    if not isinstance(text, str) or not text.strip():
+        return False
+    context_file.parent.mkdir(parents=True, exist_ok=True)
+    context_file.write_text(text.rstrip() + "\n")
+    try:
+        context_file.chmod(0o600)
+    except OSError:
+        pass
+    return True
+
+
 def render_context(plugin: Path, context_file: Path) -> bool:
     cli = plugin / "dist" / "cli.js"
     node = shutil.which("node")
@@ -116,16 +152,20 @@ def main() -> int:
         return 0
 
     plugin = plugin_dir()
-    vault = vault_dir()
     entry = plugin / "dist" / "v2.js"
-    if not entry.is_file() or not vault.is_dir():
-        print("OpenCode memory unavailable locally; run 'just install'.", file=os.sys.stderr)
+    backend = os.getenv("OAT_MEMORY_BACKEND", "local").strip().lower() or "legacy"
+    if not entry.is_file():
+        print("OpenCode memory plugin unavailable locally; run 'just install'.", file=os.sys.stderr)
+        return 0
+    if backend == "legacy" and not vault_dir().is_dir():
+        print("Legacy memory vault unavailable locally; run 'just install'.", file=os.sys.stderr)
         return 0
 
     target = prepare_v2_wrapper(entry)
     if args.context_file:
         context = Path(args.context_file).expanduser().resolve()
-        if not render_context(plugin, context):
+        rendered = render_context(plugin, context) if backend == "legacy" else render_v2_context(context)
+        if not rendered:
             try:
                 context.unlink(missing_ok=True)
             except OSError:

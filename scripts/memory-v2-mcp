@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from runtime.common.harness_memory_service import HarnessMemoryService
+from runtime.common.mcp_stdio import McpStdioServer, run_stdio
+from runtime.common.memory_v2 import MemoryV2Config, resolve_project_identity
+
+
+TOOLS = [
+    {
+        "name": "memory_status",
+        "description": "Inspect the active shared memory backend and namespaces.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "memory_search",
+        "description": "Search durable project memory and shared user preferences.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "memory_render",
+        "description": "Retrieve bounded durable context for the current project.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "max_chars": {"type": "integer", "minimum": 1000, "maximum": 20000}
+            },
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "memory_propose",
+        "description": (
+            "Persist one durable memory into the shared V2 store. "
+            "Use only for stable facts, decisions, conventions, issues or explicit preferences."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "project_fact",
+                        "architecture",
+                        "decision",
+                        "convention",
+                        "known_issue",
+                        "workstyle",
+                        "hat_preference",
+                    ],
+                },
+                "title": {"type": "string", "minLength": 1, "maxLength": 120},
+                "statement": {"type": "string", "minLength": 1, "maxLength": 4000},
+                "confidence": {"type": "string", "enum": ["medium", "high"]},
+            },
+            "required": ["kind", "title", "statement", "confidence"],
+            "additionalProperties": False,
+        },
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+    },
+]
+
+
+class MemoryMcpService:
+    def __init__(self, cwd: Path) -> None:
+        config = MemoryV2Config.from_env()
+        identity = resolve_project_identity(cwd)
+        self.memory = HarnessMemoryService(config, identity)
+
+    def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        if name == "memory_status":
+            return self.memory.status()
+        if name == "memory_search":
+            return self.memory.search(str(args.get("query") or ""), limit=int(args.get("limit") or 5))
+        if name == "memory_render":
+            return self.memory.render(max_chars=int(args.get("max_chars") or 12000))
+        if name == "memory_propose":
+            return self.memory.remember(args)
+        raise ValueError(f"unknown memory tool: {name}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cwd", default=os.getcwd())
+    args = parser.parse_args()
+    service = MemoryMcpService(Path(args.cwd).expanduser().resolve())
+    server = McpStdioServer(
+        name="oat-memory-v2",
+        version="2",
+        tools=TOOLS,
+        call_tool=service.call,
+        instructions="Shared project memory backed by harness-memory.",
+    )
+    return run_stdio(server)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

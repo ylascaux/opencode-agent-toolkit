@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import atexit
+import os
+import sys
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from runtime.common.acp import default_runner, load_runners
+from runtime.common.acp_session import AcpError, AcpSession
+from runtime.common.mcp_stdio import McpStdioServer, run_stdio
+
+ACTION_ENUM = ["list", "start", "message", "respond", "status", "close"]
+
+TOOL = {
+    "name": "acp_runner",
+    "description": (
+        "Run bounded child coding sessions through trusted ACP runners. "
+        "start/message/respond enqueue work and return immediately; poll status for completion "
+        "or permission_required. respond must use an exact option_id explicitly chosen by the user "
+        "or permitted by the parent policy; never guess a permission choice."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ACTION_ENUM},
+            "runner": {"type": "string"},
+            "session_id": {"type": "string"},
+            "message": {"type": "string", "maxLength": 20000},
+            "option_id": {"type": "string"},
+            "cwd": {"type": "string"},
+        },
+        "required": ["action"],
+        "additionalProperties": False,
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": True},
+}
+
+
+class RunnerService:
+    def __init__(self, workspace: Path) -> None:
+        self.workspace = workspace.resolve()
+        self.sessions: dict[str, AcpSession] = {}
+        self.max_parallel = max(1, min(16, int(os.getenv("OAT_ACP_MAX_PARALLEL", "4"))))
+        self.timeout = max(30.0, min(3600.0, float(os.getenv("OAT_ACP_TIMEOUT_SECONDS", "600"))))
+        self.executor = ThreadPoolExecutor(max_workers=self.max_parallel, thread_name_prefix="oat-acp")
+        self.futures: dict[str, Future] = {}
+        self.latest: dict[str, dict[str, Any]] = {}
+        self.lock = threading.Lock()
+
+    def close_all(self) -> None:
+        for session in list(self.sessions.values()):
+            try:
+                session.close(force=True)
+            except Exception:
+                pass
+        self.sessions.clear()
+        self.executor.shutdown(wait=False, cancel_futures=True)
+
+    def _cwd(self, requested: str | None) -> Path:
+        if not requested:
+            return self.workspace
+        candidate = Path(requested)
+        if not candidate.is_absolute():
+            candidate = self.workspace / candidate
+        candidate = candidate.resolve()
+        if candidate != self.workspace and self.workspace not in candidate.parents:
+            raise AcpError("ACP child cwd must stay inside the parent workspace")
+        if not candidate.is_dir():
+            raise AcpError("ACP child cwd does not exist")
+        return candidate
+
+    def _runner(self, name: str | None):
+        runners = load_runners()
+        if name:
+            runner = runners.get(name)
+            if runner is None or not runner.enabled:
+                raise AcpError(f"ACP runner is unavailable: {name}")
+            return runner
+        return default_runner(runners, os.environ)
+
+    def _collect(self, session_id: str) -> dict[str, Any] | None:
+        future = self.futures.get(session_id)
+        if future is None or not future.done():
+            return self.latest.get(session_id)
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = {"status": "failed", "error": str(exc)[:1000]}
+        with self.lock:
+            self.latest[session_id] = result
+            self.futures.pop(session_id, None)
+        return result
+
+    def _submit(self, session_id: str, operation) -> dict[str, Any]:
+        current = self.futures.get(session_id)
+        if current is not None and not current.done():
+            raise AcpError("ACP session already has work in progress")
+        future = self.executor.submit(operation)
+        with self.lock:
+            self.futures[session_id] = future
+            self.latest[session_id] = {"status": "running", "session_id": session_id}
+        return {"status": "running", "session_id": session_id}
+
+    def call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        if name != "acp_runner":
+            raise AcpError(f"unknown tool: {name}")
+        action = args.get("action")
+        if action == "list":
+            runners = []
+            for runner in load_runners().values():
+                runners.append(
+                    {
+                        "id": runner.id,
+                        "enabled": runner.enabled,
+                        "trusted": runner.trusted,
+                        "available": runner.available(os.environ),
+                    }
+                )
+            return {"runners": runners, "active": len(self.sessions), "max_parallel": self.max_parallel}
+
+        if action == "start":
+            if len(self.sessions) >= self.max_parallel:
+                raise AcpError(f"ACP parallel session limit reached ({self.max_parallel})")
+            runner = self._runner(args.get("runner"))
+            session = AcpSession(
+                runner=runner,
+                cwd=self._cwd(args.get("cwd")),
+                timeout_seconds=self.timeout,
+            ).start()
+            self.sessions[session.session_id] = session
+            message = args.get("message")
+            if isinstance(message, str) and message.strip():
+                return self._submit(session.session_id, lambda: session.prompt(message))
+            return session.status()
+
+        session_id = args.get("session_id")
+        if not isinstance(session_id, str) or session_id not in self.sessions:
+            raise AcpError("valid session_id is required")
+        session = self.sessions[session_id]
+
+        if action == "message":
+            message = args.get("message")
+            if not isinstance(message, str):
+                raise AcpError("message is required")
+            return self._submit(session_id, lambda: session.prompt(message))
+        if action == "respond":
+            option_id = args.get("option_id")
+            if not isinstance(option_id, str):
+                raise AcpError("option_id is required")
+            return self._submit(session_id, lambda: session.respond(option_id))
+        if action == "status":
+            completed = self._collect(session_id)
+            state = session.status()
+            if completed:
+                state["job"] = completed
+            return state
+        if action == "close":
+            future = self.futures.get(session_id)
+            if future is not None and not future.done():
+                try:
+                    session.cancel()
+                except Exception:
+                    pass
+            session.close(force=True)
+            self.sessions.pop(session_id, None)
+            self.futures.pop(session_id, None)
+            self.latest.pop(session_id, None)
+            return {"status": "closed", "session_id": session_id}
+        raise AcpError(f"unsupported action: {action}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cwd", default=os.getcwd())
+    args = parser.parse_args()
+    workspace = Path(args.cwd).expanduser().resolve()
+    service = RunnerService(workspace)
+    atexit.register(service.close_all)
+    server = McpStdioServer(
+        name="oat-acp",
+        version="2",
+        tools=[TOOL],
+        call_tool=service.call,
+        instructions="Bounded trusted ACP child runner for OpenCode Agent Toolkit V2.",
+    )
+    return run_stdio(server)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,2 @@
+harness-memory>=0.9.11,<1
+psycopg[binary]>=3.2,<4

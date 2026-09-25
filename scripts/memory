@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -61,6 +62,44 @@ def _run_plugin(*args: str, force_sync: bool = False) -> int:
     return result.returncode
 
 
+def _v2_python() -> str:
+    configured = os.getenv("OAT_V2_PYTHON", "").strip()
+    if configured:
+        return configured
+    result = subprocess.run(
+        [sys.executable, "-B", str(ROOT / "scripts" / "v2-python"), "path"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError("V2 memory runtime is unavailable; run 'just install'")
+    return result.stdout.strip()
+
+
+def _v2_request(payload: dict, *, env: dict[str, str] | None = None) -> dict:
+    result = subprocess.run(
+        [_v2_python(), str(ROOT / "scripts" / "memory-v2-rpc"), "--cwd", str(Path.cwd())],
+        input=json.dumps(payload),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=15,
+        check=False,
+        env=env or os.environ.copy(),
+    )
+    try:
+        response = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("invalid V2 memory response") from exc
+    if result.returncode != 0 or not response.get("ok"):
+        error = response.get("error", {})
+        raise RuntimeError(str(error.get("message") or "V2 memory request failed"))
+    value = response.get("result")
+    return value if isinstance(value, dict) else {}
+
+
 def cmd_enable(args: argparse.Namespace) -> int:
     repo = (args.repo or os.getenv("OAT_MEMORY_REPO", "")).strip()
     if not repo:
@@ -83,18 +122,25 @@ def cmd_disable(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _v2_config():
+    sys.path.insert(0, str(ROOT))
+    from runtime.common.memory_v2 import MemoryV2Config
+
+    return MemoryV2Config.from_env()
+
+
 def _print_v2_identity() -> None:
     sys.path.insert(0, str(ROOT))
-    from runtime.common.memory_v2 import MemoryV2Config, resolve_project_identity
+    from runtime.common.memory_v2 import resolve_project_identity
 
-    config = MemoryV2Config.from_env()
+    config = _v2_config()
     identity = resolve_project_identity(Path.cwd())
     print(f"v2_backend={config.backend}")
     print(f"v2_project={identity.project_id}")
     print(f"v2_project_source={identity.source}")
     print(f"v2_namespace={config.namespace_for(identity)}")
     print(f"v2_shared={'yes' if config.shared else 'no'}")
-    print("v2_runtime=legacy" if config.backend == "legacy" else "v2_runtime=foundation-only")
+    print("v2_runtime=legacy" if config.backend == "legacy" else "v2_runtime=active")
     if config.postgres_dsn:
         print(f"v2_postgres_dsn={config.masked_dsn()}")
 
@@ -106,6 +152,18 @@ def cmd_namespace(_args: argparse.Namespace) -> int:
 
 def cmd_status(_args: argparse.Namespace) -> int:
     _print_v2_identity()
+    config = _v2_config()
+    if config.backend != "legacy":
+        try:
+            payload = _v2_request({"action": "status"})
+        except RuntimeError as exc:
+            print(f"v2_status=unavailable ({exc})")
+            return 3
+        print("v2_status=ready")
+        print(f"v2_project_atoms={payload.get('project_counts', {}).get('atoms', 0)}")
+        print(f"v2_global_atoms={payload.get('global_counts', {}).get('atoms', 0)}")
+        return 0
+
     settings = PluginSettings.from_env()
     memory_enabled = _enabled("OAT_MEMORY_ENABLED")
     capture_enabled = _enabled("OAT_MEMORY_CAPTURE_ENABLED")
@@ -127,36 +185,95 @@ def cmd_status(_args: argparse.Namespace) -> int:
 
 
 def cmd_sync(_args: argparse.Namespace) -> int:
+    if _v2_config().backend != "legacy":
+        print("sync=not-required (shared harness-memory backend)")
+        return 0
     ensure_plugin(force_sync=True)
     return _run_plugin("sync")
 
 
 def cmd_show(args: argparse.Namespace) -> int:
+    if _v2_config().backend != "legacy":
+        payload = _v2_request({"action": "render", "max_chars": 12000})
+        if args.json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        elif payload.get("text"):
+            print(payload["text"])
+        return 0
     values = ["render", "--agent", args.agent, "--cwd", str(Path.cwd())]
     if args.json:
         values.append("--json")
     return _run_plugin(*values)
 
 
+def _ensure_v2_python() -> None:
+    subprocess.run(
+        [sys.executable, "-B", str(ROOT / "scripts" / "v2-python"), "ensure"],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+
+
+def _validate_v2_updates(updates: dict[str, str]) -> None:
+    env = os.environ.copy()
+    env.update(updates)
+    _v2_request({"action": "status"}, env=env)
+
+
+def cmd_configure_postgres(args: argparse.Namespace) -> int:
+    dsn = args.dsn.strip()
+    if not dsn.startswith(("postgresql://", "postgres://")):
+        raise SystemExit("configure-postgres requires a PostgreSQL DSN")
+    updates = {
+        "OAT_MEMORY_ENABLED": "1",
+        "OAT_MEMORY_CAPTURE_ENABLED": "1",
+        "OAT_MEMORY_BACKEND": "postgres",
+        "OAT_MEMORY_POSTGRES_DSN": dsn,
+    }
+    _ensure_v2_python()
+    try:
+        _validate_v2_updates(updates)
+    except RuntimeError as exc:
+        raise SystemExit(f"PostgreSQL memory validation failed: {exc}") from exc
+    _apply_updates(updates)
+    print("memory_backend=postgres")
+    print("memory_configured=yes")
+    return 0
+
+
+def cmd_configure_local(_args: argparse.Namespace) -> int:
+    updates = {
+        "OAT_MEMORY_ENABLED": "1",
+        "OAT_MEMORY_CAPTURE_ENABLED": "1",
+        "OAT_MEMORY_BACKEND": "local",
+    }
+    _ensure_v2_python()
+    try:
+        _validate_v2_updates(updates)
+    except RuntimeError as exc:
+        raise SystemExit(f"Local V2 memory validation failed: {exc}") from exc
+    _apply_updates(updates)
+    print("memory_backend=local")
+    print("memory_configured=yes")
+    return 0
+
+
 def cmd_capture_on(_args: argparse.Namespace) -> int:
     updates = {"OAT_MEMORY_CAPTURE_ENABLED": "1"}
     auto_enabled = False
     if not _enabled("OAT_MEMORY_ENABLED"):
-        repo = os.getenv("OAT_MEMORY_REPO", "").strip()
-        if not repo:
-            print(
-                "Cannot enable memory capture while memory is disabled and OAT_MEMORY_REPO is not configured.",
-                file=os.sys.stderr,
-            )
-            print(
-                "Run: oc2 memory enable git@github.com:USER/opencode-memory.git",
-                file=os.sys.stderr,
-            )
-            return 2
+        if _v2_config().backend == "legacy":
+            repo = os.getenv("OAT_MEMORY_REPO", "").strip()
+            if not repo:
+                print(
+                    "Cannot enable legacy memory capture while OAT_MEMORY_REPO is not configured.",
+                    file=os.sys.stderr,
+                )
+                return 2
         updates["OAT_MEMORY_ENABLED"] = "1"
         auto_enabled = True
     _apply_updates(updates)
-    if auto_enabled:
+    if auto_enabled and _v2_config().backend == "legacy":
         ensure_plugin(force_sync=True)
         print("memory=on (auto-enabled for capture)")
     print("memory_capture=on")
@@ -171,7 +288,16 @@ def cmd_capture_off(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _legacy_only(operation: str) -> bool:
+    if _v2_config().backend == "legacy":
+        return True
+    print(f"{operation}=not-applicable (V2 harness-memory has no Git candidate queue)")
+    return False
+
+
 def cmd_candidates(args: argparse.Namespace) -> int:
+    if not _legacy_only("candidates"):
+        return 0
     values = ["candidates"]
     if args.all:
         values.append("--all")
@@ -183,14 +309,20 @@ def cmd_candidates(args: argparse.Namespace) -> int:
 
 
 def cmd_candidate(args: argparse.Namespace) -> int:
+    if not _legacy_only("candidate"):
+        return 0
     return _run_plugin("show", args.id)
 
 
 def cmd_reject(args: argparse.Namespace) -> int:
+    if not _legacy_only("reject"):
+        return 0
     return _run_plugin("reject", args.id)
 
 
 def cmd_accept(args: argparse.Namespace) -> int:
+    if not _legacy_only("accept"):
+        return 0
     values = ["accept"]
     if args.all:
         if args.id:
@@ -206,6 +338,8 @@ def cmd_accept(args: argparse.Namespace) -> int:
 
 
 def cmd_promote(args: argparse.Namespace) -> int:
+    if not _legacy_only("promote"):
+        return 0
     values = ["promote"]
     if args.all:
         if args.id:
@@ -225,6 +359,8 @@ def cmd_promote(args: argparse.Namespace) -> int:
 
 
 def cmd_approve_all(_args: argparse.Namespace) -> int:
+    if not _legacy_only("approve-all"):
+        return 0
     return _run_plugin("approve-all")
 
 
@@ -238,10 +374,27 @@ def cmd_trace(args: argparse.Namespace) -> int:
 
 
 def cmd_push(_args: argparse.Namespace) -> int:
+    if not _legacy_only("push"):
+        return 0
     return _run_plugin("push")
 
 
 def cmd_add(args: argparse.Namespace) -> int:
+    if _v2_config().backend != "legacy":
+        result = _v2_request(
+            {
+                "action": "remember",
+                "candidate": {
+                    "kind": args.kind,
+                    "title": args.title,
+                    "statement": args.statement,
+                    "confidence": args.confidence,
+                },
+            }
+        )
+        print(f"memory={result.get('status', 'stored')}")
+        print(f"namespace={result.get('namespace', '-')}")
+        return 0
     values = ["add", args.kind, args.title, args.statement]
     if args.target:
         values.extend(["--target", args.target])
@@ -272,6 +425,12 @@ def parser() -> argparse.ArgumentParser:
     mcp.add_argument("--cwd", default=None)
     sync = sub.add_parser("sync", help="force plugin + memory-vault synchronization")
     sync.set_defaults(func=cmd_sync)
+
+    configure_pg = sub.add_parser("configure-postgres", help="enable the shared PostgreSQL V2 memory backend")
+    configure_pg.add_argument("dsn")
+    configure_pg.set_defaults(func=cmd_configure_postgres)
+    configure_local = sub.add_parser("configure-local", help="enable the local SQLite V2 memory backend")
+    configure_local.set_defaults(func=cmd_configure_local)
 
     show = sub.add_parser("show", help="render the memory context for an agent")
     show.add_argument("agent", nargs="?", default="orchestrator")
