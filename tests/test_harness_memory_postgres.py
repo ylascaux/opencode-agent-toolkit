@@ -58,6 +58,27 @@ class HarnessMemoryPostgresTests(unittest.TestCase):
         from_first = first.render()["text"]
         self.assertIn("Client B stores a shared workstyle visible to client A.", from_first)
 
+    def test_identical_concurrent_writers_deduplicate(self) -> None:
+        self.service().status()
+        assertion = "Concurrent identical writers should converge to one durable atom."
+
+        def write(_index: int) -> None:
+            self.service().remember(
+                {
+                    "kind": "project_fact",
+                    "title": "Concurrent identical",
+                    "statement": assertion,
+                    "confidence": "high",
+                }
+            )
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(write, range(4)))
+
+        items = self.service()._list(self.service().project_namespace, query=assertion, limit=20)
+        exact = [item for item in items if str(item.get("assertion") or "").strip() == assertion]
+        self.assertEqual(len(exact), 1, exact)
+
     def test_distinct_concurrent_writers_do_not_lose_data(self) -> None:
         # Warm the schema before the concurrent phase so this test targets writer
         # concurrency rather than first-boot DDL races.
