@@ -76,6 +76,63 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Docker runtime
         run: docker build -t opencode-agent-toolkit:ci -f runtime/Dockerfile .
+      - name: Validate shared PostgreSQL memory across independent clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          network="oat-memory-$RANDOM"
+          postgres="oat-memory-postgres-$RANDOM"
+          cleanup() {
+            docker rm -f "$postgres" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker network create "$network" >/dev/null
+          docker run -d --name "$postgres" --network "$network" --network-alias postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=oat_memory \
+            postgres:16-alpine >/dev/null
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if docker exec "$postgres" pg_isready -U postgres -d oat_memory >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+
+          common=(
+            --rm
+            --network "$network"
+            --entrypoint /opt/oat/.venv/bin/python
+            -e OAT_MEMORY_BACKEND=postgres
+            -e OAT_MEMORY_POSTGRES_DSN=postgresql://postgres:postgres@postgres:5432/oat_memory
+            -e OAT_MEMORY_PROJECT=ci/shared-project
+            -e OAT_MEMORY_NAMESPACE_PREFIX=oat-ci
+            opencode-agent-toolkit:ci
+            /opt/oat/scripts/memory-v2-rpc
+            --cwd
+            /opt/oat
+          )
+
+          printf '%s\n' '{"action":"remember","candidate":{"kind":"decision","title":"client-a","statement":"Client A writes shared memory.","confidence":"high"}}' \
+            | docker run -i "${common[@]}" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["ok"] and r["result"]["status"]=="created", r'
+
+          printf '%s\n' '{"action":"remember","candidate":{"kind":"architecture","title":"client-b","statement":"Client B writes shared memory.","confidence":"high"}}' \
+            | docker run -i "${common[@]}" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["ok"] and r["result"]["status"]=="created", r'
+
+          printf '%s\n' '{"action":"render","max_chars":12000}' \
+            | docker run -i "${common[@]}" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); text=r["result"]["text"]; assert r["ok"] and "Client A writes shared memory." in text and "Client B writes shared memory." in text, r'
+
+          printf '%s\n' '{"action":"status"}' \
+            | docker run -i "${common[@]}" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["ok"] and r["result"]["project_counts"]["atoms"] >= 2, r'
+
       - name: Validate runtime tools and toolkit tests
         run: |
           docker run --rm --entrypoint bash opencode-agent-toolkit:ci -lc '
